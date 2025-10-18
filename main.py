@@ -23,6 +23,7 @@ INITIAL_EXTENSIONS = [
     "cogs.presentaciones",
     "cogs.economy",
     "cogs.invites", 
+    "cogs.impostor",
 ]
 
 @bot.event
