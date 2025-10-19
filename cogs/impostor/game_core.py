@@ -442,43 +442,82 @@ async def next_round_or_end(guild: discord.Guild, gs: GameState, tie: bool):
 
 # ---------------------------------------------------------------------
 
+# cogs/impostor/game_core.py (solo muestro el final; el resto queda igual)
+import os
+import time
+import asyncio
+import random
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
+
+import discord
+
+from .core import manager, MAX_PLAYERS
+from . import chars
+from .stats import stats_store
+from .logger import log_staff
+from .ux import mark_game_finished_for_rematch
+from .ui import update_panel
+from .feed import feed  # <- para refrescar la cartelera
+
+# ... (toda la lógica de juego igual)
+
+# cogs/impostor/game_core.py (REEMPLAZO de end_game)
 async def end_game(guild: discord.Guild, gs: GameState, winner: str):
-    ch = await _channel(guild, gs.channel_id)
-    if not ch:
+    ch = guild.get_channel(gs.channel_id)
+    if not isinstance(ch, discord.TextChannel):
         del_game(guild.id, gs.lobby_name)
         return
 
-    # stats opcional
-    try:
-        from .stats import stats_store
-        if winner == "IMPOSTOR" and gs.impostor_id:
+    # Stats
+    if winner == "IMPOSTOR":
+        if gs.impostor_id is not None:
             await stats_store.add_win(guild.id, gs.impostor_id, "IMPOSTOR")
-        elif winner == "SOCIALES":
-            for uid, gp in gs.players.items():
-                if gp.role == "SOCIAL":
-                    await stats_store.add_win(guild.id, uid, "SOCIAL")
-    except Exception:
-        pass
+    else:
+        for uid, gp in gs.players.items():
+            if gp.role == "SOCIAL":
+                await stats_store.add_win(guild.id, uid, "SOCIAL")
 
+    # Resumen
     lines = [f"🎉 **Fin de la partida** — Ganador: **{winner}**"]
     if gs.impostor_id:
-        nombre_imp = f"AAT-Bot#{abs(gs.impostor_id)%1000}" if gs.impostor_id < 0 else (guild.get_member(gs.impostor_id).display_name if guild.get_member(gs.impostor_id) else str(gs.impostor_id))
-        lines.append(f"🕵️ Impostor: **{nombre_imp}**")
+        lines.append(f"🕵️ Impostor: <@{gs.impostor_id}>")
     if gs.word:
-        lines.append(f"🎯 Palabra: **{gs.word}**")
-        if gs.link:
-            lines.append(gs.link)
+        lines.append(f"🎯 Palabra: **{gs.word}**\n{gs.link or ''}")
     lines.append("**Jugadores**")
     for uid, gp in gs.players.items():
         status = "vivo" if gp.alive else "eliminado"
-        botflag = " 🤖" if _is_bot_sim(gs.guild_id, gs.lobby_name, uid) else ""
-        nombre = f"AAT-Bot#{abs(uid)%1000}" if uid < 0 else (guild.get_member(uid).display_name if guild.get_member(uid) else str(uid))
-        lines.append(f"- {nombre}{botflag} — {gp.role} — {status}")
+        lines.append(f"- <@{uid}> — {gp.role} — {status}")
 
     emb = discord.Embed(title="IMPOSITOR — Resultado", color=discord.Color.gold(), description="\n".join(lines))
     await ch.send(embed=emb)
 
-    # desbloquear o bloquear según quieras; dejamos lectura on
+    # Import local para evitar ciclos
+    from .ui import FinalLeaveView
+
+    # Mensaje final CON BOTÓN clickeable
+    await ch.send(
+        "El canal queda **solo lectura**. Podés ocultarlo con el botón:",
+        view=FinalLeaveView(gs.lobby_name)
+    )
+
+    await log_staff(guild, title="Fin de partida", desc=f"Lobby **{gs.lobby_name}** — ganador: {winner}.")
+    mark_game_finished_for_rematch(guild.id, gs.lobby_name)
+
+    # Volver estado de lobby y ocultarlo en cartelera + liberar humanos
+    lob = manager.get(guild.id, gs.lobby_name)
+    if lob:
+        lob.in_game = False
+        lob.is_open = False
+        setattr(lob, "_hidden", True)
+        manager.release_players(lob)
+        await update_panel(None, guild, lob)
+        try:
+            await feed.update(guild)
+        except Exception:
+            pass
+
+    # Bloquear escritura
     try:
         overwrites = ch.overwrites
         for target, perms in overwrites.items():
@@ -487,15 +526,5 @@ async def end_game(guild: discord.Guild, gs: GameState, winner: str):
         await ch.edit(overwrites=overwrites)
     except Exception:
         pass
-
-    # marcar lobby fuera de juego y actualizar panel
-    lob = manager.get(guild.id, gs.lobby_name)
-    if lob:
-        lob.in_game = False
-        try:
-            from .ui import update_panel
-            await update_panel(None, guild, lob)
-        except Exception:
-            pass
 
     del_game(guild.id, gs.lobby_name)

@@ -8,8 +8,7 @@ from discord.ext import commands
 
 from .core import manager, Lobby, MAX_PLAYERS, CATEGORY_ID, PRE_GAME_TIMEOUT_SEC, is_admin_member
 from .feed import feed
-from .ui import update_panel  # <- UI panel
-
+from .ui import update_panel  # panel del lobby
 
 class LobbyCog(commands.Cog):
     """Gestión de lobbys: crear/entrar/invitar/abrir/cerrar/ready/kick/leave/finalizar."""
@@ -33,7 +32,8 @@ class LobbyCog(commands.Cog):
         try:
             ch = await guild.create_text_channel(
                 name=f"impostor-{lobby.name}",
-                category=cat, overwrites=overwrites,
+                category=cat,
+                overwrites=overwrites,
                 topic=f"Lobby '{lobby.name}' • {lobby.slots()} • {'abierto' if lobby.is_open else 'cerrado'}"
             )
             lobby.channel_id = ch.id
@@ -54,7 +54,10 @@ class LobbyCog(commands.Cog):
                 continue
             overwrites[m] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
         try:
-            await ch.edit(overwrites=overwrites, topic=f"Lobby '{lobby.name}' • {lobby.slots()} • {'abierto' if lobby.is_open else 'cerrado'}")
+            await ch.edit(
+                overwrites=overwrites,
+                topic=f"Lobby '{lobby.name}' • {lobby.slots()} • {'abierto' if lobby.is_open else 'cerrado'}"
+            )
         except Exception:
             pass
 
@@ -73,7 +76,12 @@ class LobbyCog(commands.Cog):
         if manager.get(interaction.guild.id, nombre):
             return await interaction.response.send_message("Ese nombre de lobby ya existe.", ephemeral=True)
 
-        lob = Lobby(name=nombre, host_id=interaction.user.id, is_open=(tipo.value == "abierto"), guild_id=interaction.guild.id)
+        lob = Lobby(
+            name=nombre,
+            host_id=interaction.user.id,
+            is_open=(tipo.value == "abierto"),
+            guild_id=interaction.guild.id
+        )
         manager.register(lob)
         manager.add_user(lob, interaction.user)
 
@@ -111,7 +119,13 @@ class LobbyCog(commands.Cog):
         ch = interaction.guild.get_channel(lob.channel_id)
         if isinstance(ch, discord.TextChannel):
             await ch.send(f"👤 <@{interaction.user.id}> se unió. {lob.slots()}")
-        await interaction.response.send_message(f"Te uniste a **{lob.name}**.", ephemeral=True)
+            await interaction.response.send_message(
+                f"Te uniste a **{lob.name}**. Entrá al canal {ch.mention} para jugar.",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(f"Te uniste a **{lob.name}**.", ephemeral=True)
+
         await update_panel(self.bot, interaction.guild, lob)
         await feed.update(interaction.guild)
 
@@ -183,30 +197,20 @@ class LobbyCog(commands.Cog):
         lob = manager.by_user(interaction.user.id)
         if not lob or lob.in_game:
             return await interaction.response.send_message("No estás en un lobby (o ya inició).", ephemeral=True)
-
         p = lob.players.get(interaction.user.id)
         if not p:
             return await interaction.response.send_message("No estás en este lobby.", ephemeral=True)
-        if p.is_bot_sim:
-            return await interaction.response.send_message("Los bots no necesitan estar listos.", ephemeral=True)
         if p.ready:
             return await interaction.response.send_message("Ya estabas listo.", ephemeral=True)
-
         p.ready = True
-
-        humans_total = sum(1 for x in lob.players.values() if not x.is_bot_sim)
-        humans_ready = sum(1 for x in lob.players.values() if not x.is_bot_sim and x.ready)
-
         await interaction.response.send_message("✅ Listo!", ephemeral=True)
-
         if interaction.guild and lob.channel_id:
             ch = interaction.guild.get_channel(lob.channel_id)
             if isinstance(ch, discord.TextChannel):
-                await ch.send(f"✔️ <@{interaction.user.id}> está listo (**{humans_ready}/{humans_total}** humanos).")
-
+                rc = sum(1 for x in lob.players.values() if x.ready)
+                await ch.send(f"✔️ <@{interaction.user.id}> está listo ({rc}/{len(lob.players)}).")
         if interaction.guild:
             await update_panel(self.bot, interaction.guild, lob)
-        # *** SIN AUTO-INICIO *** -> el host debe tocar "▶️ Comenzar"
 
     @app_commands.command(name="leave", description="Salir del lobby (tras 30s dentro)")
     async def leave(self, interaction: discord.Interaction):
@@ -238,7 +242,7 @@ class LobbyCog(commands.Cog):
     @app_commands.command(name="finalizar_lobby", description="(Host/Admin) Finalizar lobby si no empezó en 5 minutos")
     async def finalizar_lobby(self, interaction: discord.Interaction):
         if interaction.guild is None or not isinstance(interaction.user, discord.Member):
-            return await interaction.response.send_message("Usá esto en el servidor.", ephemeral=True)
+            return await interaction.response.send_message("Usá este comando en el servidor.", ephemeral=True)
         lob = manager.by_user(interaction.user.id)
         if not lob:
             return await interaction.response.send_message("No estás en un lobby.", ephemeral=True)
@@ -272,7 +276,6 @@ class LobbyCog(commands.Cog):
     async def on_ready(self):
         for g in self.bot.guilds:
             await feed.update(g)
-
 
 async def setup_lobby(bot: commands.Bot):
     await bot.add_cog(LobbyCog(bot))

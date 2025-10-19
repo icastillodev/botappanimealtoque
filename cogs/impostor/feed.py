@@ -18,7 +18,12 @@ class FeedBoard:
         if not isinstance(ch, discord.TextChannel):
             return
 
-        lobbies: List[Lobby] = manager.all_in_guild(guild.id)
+        # Filtrar lobbies NO en partida y que no estén marcados como ocultos
+        lobbies: List[Lobby] = [
+            lob for lob in manager.all_in_guild(guild.id)
+            if not getattr(lob, "_hidden", False)
+        ]
+
         open_lines, closed_lines = [], []
         for lob in lobbies:
             line = f"• **{lob.name}** — {lob.slots()} — {'abierto' if lob.is_open else 'cerrado'} — host: <@{lob.host_id}>"

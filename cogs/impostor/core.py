@@ -21,7 +21,7 @@ class Player:
     display: str
     joined_ts: int = field(default_factory=lambda: int(time.time()))
     ready: bool = False
-    is_bot_sim: bool = False   # << NUEVO
+    is_bot_sim: bool = False
 
 @dataclass
 class Lobby:
@@ -34,6 +34,7 @@ class Lobby:
     in_game: bool = False
     players: Dict[int, Player] = field(default_factory=dict)  # user_id -> Player
     dashboard_msg_id: Optional[int] = None
+
     def slots(self) -> str:
         return f"{len(self.players)}/{MAX_PLAYERS}"
 
@@ -64,6 +65,7 @@ class LobbyManager:
         return self._lobbies.get(key) if key else None
 
     def all_in_guild(self, guild_id: int) -> List[Lobby]:
+        # La cartelera usa esto; más abajo añadimos una bandera oculta para lobbies finalizados
         return [lob for (gid, _), lob in self._lobbies.items() if gid == guild_id and not lob.in_game]
 
     def register(self, lobby: Lobby):
@@ -79,26 +81,21 @@ class LobbyManager:
         return True
 
     def add_sim_bot(self, lobby: Lobby) -> int:
-        """Crea un bot simulado con un ID negativo y lo marca ready. Devuelve su user_id."""
         if len(lobby.players) >= MAX_PLAYERS:
             return 0
-        # ID negativo pseudo-único
         uid = -int(time.time() * 1000) % 1000000000
         while uid in lobby.players or uid in self._user_to_lobby:
             uid -= 1
         display = f"AAT-Bot#{sum(1 for p in lobby.players.values() if p.is_bot_sim) + 1}"
         lobby.players[uid] = Player(user_id=uid, display=display, ready=True, is_bot_sim=True)
-        # NO se agrega a _user_to_lobby porque no es un miembro real de Discord
         return uid
 
     def remove_user(self, guild_id: int, user_id: int) -> Optional[Lobby]:
         key = self._user_to_lobby.pop(user_id, None)
-        # Para bots sim, key puede ser None; buscamos en todos los lobbys de ese guild
         lob = None
         if key:
             lob = self._lobbies.get(key)
         else:
-            # buscar donde esté el user_id
             for (gid, _name), l in self._lobbies.items():
                 if gid == guild_id and user_id in l.players:
                     lob = l
@@ -123,6 +120,16 @@ class LobbyManager:
             return
         if len([p for p in lob.players.values() if not p.is_bot_sim]) == 0:
             self._lobbies.pop((guild_id, name), None)
+
+    # ---- NUEVO: liberar jugadores tras finalizar la partida ----
+    def release_players(self, lobby: Lobby):
+        """
+        Quita el mapping user->lobby para TODOS los humanos del lobby,
+        así pueden unirse a otro lobby aun si mantienen acceso de lectura al canal.
+        """
+        for uid, p in list(lobby.players.items()):
+            if not p.is_bot_sim:
+                self._user_to_lobby.pop(uid, None)
 
 # instancia global del manager
 manager = LobbyManager()
