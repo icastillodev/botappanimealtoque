@@ -5,11 +5,10 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import logging
-from typing import Optional, List, Set
-import asyncio 
+from typing import Optional, List, Set # <-- 1. 'Set' AÑADIDO
 
 from . import core
-from .engine import GameState, PHASE_END # <-- 1. MODIFICADO
+from .engine import GameState
 
 log = logging.getLogger(__name__)
 
@@ -23,10 +22,12 @@ def get_max_players() -> int:
     val = os.getenv("IMPOSTOR_MAX_PLAYERS", "5")
     return int(val)
 
+# --- 2. FUNCIÓN DE ADMIN AÑADIDA ---
 def get_admin_role_ids() -> Set[int]:
     """Función de utilidad para obtener roles admin (evita importación circular)."""
     ids_str = os.getenv("IMPOSTOR_ADMIN_ROLE_IDS", "")
     return {int(id.strip()) for id in ids_str.split(',') if id.strip()}
+# --- FIN DE FUNCIÓN AÑADIDA ---
 
 # ID del mensaje del feed que estamos editando
 _LAST_FEED_MESSAGE_ID: Optional[int] = None
@@ -40,18 +41,11 @@ async def _generate_feed_embed(bot: commands.Bot) -> discord.Embed:
     all_lobbies = core.get_all_lobbies()
     open_lobbies: List[GameState] = []
     closed_lobbies: List[GameState] = []
-    playing_lobbies: List[GameState] = []
+    playing_lobbies: List[GameState] = [] # <-- NUEVA LISTA
 
     for lobby in all_lobbies:
-        
-        # --- 2. AÑADIDO ---
-        # Ignorar partidas que ya han terminado y están esperando limpieza
-        if lobby.phase == PHASE_END:
-            continue
-        # --- FIN DE LA MODIFICACIÓN ---
-
         if lobby.in_progress:
-            playing_lobbies.append(lobby)
+            playing_lobbies.append(lobby) # <-- NUEVA LÓGICA
         elif lobby.is_open:
             open_lobbies.append(lobby)
         else:
@@ -93,7 +87,7 @@ async def _generate_feed_embed(bot: commands.Bot) -> discord.Embed:
             
     embed.add_field(name="🔒 Lobbys Cerrados", value=closed_field_value, inline=False)
     
-    # --- EN PARTIDA ---
+    # --- NUEVO CAMPO: EN PARTIDA ---
     playing_field_value = ""
     if not playing_lobbies:
         playing_field_value = "No hay partidas en curso."
@@ -106,6 +100,7 @@ async def _generate_feed_embed(bot: commands.Bot) -> discord.Embed:
             playing_field_value += line
             
     embed.add_field(name="🔴 En Partida", value=playing_field_value, inline=False)
+    # --- FIN NUEVO CAMPO ---
     
     embed.set_footer(text="Este panel se actualiza automáticamente.")
     return embed
@@ -150,6 +145,7 @@ async def update_feed(bot: commands.Bot):
                 _LAST_FEED_MESSAGE_ID = None # Forzar re-búsqueda
 
         # --- Estrategia 2: Buscar último mensaje del bot en el canal ---
+        # (Si _LAST_FEED_MESSAGE_ID es None o falló fetch_message)
         try:
             async for msg in channel.history(limit=50):
                 if msg.author.id == bot.user.id:
@@ -164,6 +160,7 @@ async def update_feed(bot: commands.Bot):
             log.exception(f"Error inesperado al buscar en el historial del feed: {e}")
             
         # --- Estrategia 3: Enviar mensaje nuevo ---
+        # (Si no se encontró ningún mensaje para editar)
         try:
             new_msg = await channel.send(embed=embed)
             _LAST_FEED_MESSAGE_ID = new_msg.id
@@ -216,6 +213,7 @@ class ImpostorFeedCog(commands.Cog, name="ImpostorFeed"):
                 ephemeral=True
             )
 
+    # --- 3. LISTENER DE MENSAJES AÑADIDO ---
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         feed_channel_id = get_feed_channel_id()
@@ -248,6 +246,7 @@ class ImpostorFeedCog(commands.Cog, name="ImpostorFeed"):
             log.warning(f"No tengo permisos para borrar mensajes en el canal de feed C:{message.channel.id}")
         except discord.NotFound:
             pass # El mensaje ya fue borrado
+    # --- FIN DEL LISTENER AÑADIDO ---
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(ImpostorFeedCog(bot))
