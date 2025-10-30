@@ -105,7 +105,7 @@ class PollDBManagerV4:
                 cursor.execute("""
                 INSERT INTO poll_options (message_id, label)
                 VALUES (?, ?)
-                """, (message_id, option_label))
+                """, (message_id, option_label.strip()))
             
             conn.commit()
 
@@ -198,13 +198,10 @@ class PollDBManagerV4:
             conn.commit()
             return cursor.rowcount > 0
 
-    # --- ¡¡¡NUEVA FUNCIÓN PARA AUTOCOMPLETAR!!! ---
     def get_active_polls_by_title(self, query: str) -> List[Dict[str, Any]]:
-        """Busca votaciones activas por título para el autocompletado."""
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            # Busca títulos que contengan el texto
             cursor.execute("""
                 SELECT message_id, title FROM polls
                 WHERE is_active = 1 AND title LIKE ?
@@ -212,3 +209,60 @@ class PollDBManagerV4:
                 LIMIT 25
             """, (f'%{query}%',))
             return [dict(row) for row in cursor.fetchall()]
+
+    def update_poll(self, message_id: int, title: str, description: Optional[str], 
+                    link_url: Optional[str], image_url: Optional[str]) -> bool:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE polls
+                SET title = ?, description = ?, link_url = ?, image_url = ?
+                WHERE message_id = ?
+            """, (title, description, link_url, image_url, message_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def add_poll_option(self, message_id: int, option_label: str) -> bool:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("""
+                    INSERT INTO poll_options (message_id, label)
+                    VALUES (?, ?)
+                """, (message_id, option_label.strip()))
+                conn.commit()
+                return True
+            except Exception:
+                return False
+
+    # --- ¡¡¡MODIFICADO!!! ---
+    def get_option_by_label_v2(self, message_id: int, option_label: str) -> Optional[Dict[str, Any]]:
+        """Busca una opción por su nombre, ignorando espacios al inicio/final."""
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            # Usamos TRIM para limpiar espacios EN LA DB y en el input
+            cursor.execute("""
+                SELECT * FROM poll_options
+                WHERE message_id = ? AND TRIM(label) = ?
+            """, (message_id, option_label.strip())) # .strip() por si acaso
+            return dict(cursor.fetchone()) if cursor.rowcount > 0 else None
+
+    def remove_poll_option(self, option_id: int) -> str:
+        """Borra una opción solo si no tiene votos."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT COUNT(vote_id) FROM poll_votes WHERE option_id = ?", (option_id,))
+            vote_count = cursor.fetchone()[0]
+            
+            if vote_count > 0:
+                return f"No se puede borrar, la opción tiene {vote_count} voto(s)."
+            
+            cursor.execute("DELETE FROM poll_options WHERE option_id = ?", (option_id,))
+            conn.commit()
+            
+            if cursor.rowcount > 0:
+                return "Opción borrada con éxito."
+            else:
+                return "Error: No se encontró la opción para borrar."
