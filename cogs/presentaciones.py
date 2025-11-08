@@ -129,9 +129,7 @@ class PresentacionesCog(commands.Cog):
         if message.author.bot or message.guild is None:
             return
 
-        # Easter-egg: "caca" -> "loco"
-        if "caca" in message.content.lower():
-            await message.channel.send("loco")
+
 
         # Solo operamos en el canal de presentaciones
         if not CHANNEL_ID_PRESENTACION or message.channel.id != CHANNEL_ID_PRESENTACION:
