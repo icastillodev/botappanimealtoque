@@ -8,18 +8,13 @@ import logging
 import logging.handlers
 import sys
 
-# --- Importamos Votacion (V5) ---
 from cogs.votacion.db_manager import PollDBManagerV5, DB_FILE as POLL_DB_FILE
 from cogs.votacion.poll_view import PollView
 
-# --- ¡Importamos Economia! ---
 from cogs.economia.db_manager import EconomiaDBManagerV2, DB_FILE as ECON_DB_FILE
 from cogs.economia.card_db_manager import CardDBManager, DB_FILE as CARD_DB_FILE
 
-# 2. Cargar .env PRIMERO
 load_dotenv()
-
-# 3. Configurar el Logging
 log_level = logging.DEBUG
 root_logger = logging.getLogger()
 root_logger.setLevel(log_level)
@@ -35,12 +30,10 @@ formatter = logging.Formatter(
 )
 console_handler.setFormatter(formatter)
 root_logger.addHandler(console_handler)
-
 log = logging.getLogger(__name__)
-# -----------------------------------------------------
+
 log.info("Logging configurado. Cargando variables de entorno...")
 
-# 4. Cargar Tokens y Roles
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
     log.critical("¡ERROR CRÍTICO! Falta DISCORD_TOKEN en .env")
@@ -56,7 +49,6 @@ else:
 
 log.info("Token de Discord encontrado.")
 
-# 5. Lista de Cogs
 INITIAL_EXTENSIONS = [
     "cogs.presentaciones",
     "cogs.impostor",
@@ -64,10 +56,10 @@ INITIAL_EXTENSIONS = [
     "cogs.votacion",
     "cogs.economia",
     "cogs.creador",
-    "cogs.reaction_limiter", # <--- ¡¡¡NUEVO COG AÑADIDO!!!
+    "cogs.reaction_limiter",
+    "cogs.check_tareas",  # <--- ¡¡¡NUEVO COG AÑADIDO!!!
 ]
 
-# --- (El resto del archivo main.py no cambia) ---
 def load_env_vars(log):
     log.info("Cargando IDs de configuración...")
     try:

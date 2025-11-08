@@ -7,12 +7,12 @@ import logging
 import datetime
 from typing import Literal
 
-from .db_manager import EconomiaDBManagerV2 # <--- MODIFICADO
+from .db_manager import EconomiaDBManagerV2
 
 class TareasCog(commands.Cog, name="Economia Tareas"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db: EconomiaDBManagerV2 = bot.economia_db # <--- MODIFICADO
+        self.db: EconomiaDBManagerV2 = bot.economia_db
         self.log = logging.getLogger(self.__class__.__name__)
         self.task_config = bot.task_config
         super().__init__()
@@ -25,11 +25,15 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
         await interaction.response.defer(ephemeral=True)
         user_id = interaction.user.id
         prog_ini = self.db.get_progress_inicial(user_id)
+        
         if prog_ini['completado'] == 1:
             embed = discord.Embed(title="Progreso: Tareas de Iniciación", description="✅ ¡Ya has completado todas las tareas de iniciación!", color=discord.Color.green())
             await interaction.followup.send(embed=embed, ephemeral=True)
             return
+
         embed_ini = discord.Embed(title="Progreso: Tareas de Iniciación", color=discord.Color.blue())
+        
+        # --- ¡¡¡MODIFICADO!!! ---
         desc_ini = (
             f"{self._check_task(prog_ini['presentacion'])} Escribir en `#presentacion`\n"
             f"{self._check_task(prog_ini['reaccion_pais'])} Reaccionar al post de 'País' (`#autorol`)\n"
@@ -38,6 +42,8 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
             f"{self._check_task(prog_ini['reaccion_reglas'])} Reaccionar en `#reglas`\n"
             f"{self._check_task(prog_ini['general_mensaje'])} Escribir 1 vez en `#general`\n\n"
             f"**Recompensa:** {self.task_config['rewards']['inicial']} Puntos + 3 Blisters.\n"
+            "--- \n" # <--- ¡AÑADIDO!
+            "**¿Ya habías hecho esto?** Usa `/aat_verificar_antiguas` para que el bot revise.\n" # <--- ¡AÑADIDO!
             "*Cuando completes todo, usa `/aat_reclamar inicial`.*"
         )
         embed_ini.description = desc_ini
@@ -88,6 +94,7 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
     async def reclamar(self, interaction: discord.Interaction, tipo: Literal["inicial", "diaria", "semanal"]):
         await interaction.response.defer(ephemeral=True)
         user_id = interaction.user.id
+
         if tipo == "inicial":
             prog = self.db.get_progress_inicial(user_id)
             if prog['completado'] == 1:
@@ -102,6 +109,7 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
                 await interaction.followup.send(embed=embed, ephemeral=True)
             else:
                 await interaction.followup.send("Aún no has completado todas las tareas de iniciación. Usa `/aat_progreso_iniciacion` para ver qué te falta.", ephemeral=True)
+        
         elif tipo == "diaria":
             prog = self.db.get_progress_diaria(user_id)
             if prog['completado'] == 1:
@@ -116,6 +124,7 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
                 await interaction.followup.send(embed=embed, ephemeral=True)
             else:
                 await interaction.followup.send("Aún no has completado todas las tareas diarias. Usa `/aat_progreso_diaria` para ver qué te falta.", ephemeral=True)
+
         elif tipo == "semanal":
             prog = self.db.get_progress_semanal(user_id)
             if prog['completado'] == 1:
