@@ -7,8 +7,8 @@ import logging
 import logging.handlers
 import sys
 
-# --- MODIFICADO: Importamos la CLASE V4 ---
-from cogs.votacion.db_manager import PollDBManagerV4, DB_FILE
+# --- MODIFICADO: Importamos la CLASE V5 ---
+from cogs.votacion.db_manager import PollDBManagerV5, DB_FILE
 from cogs.votacion.poll_view import PollView
 
 # 2. Cargar .env PRIMERO
@@ -72,9 +72,9 @@ class MiBot(commands.Bot):
         
         self.log = logging.getLogger(self.__class__.__name__)
 
-        # --- MODIFICADO: Instanciamos la CLASE V4 ---
-        self.log.info("Inicializando el manejador de base de datos (DBManagerV4)...")
-        self.db_manager = PollDBManagerV4(db_path=DB_FILE)
+        # --- MODIFICADO: Instanciamos la CLASE V5 ---
+        self.log.info("Inicializando el manejador de base de datos (DBManagerV5)...")
+        self.db_manager = PollDBManagerV5(db_path=DB_FILE)
         
         self.hokage_role_id = HOKAGE_ID
 
@@ -89,7 +89,6 @@ class MiBot(commands.Bot):
             options = full_poll.get('options')
 
             if options:
-                # Al reiniciar, también creamos la vista con los botones de admin
                 self.add_view(PollView(poll_options=options, db_manager=self.db_manager))
             else:
                 self.log.warning(f"No se pudieron cargar opciones para la votación {poll['message_id']}")

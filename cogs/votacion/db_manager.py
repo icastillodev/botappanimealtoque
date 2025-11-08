@@ -1,12 +1,13 @@
 # cogs/votacion/db_manager.py
 import sqlite3
 import datetime
+import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 DB_FILE = Path(__file__).parent / "votacion.db"
 
-class PollDBManagerV4:
+class PollDBManagerV5:
     def __init__(self, db_path: Path = DB_FILE):
         self.db_path = db_path
         self._create_tables()
@@ -108,7 +109,7 @@ class PollDBManagerV4:
                 """, (message_id, option_label.strip()))
             
             conn.commit()
-
+            
     def add_vote(self, message_id: int, user_id: int, option_id: int) -> bool:
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -132,12 +133,14 @@ class PollDBManagerV4:
             conn.commit()
             return cursor.rowcount > 0
 
+    # --- ¡¡¡LA FUNCIÓN QUE FALTABA!!! ---
     def get_user_votes_for_poll(self, message_id: int, user_id: int) -> List[int]:
+        """Obtiene las option_id por las que un usuario ya votó en esta encuesta."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-            SELECT option_id FROM poll_votes 
-            WHERE message_id = ? AND user_id = ?
+                SELECT option_id FROM poll_votes 
+                WHERE message_id = ? AND user_id = ?
             """, (message_id, user_id))
             return [row[0] for row in cursor.fetchall()]
 
@@ -146,7 +149,7 @@ class PollDBManagerV4:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            cursor.execute("SELECT * FROM polls WHERE message_id = ?", (message_id,))
+            cursor.execute("SELECT *, rowid as poll_id FROM polls WHERE message_id = ?", (message_id,))
             poll_row = cursor.fetchone()
             
             if not poll_row:
@@ -171,7 +174,7 @@ class PollDBManagerV4:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            cursor.execute("SELECT * FROM polls WHERE is_active = 1")
+            cursor.execute("SELECT *, rowid as poll_id FROM polls WHERE is_active = 1")
             polls = [dict(row) for row in cursor.fetchall()]
             
             for poll in polls:
@@ -203,7 +206,7 @@ class PollDBManagerV4:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT message_id, title FROM polls
+                SELECT message_id, title, rowid as poll_id FROM polls
                 WHERE is_active = 1 AND title LIKE ?
                 ORDER BY message_id DESC
                 LIMIT 25
@@ -235,21 +238,17 @@ class PollDBManagerV4:
             except Exception:
                 return False
 
-    # --- ¡¡¡MODIFICADO!!! ---
     def get_option_by_label_v2(self, message_id: int, option_label: str) -> Optional[Dict[str, Any]]:
-        """Busca una opción por su nombre, ignorando espacios al inicio/final."""
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            # Usamos TRIM para limpiar espacios EN LA DB y en el input
             cursor.execute("""
                 SELECT * FROM poll_options
                 WHERE message_id = ? AND TRIM(label) = ?
-            """, (message_id, option_label.strip())) # .strip() por si acaso
+            """, (message_id, option_label.strip()))
             return dict(cursor.fetchone()) if cursor.rowcount > 0 else None
 
     def remove_poll_option(self, option_id: int) -> str:
-        """Borra una opción solo si no tiene votos."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             
@@ -266,3 +265,42 @@ class PollDBManagerV4:
                 return "Opción borrada con éxito."
             else:
                 return "Error: No se encontró la opción para borrar."
+
+    def get_all_votes_for_poll(self, message_id: int) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT v.user_id, o.label
+                FROM poll_votes v
+                JOIN poll_options o ON v.option_id = o.option_id
+                WHERE v.message_id = ?
+                ORDER BY o.label, v.user_id
+            """, (message_id,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_expired_polls(self, current_timestamp: int) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM polls
+                WHERE is_active = 1 
+                  AND end_timestamp IS NOT NULL
+                  AND end_timestamp < ?
+            """, (current_timestamp,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_active_polls_by_creator_and_title(self, creator_id: int, query: str) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT message_id, title, rowid as poll_id FROM polls
+                WHERE is_active = 1 
+                  AND creator_id = ?
+                  AND title LIKE ?
+                ORDER BY message_id DESC
+                LIMIT 25
+            """, (creator_id, f'%{query}%',))
+            return [dict(row) for row in cursor.fetchall()]

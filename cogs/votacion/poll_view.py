@@ -2,9 +2,10 @@
 import discord
 from discord.ext import commands
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
+import datetime
 
 if TYPE_CHECKING:
-    from .db_manager import PollDBManagerV4
+    from .db_manager import PollDBManagerV5
 
 # --- El Embed (Helper) ---
 def create_poll_embed(
@@ -14,23 +15,23 @@ def create_poll_embed(
     """Genera un embed de Discord a partir de los datos de la votación."""
     
     title = poll_data.get('title', 'Votación')
-    # --- ¡¡¡AQUÍ ESTÁ EL ARREGLO!!! ---
-    # Si get('description') devuelve None, usamos el texto por defecto.
     description = poll_data.get('description') or "Vota usando los botones."
+    poll_id = poll_data.get('poll_id')
+    if poll_id:
+        description = f"**ID de Votación: #{poll_id}**\n{description}"
     
     is_active = poll_data.get('is_active', True)
     
     if is_active:
         embed = discord.Embed(
             title=f"🗳️ Votación: {title}",
-            description=description, # Ahora 'description' NUNCA es None
+            description=description,
             color=discord.Color.blue()
         )
     else:
-        # Votación cerrada
         embed = discord.Embed(
             title=f"VOTACIÓN CERRADA: {title}",
-            description=description, # Ahora 'description' NUNCA es None
+            description=description,
             color=discord.Color.red()
         )
 
@@ -38,7 +39,12 @@ def create_poll_embed(
         embed.description += f"\n\n[Referencia]({poll_data['link_url']})"
     
     if poll_data.get('image_url'):
-        embed.set_image(url=poll_data['image_url'])
+        embed.set_image(url=poll_data.get('image_url'))
+
+    end_timestamp = poll_data.get('end_timestamp')
+    if is_active and end_timestamp:
+        end_time_str = discord.utils.format_dt(datetime.datetime.fromtimestamp(end_timestamp), style='R')
+        embed.description += f"\n\n*Esta votación finaliza {end_time_str}.*"
 
     options = poll_data.get('options', [])
     total_votes = sum(opt.get('vote_count', 0) for opt in options)
@@ -121,7 +127,6 @@ def create_poll_embed(
             elif display_format == 'porcentaje':
                 winner_text += f"\nCON EL {percentage:.1f}% DE LOS VOTOS"
         
-        # Ahora esto es seguro porque 'embed.description' es un string
         embed.description += f"\n\n---\n**{winner_text}**"
 
     return embed
@@ -139,7 +144,7 @@ class PollButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         view: PollView = self.view
-        db: "PollDBManagerV4" = view.db_manager
+        db: "PollDBManagerV5" = view.db_manager
         
         message_id = interaction.message.id
         user_id = interaction.user.id
@@ -154,11 +159,9 @@ class PollButton(discord.ui.Button):
         
         if self.option_id in user_votes:
             db.remove_vote(message_id, user_id, self.option_id)
-            await interaction.response.send_message(f"Has quitado tu voto para '{self.label}'.", ephemeral=True)
         
         elif len(user_votes) < limite_votos: 
             db.add_vote(message_id, user_id, self.option_id)
-            await interaction.response.send_message(f"Has votado por '{self.label}'.", ephemeral=True)
         
         else:
             await interaction.response.send_message(
@@ -167,30 +170,53 @@ class PollButton(discord.ui.Button):
             )
             return
 
-        user_votes = db.get_user_votes_for_poll(message_id, user_id)
         updated_poll_data = db.get_poll_data(message_id)
         
-        for item in view.children:
-            if isinstance(item, PollButton):
-                item.style = discord.ButtonStyle.green if item.option_id in user_votes else discord.ButtonStyle.secondary
-        
+        # --- ¡¡¡AQUÍ ESTÁ EL ARREGLO!!! ---
+        # 1. Definimos las variables *fuera* de la clase anidada
         author = None
         if interaction.message.embeds and interaction.message.embeds[0].footer:
             footer_text = interaction.message.embeds[0].footer.text
             footer_icon_url = interaction.message.embeds[0].footer.icon_url
+            
+            # 2. La clase ahora usa esas variables que sí están en su scope
             if footer_text.startswith("Votación creada por "):
                 class FakeAuthor:
                     display_name = footer_text.replace("Votación creada por ", "")
                     display_avatar = footer_icon_url
                 author = FakeAuthor()
         
-        new_embed = create_poll_embed(updated_poll_data, author=author)
-        await interaction.message.edit(embed=new_embed, view=view)
+        new_public_embed = create_poll_embed(updated_poll_data, author=author)
+        await interaction.message.edit(embed=new_public_embed)
+
+        # --- Respuesta privada de confirmación ---
+        user_votes_final: List[int] = db.get_user_votes_for_poll(message_id, user_id)
+        
+        private_embed = discord.Embed(
+            title="🗳️ Votación Actualizada",
+            color=discord.Color.green()
+        )
+        private_embed.description = f"Tus votos para \"{poll_data['title']}\":\n\n"
+        
+        voted_options_labels = []
+        if poll_data.get('options'):
+            for option in poll_data['options']:
+                if option['option_id'] in user_votes_final:
+                    private_embed.description += f"✅ {option['label']}\n"
+                    voted_options_labels.append(option['label'])
+
+        if not voted_options_labels:
+            private_embed.description += "*(No has votado por ninguna opción)*\n"
+            
+        votos_restantes = limite_votos - len(voted_options_labels)
+        private_embed.set_footer(text=f"Te quedan {votos_restantes} voto(s) disponible(s).")
+
+        await interaction.response.send_message(embed=private_embed, ephemeral=True)
 
 
 # --- La Vista Persistente (Madre) ---
 class PollView(discord.ui.View):
-    def __init__(self, poll_options: Optional[List[Dict[str, Any]]], db_manager: "PollDBManagerV4"):
+    def __init__(self, poll_options: Optional[List[Dict[str, Any]]], db_manager: "PollDBManagerV5"):
         super().__init__(timeout=None)
         self.db_manager = db_manager 
         
