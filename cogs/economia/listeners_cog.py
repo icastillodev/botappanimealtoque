@@ -4,18 +4,24 @@ from discord.ext import commands
 import datetime
 import logging
 
-from .db_manager import EconomiaDBManagerV2 # <--- MODIFICADO
+from .db_manager import EconomiaDBManagerV2
 
 class EconomiaListenersCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db: EconomiaDBManagerV2 = bot.economia_db # <--- MODIFICADO
+        self.db: EconomiaDBManagerV2 = bot.economia_db
         self.config = bot.task_config
         self.log = logging.getLogger(self.__class__.__name__)
         self.log.info("Cog de Listeners de Economía cargado.")
 
     def cog_unload(self):
         self.log.info("EconomiaListenersCog descargado.")
+
+    def _get_current_date_keys(self) -> (str, str):
+        now = datetime.datetime.now()
+        fecha = now.strftime("%Y-%m-%d")
+        semana = now.strftime("%Y-%U")
+        return fecha, semana
 
     def _get_channel_id(self, name: str) -> int:
         return self.config.get("channels", {}).get(name, 0)
@@ -31,16 +37,18 @@ class EconomiaListenersCog(commands.Cog):
         channel_id = message.channel.id
         
         if not hasattr(self, 'db'): return
-
-        fecha, semana = self.db.get_current_date_keys()
+        fecha, semana = self._get_current_date_keys()
 
         if channel_id == self._get_channel_id("presentacion"):
             self.db.update_task_inicial(user_id, "presentacion")
         if channel_id == self._get_channel_id("general"):
             self.db.update_task_inicial(user_id, "general_mensaje")
             self.db.update_task_diaria(user_id, "general_mensajes", fecha, 1)
+        
+        # --- MODIFICADO: Ya no actualiza 'debate_actividad' aquí ---
         if channel_id in [self._get_channel_id("anime_debate"), self._get_channel_id("manga_debate")]:
-            self.db.update_task_diaria(user_id, "debate_actividad", fecha, 1)
+            pass # (La tarea diaria fue removida)
+
         if channel_id in [self._get_channel_id("fanarts"), self._get_channel_id("cosplays"), self._get_channel_id("memes")]:
             self.db.update_task_diaria(user_id, "media_actividad", fecha, 1)
             self.db.update_task_semanal(user_id, "media_escrito", semana, 1)
@@ -54,7 +62,7 @@ class EconomiaListenersCog(commands.Cog):
         user_id = payload.user_id
         channel_id = payload.channel_id
         message_id = payload.message_id
-        fecha, semana = self.db.get_current_date_keys()
+        fecha, semana = self._get_current_date_keys()
 
         if channel_id == self._get_channel_id("autorol"):
             if message_id == self._get_message_id("pais"):
@@ -65,8 +73,11 @@ class EconomiaListenersCog(commands.Cog):
             self.db.update_task_inicial(user_id, "reaccion_social")
         if channel_id == self._get_channel_id("reglas"):
             self.db.update_task_inicial(user_id, "reaccion_reglas")
+            
+        # --- MODIFICADO: Ya no actualiza 'debate_actividad' aquí ---
         if channel_id in [self._get_channel_id("anime_debate"), self._get_channel_id("manga_debate")]:
-            self.db.update_task_diaria(user_id, "debate_actividad", fecha, 1)
+            pass # (La tarea diaria fue removida)
+            
         if channel_id in [self._get_channel_id("fanarts"), self._get_channel_id("cosplays"), self._get_channel_id("memes")]:
             self.db.update_task_diaria(user_id, "media_actividad", fecha, 1)
         if channel_id == self._get_channel_id("videos"):
@@ -80,9 +91,11 @@ class EconomiaListenersCog(commands.Cog):
             
         user_id = thread.owner_id
         channel_id = thread.parent_id
-        fecha, semana = self.db.get_current_date_keys()
+        fecha, semana = self._get_current_date_keys()
+        
+        # --- MODIFICADO: Ya no actualiza 'debate_actividad' aquí ---
+        # (Pero mantiene la tarea semanal 'debate_post')
         if channel_id in [self._get_channel_id("anime_debate"), self._get_channel_id("manga_debate")]:
-            self.db.update_task_diaria(user_id, "debate_actividad", fecha, 1)
             self.db.update_task_semanal(user_id, "debate_post", semana, 1)
 
 async def setup(bot):

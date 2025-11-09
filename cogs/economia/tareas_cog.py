@@ -25,15 +25,11 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
         await interaction.response.defer(ephemeral=True)
         user_id = interaction.user.id
         prog_ini = self.db.get_progress_inicial(user_id)
-        
         if prog_ini['completado'] == 1:
             embed = discord.Embed(title="Progreso: Tareas de Iniciación", description="✅ ¡Ya has completado todas las tareas de iniciación!", color=discord.Color.green())
             await interaction.followup.send(embed=embed, ephemeral=True)
             return
-
         embed_ini = discord.Embed(title="Progreso: Tareas de Iniciación", color=discord.Color.blue())
-        
-        # --- ¡¡¡MODIFICADO!!! ---
         desc_ini = (
             f"{self._check_task(prog_ini['presentacion'])} Escribir en `#presentacion`\n"
             f"{self._check_task(prog_ini['reaccion_pais'])} Reaccionar al post de 'País' (`#autorol`)\n"
@@ -42,8 +38,6 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
             f"{self._check_task(prog_ini['reaccion_reglas'])} Reaccionar en `#reglas`\n"
             f"{self._check_task(prog_ini['general_mensaje'])} Escribir 1 vez en `#general`\n\n"
             f"**Recompensa:** {self.task_config['rewards']['inicial']} Puntos + 3 Blisters.\n"
-            "--- \n" # <--- ¡AÑADIDO!
-            "**¿Ya habías hecho esto?** Usa `/aat_verificar_antiguas` para que el bot revise.\n" # <--- ¡AÑADIDO!
             "*Cuando completes todo, usa `/aat_reclamar inicial`.*"
         )
         embed_ini.description = desc_ini
@@ -56,10 +50,12 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
         fecha, _ = self.db.get_current_date_keys()
         prog_dia = self.db.get_progress_diaria(user_id)
         embed_dia = discord.Embed(title=f"Progreso: Tareas Diarias ({fecha})", color=discord.Color.orange())
+        
+        # --- ¡¡¡MODIFICADO!!! ---
         check_general = self._check_task(prog_dia['general_mensajes'], 5)
         desc_dia = (
             f"{check_general} Escribir 5 mensajes en `#general` (Llevas {prog_dia['general_mensajes']}/5)\n"
-            f"{self._check_task(prog_dia['debate_actividad'])} Participar (escribir/reaccionar/crear) en Foros de Debate\n"
+            # (Línea de debate eliminada)
             f"{self._check_task(prog_dia['media_actividad'])} Participar (escribir/reaccionar) en canales de Media (Fanarts, etc)\n\n"
         )
         if prog_dia['completado'] == 1:
@@ -115,12 +111,19 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
             if prog['completado'] == 1:
                 await interaction.followup.send("Ya has reclamado la recompensa diaria de hoy.", ephemeral=True)
                 return
-            if (prog['general_mensajes'] >= 5 and prog['debate_actividad'] >= 1 and prog['media_actividad'] >= 1):
+            
+            # --- ¡¡¡MODIFICADO!!! ---
+            # Eliminada la comprobación de 'debate_actividad'
+            if (prog['general_mensajes'] >= 5 and 
+                prog['media_actividad'] >= 1):
+                
                 recompensa = self.task_config['rewards']['diaria']
                 self.db.modify_points(user_id, recompensa)
                 self.db.modify_blisters(user_id, "trampa", 1)
                 self.db.claim_reward(user_id, "diaria")
-                embed = discord.Embed(title="✅ ¡Tareas Diarias Completadas!", description=f"¡Buen trabajo!\n\nRecibiste:\n• **{recompensa} Puntos** 🪙\n• **1 Blister de Cartas Trampa** 🃏", color=discord.Color.green())
+                embed = discord.Embed(title="✅ ¡Tareas Diarias Completadas!",
+                                      description=f"¡Buen trabajo!\n\nRecibiste:\n• **{recompensa} Puntos** 🪙\n• **1 Blister de Cartas Trampa** 🃏",
+                                      color=discord.Color.green())
                 await interaction.followup.send(embed=embed, ephemeral=True)
             else:
                 await interaction.followup.send("Aún no has completado todas las tareas diarias. Usa `/aat_progreso_diaria` para ver qué te falta.", ephemeral=True)
@@ -130,12 +133,17 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
             if prog['completado'] == 1:
                 await interaction.followup.send("Ya has reclamado la recompensa de esta semana.", ephemeral=True)
                 return
-            if (prog['debate_post'] >= 1 and prog['videos_reaccion'] >= 1 and prog['media_escrito'] >= 1):
+            if (prog['debate_post'] >= 1 and 
+                prog['videos_reaccion'] >= 1 and 
+                prog['media_escrito'] >= 1):
+                
                 recompensa = self.task_config['rewards']['semanal']
                 self.db.modify_points(user_id, recompensa)
                 self.db.modify_blisters(user_id, "trampa", 1)
                 self.db.claim_reward(user_id, "semanal")
-                embed = discord.Embed(title="📅 ¡Tareas Semanales Completadas!", description=f"¡Excelente trabajo esta semana!\n\nRecibiste:\n• **{recompensa} Puntos** 🪙\n• **1 Blister de Cartas Trampa** 🃏", color=discord.Color.gold())
+                embed = discord.Embed(title="📅 ¡Tareas Semanales Completadas!",
+                                      description=f"¡Excelente trabajo esta semana!\n\nRecibiste:\n• **{recompensa} Puntos** 🪙\n• **1 Blister de Cartas Trampa** 🃏",
+                                      color=discord.Color.gold())
                 await interaction.followup.send(embed=embed, ephemeral=True)
             else:
                 await interaction.followup.send("Aún no has completado todas las tareas semanales. Usa `/aat_progreso_semanal` para ver qué te falta.", ephemeral=True)
