@@ -101,11 +101,24 @@ class CardDBManager:
             row = cursor.fetchone()
             return dict(row) if row else None
 
-    # --- ¡¡¡NUEVA FUNCIÓN!!! ---
     def get_all_cards_stock(self) -> List[Dict[str, Any]]:
-        """Obtiene TODAS las cartas del stock."""
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM cartas_stock ORDER BY numeracion")
+            # Esta ya ordenaba por 'numeracion', ¡está perfecta!
+            cursor.execute("SELECT * FROM cartas_stock ORDER BY numeracion ASC")
+            return [dict(row) for row in cursor.fetchall()]
+
+    # --- ¡¡¡MODIFICADO!!! ---
+    def get_stock_by_type(self, tipo_carta: str) -> List[Dict[str, Any]]:
+        """Obtiene todas las cartas de un tipo, ordenadas por numeración."""
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            # Cambiado el 'ORDER BY' para que priorice la 'numeracion'
+            cursor.execute("""
+                SELECT nombre, rareza, numeracion, tipo_carta FROM cartas_stock
+                WHERE tipo_carta = ?
+                ORDER BY numeracion ASC
+            """, (tipo_carta.capitalize(),))
             return [dict(row) for row in cursor.fetchall()]

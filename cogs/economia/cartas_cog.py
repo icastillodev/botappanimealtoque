@@ -11,6 +11,73 @@ from .card_db_manager import CardDBManager
 
 TipoBlister = Literal["trampa"] 
 CantidadBlister = Literal["1", "5", "todos"]
+# --- MODIFICADO: "Todas" es ahora una opción y es la por defecto ---
+TipoCartaCatalogo = Literal["Todas", "Trampa", "Hechizo", "Monstruo", "Especial"]
+
+# --- VISTA DE PAGINACIÓN PARA EL CATÁLOGO PÚBLICO ---
+class StockCatalogView(discord.ui.View):
+    def __init__(self, author_id: int, all_cards: List[Dict[str, Any]], title: str):
+        super().__init__(timeout=300)
+        self.author_id = author_id
+        self.all_cards = all_cards
+        self.title = title
+        self.current_page = 0
+        self.cards_per_page = 15
+        self.max_pages = (len(all_cards) + self.cards_per_page - 1) // self.cards_per_page
+        
+        self._update_buttons()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("No puedes usar este paginador. Usa `/aat_catalogo` para ver el tuyo.", ephemeral=True)
+            return False
+        return True
+
+    def get_page_embed(self) -> discord.Embed:
+        """Crea el embed para la página actual."""
+        start_index = self.current_page * self.cards_per_page
+        end_index = start_index + self.cards_per_page
+        cards_on_page = self.all_cards[start_index:end_index]
+        
+        embed = discord.Embed(
+            title=self.title,
+            color=discord.Color.blue()
+        )
+        
+        desc = ""
+        
+        # --- MODIFICADO: Formato de "Tabla" ---
+        for card in cards_on_page:
+            # Formato: • (AAT-001) Tornado Polvo (Común | Trampa)
+            desc += f"• (`{card['numeracion']}`) **{card['nombre']}** ({card['rareza']} | {card['tipo_carta']})\n"
+            
+        embed.description = desc
+        embed.set_footer(text=f"Página {self.current_page + 1} / {self.max_pages} ({len(self.all_cards)} cartas en total)")
+        return embed
+
+    def _update_buttons(self):
+        previous_button = self.children[0]
+        next_button = self.children[1]
+        if isinstance(previous_button, discord.ui.Button):
+            previous_button.disabled = (self.current_page == 0)
+        if isinstance(next_button, discord.ui.Button):
+            next_button.disabled = (self.current_page >= self.max_pages - 1)
+
+    @discord.ui.button(label="Anterior", style=discord.ButtonStyle.secondary, emoji="⬅️")
+    async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current_page -= 1
+        self._update_buttons()
+        embed = self.get_page_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Siguiente", style=discord.ButtonStyle.primary, emoji="➡️")
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current_page += 1
+        self._update_buttons()
+        embed = self.get_page_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+# --- FIN DE LA VISTA DE PAGINACIÓN ---
+
 
 class CartasCog(commands.Cog, name="Economia Cartas"):
     def __init__(self, bot: commands.Bot):
@@ -20,9 +87,8 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
         self.log = logging.getLogger(self.__class__.__name__)
         super().__init__()
 
-    # --- Autocompletados ---
+    # --- Autocompletados (Sin cambios) ---
     async def blister_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
-        """Autocompletado para los blisters que posee el usuario."""
         blisters = self.economia_db.get_blisters_for_user(interaction.user.id)
         return [
             app_commands.Choice(name=f"{b['blister_tipo'].capitalize()} (Tienes: {b['cantidad']})", value=b['blister_tipo'])
@@ -30,36 +96,26 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
         ]
         
     async def card_inventory_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
-        """Autocompletado para las cartas que posee el usuario."""
         cartas_raw = self.economia_db.get_cards_in_inventory(interaction.user.id)
         choices = []
         for c in cartas_raw:
             carta_stock = self.card_db.get_carta_stock_by_id(c['carta_id'])
             if not carta_stock: continue
-            
             carta_id_str = str(c['carta_id'])
-            # --- MODIFICADO: Muestra el ID de la carta primero ---
-            # Formato: "x3 | #1: Tornado Polvo (AAT-001)"
             name = f"x{c['cantidad']} | #{carta_id_str}: {carta_stock['nombre']} ({carta_stock['numeracion']})"
             if len(name) > 100: name = name[:97] + "..."
-            
-            # El valor que se envía es el ID de la carta (como string)
             if (current.lower() in carta_stock['nombre'].lower() or 
                 current.lower() in carta_stock['numeracion'].lower() or
-                current == carta_id_str): # Permite buscar por el ID exacto
+                current == carta_id_str):
                 choices.append(app_commands.Choice(name=name, value=carta_id_str))
         return choices[:25]
 
-    # --- Comandos ---
+    # --- Comandos (Sin cambios hasta el catálogo) ---
     @app_commands.command(name="aat_puntos", description="Muestra cuántos puntos tienes.")
     async def mis_puntos(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         user_data = self.economia_db.get_user_economy(interaction.user.id)
-        embed = discord.Embed(
-            title=f"🪙 Puntos de {interaction.user.display_name}",
-            description=f"Tienes **{user_data['puntos_actuales']}** puntos para gastar.",
-            color=discord.Color.gold()
-        )
+        embed = discord.Embed(title=f"🪙 Puntos de {interaction.user.display_name}", description=f"Tienes **{user_data['puntos_actuales']}** puntos para gastar.", color=discord.Color.gold())
         embed.add_field(name="Total Conseguido", value=f"{user_data['puntos_conseguidos']}", inline=True)
         embed.add_field(name="Total Gastado", value=f"{user_data['puntos_gastados']}", inline=True)
         await interaction.followup.send(embed=embed, ephemeral=True)
@@ -138,7 +194,6 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
         for carta_data in cartas_inv:
             carta_stock = self.card_db.get_carta_stock_by_id(carta_data['carta_id'])
             if carta_stock:
-                # --- MODIFICADO: Muestra la ID de la carta ---
                 desc += f"• **ID: {carta_stock['carta_id']}** | {carta_stock['nombre']} (`{carta_stock['numeracion']}`) - {carta_stock['rareza']} (x{carta_data['cantidad']})\n"
         if not desc:
              embed.description = "Tus cartas parecen no existir en el stock. Contacta a un admin."
@@ -191,7 +246,6 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
             except Exception as e:
                 self.log.warning(f"No se pudo silenciar a {usuario_objetivo.name}: {e}")
 
-    # --- ¡¡¡NUEVO COMANDO (RENOMBRADO)!!! ---
     @app_commands.command(name="aat_vermicarta", description="Muestra el detalle de una carta que posees.")
     @app_commands.autocomplete(carta_id=card_inventory_autocomplete)
     @app_commands.describe(carta_id="La carta de tu inventario que quieres ver (puedes usar el ID o el nombre).")
@@ -200,20 +254,14 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
         if not carta_id.isdigit():
             await interaction.followup.send("ID de carta inválido. Debes usar el autocompletado y seleccionar una carta.", ephemeral=True)
             return
-            
-        # 1. Comprobar si el usuario tiene la carta
         carta_inv = self.economia_db.get_card_from_inventory(interaction.user.id, int(carta_id))
         if not carta_inv:
             await interaction.followup.send("No tienes esa carta en tu inventario.", ephemeral=True)
             return
-
-        # 2. Obtener los datos de la carta del stock
         carta = self.card_db.get_carta_stock_by_id(int(carta_id))
         if not carta:
             await interaction.followup.send("Error: Esa carta existe en tu inventario pero no en el stock. Contacta a un admin.", ephemeral=True)
             return
-
-        # 3. Mostrar el embed
         embed = discord.Embed(title=f"Carta: {carta['nombre']} (Tienes x{carta_inv['cantidad']})", description=f"*{carta['descripcion']}*", color=discord.Color.dark_purple())
         if carta.get('url_imagen'):
             embed.set_image(url=carta['url_imagen'])
@@ -221,8 +269,31 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
         embed.add_field(name="Rareza", value=carta['rareza'], inline=True)
         embed.add_field(name="Tipo", value=carta['tipo_carta'], inline=True)
         embed.add_field(name="Numeración", value=carta['numeracion'], inline=True)
-        
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+    # --- ¡¡¡COMANDO MODIFICADO!!! ---
+    @app_commands.command(name="aat_catalogo", description="Muestra todas las cartas que existen en el juego.")
+    @app_commands.describe(tipo="El tipo de cartas que quieres ver (default: Todas).")
+    async def catalogo(self, interaction: discord.Interaction, tipo: TipoCartaCatalogo = "Todas"):
+        await interaction.response.defer(ephemeral=True) # Es un comando público, pero la respuesta es efímera
+        
+        all_cards = []
+        title = ""
+        
+        if tipo == "Todas":
+            all_cards = self.card_db.get_all_cards_stock()
+            title = "Catálogo Global de Cartas"
+        else:
+            all_cards = self.card_db.get_stock_by_type(tipo)
+            title = f"Catálogo de Cartas: {tipo}"
+        
+        if not all_cards:
+            await interaction.followup.send(f"No hay cartas de tipo '{tipo}' en el stock.", ephemeral=True)
+            return
+            
+        view = StockCatalogView(interaction.user.id, all_cards, title)
+        embed = view.get_page_embed()
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(CartasCog(bot))

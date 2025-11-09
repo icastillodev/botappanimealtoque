@@ -23,14 +23,11 @@ class EconomiaHelpView(discord.ui.View):
         embed = discord.Embed(title="Ayuda de Economía 🪙 (Página 1/4)", color=discord.Color.blue())
         embed.description = "¡Bienvenido al sistema de economía y cartas del servidor!"
         embed.add_field(name="¿Qué es esto?", value="Gana Puntos y Blisters completando tareas...", inline=False)
-        
-        # --- ¡¡¡MODIFICADO!!! ---
         embed.add_field(name="Tareas (Comandos)", value=(
             "`/aat_progreso_iniciacion` - Muestra tus misiones de bienvenida.\n"
             "`/aat_progreso_diaria` - Muestra tus misiones diarias.\n"
             "`/aat_progreso_semanal` - Muestra tus misiones semanales.\n"
-            "`/aat_reclamar [tipo]` - Reclama tus recompensas.\n"
-            "`/aat_verificar_antiguas` - **(Nuevos usuarios)** ¡Usa este comando 1 vez para escanear tus tareas de iniciación pasadas!"
+            "`/aat_reclamar [tipo]` - Reclama tus recompensas (inicial, diaria, semanal)."
         ), inline=False)
         embed.set_footer(text="Usa los botones para navegar.")
         return embed
@@ -42,6 +39,7 @@ class EconomiaHelpView(discord.ui.View):
         embed.add_field(name="`/aat_abrirblister`", value="¡Abre los blisters que ganaste! Cada uno da 3 cartas aleatorias.", inline=False)
         embed.add_field(name="`/aat_miscartas`", value="Muestra tu colección de cartas (verás el ID de cada carta).", inline=False)
         embed.add_field(name="`/aat_vermicarta`", value="Inspecciona una carta de tu inventario (usa el ID o el nombre).", inline=False)
+        embed.add_field(name="`/aat_catalogo`", value="Muestra todas las cartas que existen en el juego (o filtra por tipo).", inline=False) # <--- ¡MODIFICADO!
         return embed
         
     def _create_page_3(self) -> discord.Embed:
