@@ -8,9 +8,11 @@ import logging
 import logging.handlers
 import sys
 
+# --- Importamos Votacion (V5) ---
 from cogs.votacion.db_manager import PollDBManagerV5, DB_FILE as POLL_DB_FILE
 from cogs.votacion.poll_view import PollView
 
+# --- Importamos Economia (V2) y Cartas ---
 from cogs.economia.db_manager import EconomiaDBManagerV2, DB_FILE as ECON_DB_FILE
 from cogs.economia.card_db_manager import CardDBManager, DB_FILE as CARD_DB_FILE
 
@@ -58,7 +60,8 @@ INITIAL_EXTENSIONS = [
     "cogs.creador",
     "cogs.reaction_limiter",
     "cogs.check_tareas",
-    "cogs.comandos_prefijo", 
+    "cogs.comandos_prefijo",
+    "cogs.channel_enforcer",
 ]
 
 def load_env_vars(log):
@@ -121,9 +124,11 @@ class MiBot(commands.Bot):
         
         self.log = logging.getLogger(self.__class__.__name__)
 
+        # --- DB Votacion (ESTO ARREGLA EL ERROR DE LA IMAGEN) ---
         self.log.info("Inicializando el manejador de base de datos (DBManagerV5)...")
         self.db_manager = PollDBManagerV5(db_path=POLL_DB_FILE)
         
+        # --- DB Economia ---
         self.log.info("Inicializando el manejador de base de datos (EconomiaDBManagerV2)...")
         self.economia_db = EconomiaDBManagerV2(db_path=ECON_DB_FILE)
         
