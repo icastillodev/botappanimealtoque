@@ -38,7 +38,7 @@ class CardDBManager:
                 cursor.execute("""
                     INSERT INTO cartas_stock (nombre, descripcion, efecto, url_imagen, rareza, tipo_carta, numeracion)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (nombre, descripcion, efecto, url_imagen, rareza, tipo_carta, numeracion))
+                """, (nombre, descripcion, efecto, url_imagen, rareza.capitalize(), tipo_carta.capitalize(), numeracion))
                 conn.commit()
                 return True
             except sqlite3.IntegrityError:
@@ -52,7 +52,7 @@ class CardDBManager:
                     UPDATE cartas_stock SET
                     nombre = ?, descripcion = ?, efecto = ?, url_imagen = ?, rareza = ?, tipo_carta = ?, numeracion = ?
                     WHERE carta_id = ?
-                """, (nombre, descripcion, efecto, url_imagen, rareza, tipo_carta, numeracion, carta_id))
+                """, (nombre, descripcion, efecto, url_imagen, rareza.capitalize(), tipo_carta.capitalize(), numeracion, carta_id))
                 conn.commit()
                 return True
             except sqlite3.IntegrityError:
@@ -85,40 +85,61 @@ class CardDBManager:
             row = cursor.fetchone()
             return dict(row) if row else None
             
-    def get_random_card_by_rarity(self, tipo_carta: str) -> Optional[Dict[str, Any]]:
+    # --- LÓGICA DE GACHA CORREGIDA ---
+    # Ya no pedimos 'tipo_carta', ahora da cualquiera según la rareza
+    def get_random_card_by_rarity(self) -> Optional[Dict[str, Any]]:
+        """
+        Obtiene una carta aleatoria de CUALQUIER tipo.
+        Probabilidades: 70% Común, 25% Rara, 5% Legendaria.
+        """
         roll = random.randint(1, 100)
-        if roll <= 70: rareza = "Común"
-        elif roll <= 95: rareza = "Rara"
-        else: rareza = "Legendaria"
+        
+        if roll <= 70: 
+            rareza = "Común"
+        elif roll <= 95: 
+            rareza = "Rara"
+        else: 
+            rareza = "Legendaria"
+            
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+            
+            # Seleccionamos CUALQUIER carta que coincida con la rareza
             cursor.execute("""
                 SELECT * FROM cartas_stock
-                WHERE rareza = ? AND tipo_carta = ?
+                WHERE rareza = ?
                 ORDER BY RANDOM() LIMIT 1
-            """, (rareza, tipo_carta.capitalize()))
+            """, (rareza,))
+            
             row = cursor.fetchone()
+            
+            # Fallback: Si salió Legendaria pero no hay ninguna creada,
+            # intenta devolver una Común para no dar error.
+            if not row and rareza != "Común":
+                 cursor.execute("""
+                    SELECT * FROM cartas_stock
+                    WHERE rareza = 'Común'
+                    ORDER BY RANDOM() LIMIT 1
+                """)
+                 row = cursor.fetchone()
+
             return dict(row) if row else None
 
     def get_all_cards_stock(self) -> List[Dict[str, Any]]:
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            # Esta ya ordenaba por 'numeracion', ¡está perfecta!
             cursor.execute("SELECT * FROM cartas_stock ORDER BY numeracion ASC")
             return [dict(row) for row in cursor.fetchall()]
 
-    # --- ¡¡¡MODIFICADO!!! ---
     def get_stock_by_type(self, tipo_carta: str) -> List[Dict[str, Any]]:
-        """Obtiene todas las cartas de un tipo, ordenadas por numeración."""
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            # Cambiado el 'ORDER BY' para que priorice la 'numeracion'
             cursor.execute("""
                 SELECT nombre, rareza, numeracion, tipo_carta FROM cartas_stock
-                WHERE tipo_carta = ?
+                WHERE LOWER(tipo_carta) = LOWER(?)
                 ORDER BY numeracion ASC
-            """, (tipo_carta.capitalize(),))
+            """, (tipo_carta,))
             return [dict(row) for row in cursor.fetchall()]
