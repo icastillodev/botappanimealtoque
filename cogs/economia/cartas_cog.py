@@ -9,6 +9,7 @@ import datetime
 from .db_manager import EconomiaDBManagerV2
 from .card_db_manager import CardDBManager
 
+TipoBlister = Literal["trampa"] 
 CantidadBlister = Literal["1", "5", "todos"]
 TipoCartaCatalogo = Literal["Todas", "Trampa", "Hechizo", "Monstruo", "Especial"]
 
@@ -82,7 +83,6 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
 
     # --- Autocompletados ---
     async def blister_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
-        """Autocompletado para los blisters que posee el usuario."""
         blisters = self.economia_db.get_blisters_for_user(interaction.user.id)
         return [
             app_commands.Choice(name=f"{b['blister_tipo'].capitalize()} (Tienes: {b['cantidad']})", value=b['blister_tipo'])
@@ -90,7 +90,6 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
         ]
         
     async def card_inventory_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
-        """Autocompletado para las cartas que posee el usuario."""
         cartas_raw = self.economia_db.get_cards_in_inventory(interaction.user.id)
         choices = []
         for c in cartas_raw:
@@ -98,9 +97,11 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
             if not carta_stock: continue
             
             carta_id_str = str(c['carta_id'])
+            # Formato: "x3 | #1: Tornado Polvo (AAT-001)"
             name = f"x{c['cantidad']} | #{carta_id_str}: {carta_stock['nombre']} ({carta_stock['numeracion']})"
             if len(name) > 100: name = name[:97] + "..."
             
+            # Filtrar por nombre, ID o numeración
             if (current.lower() in carta_stock['nombre'].lower() or 
                 current.lower() in carta_stock['numeracion'].lower() or
                 current == carta_id_str):
@@ -171,8 +172,7 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
         self.economia_db.modify_blisters(user_id, tipo, -cantidad_a_abrir)
         
         cartas_obtenidas = []
-        for _ in range(cantidad_a_abrir * 3):
-            # --- MODIFICADO: Ya no pasamos 'tipo' (agarra cualquiera del stock) ---
+        for _ in range(cantidad_a_abrir * 3): 
             carta = self.card_db.get_random_card_by_rarity() 
             if carta:
                 self.economia_db.add_card_to_inventory(user_id, carta['carta_id'], 1)
@@ -180,7 +180,7 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
 
         if not cartas_obtenidas:
             self.economia_db.modify_blisters(user_id, tipo, cantidad_a_abrir)
-            await interaction.followup.send(f"¡Error! No hay cartas en el stock. Contacta a un admin. (Tus blisters han sido devueltos).", ephemeral=True)
+            await interaction.followup.send(f"¡Error! No hay cartas en el stock para el tipo de blister '{tipo}'. Contacta a un admin. (Tus blisters han sido devueltos).", ephemeral=True)
             return
 
         embed = discord.Embed(title=f"¡Has abierto {cantidad_a_abrir} Blister(s) de {tipo.capitalize()}!", color=discord.Color.purple())
@@ -193,58 +193,6 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
             desc += f"• {nombre} (x{num})\n"
         embed.description = desc
         embed.set_footer(text="Puedes ver tu colección completa con /aat_miscartas")
-        await interaction.followup.send(embed=embed, ephemeral=True)
-
-    # --- ¡¡¡NUEVO COMANDO: ABRIR TODO!!! ---
-    @app_commands.command(name="aat_abrircartas", description="¡Abre TODOS los blisters de tu inventario de una vez!")
-    async def abrir_todo(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        user_id = interaction.user.id
-        
-        blisters = self.economia_db.get_blisters_for_user(user_id)
-        
-        if not blisters:
-            await interaction.followup.send("No tienes ningún blister en tu inventario.", ephemeral=True)
-            return
-            
-        cartas_totales_obtenidas = []
-        resumen_blisters_abiertos = []
-        
-        for b in blisters:
-            tipo = b['blister_tipo']
-            cantidad = b['cantidad']
-            
-            if cantidad > 0:
-                self.economia_db.modify_blisters(user_id, tipo, -cantidad)
-                resumen_blisters_abiertos.append(f"{cantidad}x {tipo.capitalize()}")
-                
-                for _ in range(cantidad * 3):
-                    # --- MODIFICADO: Ya no pasamos 'tipo' ---
-                    carta = self.card_db.get_random_card_by_rarity()
-                    if carta:
-                        self.economia_db.add_card_to_inventory(user_id, carta['carta_id'], 1)
-                        cartas_totales_obtenidas.append(carta)
-
-        if not cartas_totales_obtenidas:
-             await interaction.followup.send("Error al abrir los sobres. No se encontraron cartas en el stock.", ephemeral=True)
-             return
-
-        embed = discord.Embed(title="💥 ¡APERTURA MASIVA! 💥", color=discord.Color.gold())
-        embed.description = f"**Has abierto:** {', '.join(resumen_blisters_abiertos)}\n\n**Cartas Obtenidas:**"
-        
-        conteo_cartas = {}
-        for carta in cartas_totales_obtenidas:
-            nombre = f"**{carta['nombre']}** ({carta['rareza']})"
-            conteo_cartas[nombre] = conteo_cartas.get(nombre, 0) + 1
-            
-        lista_texto = ""
-        for nombre, num in conteo_cartas.items():
-            lista_texto += f"• {nombre} (x{num})\n"
-        
-        if len(lista_texto) > 3800:
-            lista_texto = lista_texto[:3800] + "\n... (y muchas más)"
-            
-        embed.description += f"\n{lista_texto}"
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="aat_miscartas", description="Muestra tu inventario de cartas.")
@@ -265,13 +213,14 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
              embed.description = "Tus cartas parecen no existir en el stock. Contacta a un admin."
         else:
             embed.description = desc
-        embed.set_footer(text="Usa /aat_vermicarta [carta] para ver el detalle de una carta.")
+        embed.set_footer(text="Usa /vercarta [carta] para ver el detalle de una carta.")
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="aat_usar_carta", description="Usa una carta trampa consumible de tu inventario.")
+    # --- MODIFICADO: Nombre cambiado a 'usar' (sin aat_) ---
+    @app_commands.command(name="usar", description="Usa una carta trampa consumible de tu inventario.")
     @app_commands.autocomplete(carta_id=card_inventory_autocomplete)
     @app_commands.describe(
-        carta_id="La carta que quieres usar", 
+        carta_id="La carta que quieres usar (escribe nombre o ID).", 
         usuario_objetivo="(Opcional) El usuario al que quieres afectar.", 
         mensaje_objetivo_id="(Opcional) ID del mensaje al que responder."
     )
@@ -311,7 +260,7 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
             color=discord.Color.red()
         )
         if carta['url_imagen']:
-            embed.set_thumbnail(url=carta['url_imagen'])
+            embed.set_image(url=carta['url_imagen'])
             
         embed.add_field(name="Efecto", value=f"`{carta['efecto']}`\n*{carta['descripcion']}*", inline=False)
         embed.set_footer(text=f"A {interaction.user.display_name} le quedan {carta_inv['cantidad']-1} copias.")
@@ -336,9 +285,10 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
             except Exception as e:
                 self.log.warning(f"No se pudo silenciar a {usuario_objetivo.name}: {e}")
 
-    @app_commands.command(name="aat_vermicarta", description="Muestra el detalle de una carta que posees.")
+    # --- MODIFICADO: Nombre cambiado a 'vercarta' (sin aat_) ---
+    @app_commands.command(name="vercarta", description="Muestra el detalle de una carta que posees.")
     @app_commands.autocomplete(carta_id=card_inventory_autocomplete)
-    @app_commands.describe(carta_id="La carta de tu inventario que quieres ver (puedes usar el ID o el nombre).")
+    @app_commands.describe(carta_id="La carta de tu inventario que quieres ver (usa el ID o el nombre).")
     async def ver_carta(self, interaction: discord.Interaction, carta_id: str):
         await interaction.response.defer(ephemeral=True)
         if not carta_id.isdigit():

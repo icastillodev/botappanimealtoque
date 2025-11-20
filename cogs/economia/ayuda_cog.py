@@ -10,7 +10,12 @@ class EconomiaHelpView(discord.ui.View):
         super().__init__(timeout=180)
         self.author_id = author_id
         self.current_page = 0
-        self.embeds: List[discord.Embed] = [self._create_page_1(), self._create_page_2(), self._create_page_3(), self._create_page_4()]
+        self.embeds: List[discord.Embed] = [
+            self._create_page_1(),
+            self._create_page_2(),
+            self._create_page_3(),
+            self._create_page_4()
+        ]
         self._update_buttons()
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -27,31 +32,35 @@ class EconomiaHelpView(discord.ui.View):
             "`/aat_progreso_iniciacion` - Muestra tus misiones de bienvenida.\n"
             "`/aat_progreso_diaria` - Muestra tus misiones diarias.\n"
             "`/aat_progreso_semanal` - Muestra tus misiones semanales.\n"
-            "`/aat_reclamar [tipo]` - Reclama tus recompensas."
+            "`/aat_reclamar [tipo]` - Reclama tus recompensas (inicial, diaria, semanal)."
         ), inline=False)
+        embed.set_footer(text="Usa los botones para navegar.")
         return embed
 
     def _create_page_2(self) -> discord.Embed:
         embed = discord.Embed(title="Ayuda de Cartas y Blisters 🃏 (Página 2/4)", color=discord.Color.purple())
+        embed.add_field(name="`/aat_puntos`", value="Un atajo rápido para ver solo tus puntos.", inline=False)
         embed.add_field(name="`/aat_inventario`", value="Tu comando principal. Úsalo para ver tus Puntos, Créditos y Blisters.", inline=False)
-        embed.add_field(name="`/aat_abrirblister`", value="Abre blisters de un tipo específico (ej: Trampa).", inline=False)
-        embed.add_field(name="`/aat_abrircartas`", value=" Abre TODOS tus blisters automáticamente.", inline=False) # <--- ¡NUEVO!
-        embed.add_field(name="`/aat_miscartas`", value="Muestra tu colección de cartas.", inline=False)
-        embed.add_field(name="`/aat_vermicarta`", value="Inspecciona una carta de tu inventario.", inline=False)
+        embed.add_field(name="`/aat_abrirblister`", value="¡Abre los blisters que ganaste! Cada uno da 3 cartas aleatorias.", inline=False)
+        embed.add_field(name="`/aat_miscartas`", value="Muestra tu colección de cartas (verás el ID de cada carta).", inline=False)
+        # --- MODIFICADO: Nombre actualizado ---
+        embed.add_field(name="`/vercarta`", value="Inspecciona una carta de tu inventario (usa el ID o el nombre).", inline=False)
+        embed.add_field(name="`/aat_catalogo`", value="Muestra todas las cartas que existen en el juego.", inline=False)
         return embed
         
     def _create_page_3(self) -> discord.Embed:
         embed = discord.Embed(title="Ayuda de Cartas Trampa ⚔️ (Página 3/4)", color=discord.Color.red())
-        embed.add_field(name="`/aat_usar_carta`", value="Consume una carta de tu inventario. Puedes usarla 'al aire' o contra un usuario.", inline=False)
+        # --- MODIFICADO: Nombre actualizado ---
+        embed.add_field(name="`/usar`", value="Consume una carta de tu inventario. Puedes usarla 'al aire' o contra un usuario.", inline=False)
         embed.add_field(name="Límites", value="Las cartas son **consumibles** y tienes un límite de **5 cartas cada 10 minutos**.", inline=False)
         return embed
 
     def _create_page_4(self) -> discord.Embed:
         embed = discord.Embed(title="Ayuda de Tienda y Ranking 🏆 (Página 4/4)", color=discord.Color.gold())
-        embed.add_field(name="`/aat_tienda_ver`", value="Muestra la tienda de recompensas.", inline=False)
-        embed.add_field(name="`/aat_tienda_canjear`", value="Compra un ítem de la tienda.", inline=False)
+        embed.add_field(name="`/aat_tienda_ver`", value="Muestra la tienda donde puedes gastar tus puntos 🪙.", inline=False)
+        embed.add_field(name="`/aat_tienda_canjear`", value="Compra un ítem de la tienda (roles o créditos).", inline=False)
+        embed.add_field(name="`/aat_tienda_fijar`", value="Usa un crédito para fijar un mensaje.", inline=False)
         embed.add_field(name="`/aat_ranking_top`", value="Muestra el Top 10 del servidor.", inline=False)
-        embed.add_field(name="`/aat_catalogo`", value="Mira todas las cartas que existen.", inline=False)
         return embed
 
     def _update_buttons(self):

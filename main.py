@@ -8,18 +8,13 @@ import logging
 import logging.handlers
 import sys
 
-# --- Importamos Votacion (V5) ---
 from cogs.votacion.db_manager import PollDBManagerV5, DB_FILE as POLL_DB_FILE
 from cogs.votacion.poll_view import PollView
 
-# --- Importamos Economia (V2) y Cartas ---
 from cogs.economia.db_manager import EconomiaDBManagerV2, DB_FILE as ECON_DB_FILE
 from cogs.economia.card_db_manager import CardDBManager, DB_FILE as CARD_DB_FILE
 
-# 2. Cargar .env PRIMERO
 load_dotenv()
-
-# 3. Configurar el Logging
 log_level = logging.DEBUG
 root_logger = logging.getLogger()
 root_logger.setLevel(log_level)
@@ -39,7 +34,6 @@ log = logging.getLogger(__name__)
 
 log.info("Logging configurado. Cargando variables de entorno...")
 
-# 4. Cargar Tokens
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
     log.critical("¡ERROR CRÍTICO! Falta DISCORD_TOKEN en .env")
@@ -55,7 +49,6 @@ else:
 
 log.info("Token de Discord encontrado.")
 
-# 5. Lista de Cogs
 INITIAL_EXTENSIONS = [
     "cogs.presentaciones",
     "cogs.impostor",
@@ -63,8 +56,9 @@ INITIAL_EXTENSIONS = [
     "cogs.votacion",
     "cogs.economia",
     "cogs.creador",
-    "cogs.reaction_limiter", # El cog "chill" de reacciones
-    "cogs.check_tareas",     # El cog "chill" de verificar historial
+    "cogs.reaction_limiter",
+    "cogs.check_tareas",
+    "cogs.comandos_prefijo", 
 ]
 
 def load_env_vars(log):
@@ -127,12 +121,9 @@ class MiBot(commands.Bot):
         
         self.log = logging.getLogger(self.__class__.__name__)
 
-        # --- DB Votacion (V5) ---
         self.log.info("Inicializando el manejador de base de datos (DBManagerV5)...")
-        # ¡ESTA LÍNEA ARREGLA EL ERROR DE LA IMAGEN!
         self.db_manager = PollDBManagerV5(db_path=POLL_DB_FILE)
         
-        # --- DB Economia ---
         self.log.info("Inicializando el manejador de base de datos (EconomiaDBManagerV2)...")
         self.economia_db = EconomiaDBManagerV2(db_path=ECON_DB_FILE)
         
