@@ -23,7 +23,8 @@ def create_lobby(
     channel_id: int,
     host_id: int,
     lobby_name: str,
-    is_open: bool = True
+    is_open: bool = True,
+    max_slots: int = 5,
 ) -> GameState:
     """
     Crea un nuevo GameState (lobby), lo registra y lo devuelve.
@@ -38,7 +39,8 @@ def create_lobby(
         guild_id=guild_id,
         channel_id=channel_id,
         host_id=host_id,
-        is_open=is_open
+        is_open=is_open,
+        max_slots=max_slots,
     )
     
     # Registrar el lobby

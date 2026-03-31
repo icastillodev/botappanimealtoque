@@ -9,6 +9,8 @@ from typing import Optional
 
 # Importaciones locales
 from . import core
+from . import feed
+from . import lobby as lobby_cog
 from .engine import GameState, ROLE_IMPOSTOR, ROLE_SOCIAL, PHASE_ROLES, PHASE_TURNS, PHASE_VOTE, PHASE_END # Añadido PHASE_VOTE
 from . import chars
 
@@ -75,7 +77,7 @@ class ImpostorGameCore(commands.Cog, name="ImpostorGameCore"):
                 lobby.in_progress = False
                 lobby.phase = PHASE_IDLE
                 await feed.update_feed(self.bot)
-                await core.queue_hud_update(lobby.channel_id) # Usar queue_hud_update de lobby.py
+                await lobby_cog.queue_hud_update(lobby.channel_id)
                 return
                 
             impostor_player = random.choice(human_players)

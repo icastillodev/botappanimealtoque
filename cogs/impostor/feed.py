@@ -10,6 +10,7 @@ import asyncio
 
 from . import core
 from .engine import GameState, PHASE_END # <-- 1. MODIFICADO
+from .notify import ImpostorNotifyView
 
 log = logging.getLogger(__name__)
 
@@ -57,10 +58,15 @@ async def _generate_feed_embed(bot: commands.Bot) -> discord.Embed:
         else:
             closed_lobbies.append(lobby)
 
-    max_players = get_max_players()
+    cap_hint = get_max_players()
     embed = discord.Embed(
-        title=f"Lobbys de IMPOSTOR ({max_players} jugadores)",
-        description="Encuentra una partida o crea la tuya con `/crearsimpostor`.\nUsa `/helpimpostor` para ver las reglas.",
+        title="Lobbys de IMPOSTOR",
+        description=(
+            "Encuentra una partida o crea la tuya con `/crearsimpostor` "
+            f"(elegís el cupo, hasta **{cap_hint}** según configuración).\n"
+            "Usa `/helpimpostor` para las reglas.\n\n"
+            "**🔔** Tocá el botón para darte o quitarte el rol de avisos de partidas."
+        ),
         color=discord.Color.blue()
     )
 
@@ -73,7 +79,7 @@ async def _generate_feed_embed(bot: commands.Bot) -> discord.Embed:
             host_mention = f"<@{lobby.host_id}>"
             player_count = lobby.all_players_count
             
-            line = f"• **{lobby.lobby_name}** — {player_count}/{max_players} — Host: {host_mention}\n"
+            line = f"• **{lobby.lobby_name}** — {player_count}/{lobby.max_slots} — Host: {host_mention}\n"
             line += f"  └ `/entrar nombre:{lobby.lobby_name}`\n"
             open_field_value += line
 
@@ -88,7 +94,7 @@ async def _generate_feed_embed(bot: commands.Bot) -> discord.Embed:
             host_mention = f"<@{lobby.host_id}>"
             player_count = lobby.all_players_count
             
-            line = f"• **{lobby.lobby_name}** — {player_count}/{max_players} — Host: {host_mention}\n"
+            line = f"• **{lobby.lobby_name}** — {player_count}/{lobby.max_slots} — Host: {host_mention}\n"
             closed_field_value += line
             
     embed.add_field(name="🔒 Lobbys Cerrados", value=closed_field_value, inline=False)
@@ -102,7 +108,7 @@ async def _generate_feed_embed(bot: commands.Bot) -> discord.Embed:
             host_mention = f"<@{lobby.host_id}>"
             player_count = lobby.all_players_count
             
-            line = f"• **{lobby.lobby_name}** — {player_count}/{max_players} — Host: {host_mention}\n"
+            line = f"• **{lobby.lobby_name}** — {player_count}/{lobby.max_slots} — Host: {host_mention}\n"
             playing_field_value += line
             
     embed.add_field(name="🔴 En Partida", value=playing_field_value, inline=False)
@@ -136,7 +142,7 @@ async def update_feed(bot: commands.Bot):
         if _LAST_FEED_MESSAGE_ID:
             try:
                 msg = await channel.fetch_message(_LAST_FEED_MESSAGE_ID)
-                await msg.edit(embed=embed, view=None)
+                await msg.edit(embed=embed, view=ImpostorNotifyView())
                 # log.debug(f"Feed actualizado (Editado por ID): {msg.id}")
                 return
             except discord.NotFound:
@@ -154,7 +160,7 @@ async def update_feed(bot: commands.Bot):
             async for msg in channel.history(limit=50):
                 if msg.author.id == bot.user.id:
                     _LAST_FEED_MESSAGE_ID = msg.id
-                    await msg.edit(embed=embed, view=None)
+                    await msg.edit(embed=embed, view=ImpostorNotifyView())
                     # log.debug(f"Feed actualizado (Editado por Búsqueda): {msg.id}")
                     return
         except discord.Forbidden:
@@ -165,7 +171,7 @@ async def update_feed(bot: commands.Bot):
             
         # --- Estrategia 3: Enviar mensaje nuevo ---
         try:
-            new_msg = await channel.send(embed=embed)
+            new_msg = await channel.send(embed=embed, view=ImpostorNotifyView())
             _LAST_FEED_MESSAGE_ID = new_msg.id
             log.info(f"Nuevo feed publicado en {channel.name} (ID: {new_msg.id})")
         except discord.Forbidden:

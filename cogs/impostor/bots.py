@@ -17,10 +17,6 @@ log = logging.getLogger(__name__)
 
 # --- Funciones de Configuración ---
 
-def get_max_players() -> int:
-    val = os.getenv("IMPOSTOR_MAX_PLAYERS", "5")
-    return int(val)
-
 def get_admin_role_ids() -> Set[int]:
     ids_str = os.getenv("IMPOSTOR_ADMIN_ROLE_IDS", "")
     return {int(id.strip()) for id in ids_str.split(',') if id.strip()}
@@ -63,8 +59,7 @@ class ImpostorBotsCog(commands.Cog, name="ImpostorBots"):
         Añade un bot al lobby.
         Devuelve el nombre del bot si se añade, o None si el lobby está lleno.
         """
-        max_players = get_max_players()
-        if lobby.all_players_count >= max_players:
+        if lobby.all_players_count >= lobby.max_slots:
             log.debug(f"Intento de añadir bot a lobby lleno C:{lobby.channel_id}")
             return None # Lobby lleno
 

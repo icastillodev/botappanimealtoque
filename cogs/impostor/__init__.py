@@ -8,6 +8,7 @@ import logging
 # definen su propia función setup() y son Cogs de discord.py.
 # (Omitimos los archivos de utilidad como engine.py, core.py, chars.py)
 SUB_COGS = [
+    "notify",
     "feed",
     "lobby",
     "bots",

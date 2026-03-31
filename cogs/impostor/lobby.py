@@ -12,6 +12,7 @@ from typing import Optional, List, Set
 # Importaciones locales (de nuestros otros archivos)
 from . import core
 from . import feed
+from . import notify as impostor_notify
 from .engine import GameState, PHASE_IDLE, PHASE_ROLES, PHASE_END # Añadido PHASE_END
 
 log = logging.getLogger(__name__)
@@ -23,8 +24,17 @@ def get_category_id() -> Optional[int]:
     return int(val) if val else None
 
 def get_max_players() -> int:
-    val = os.getenv("IMPOSTOR_MAX_PLAYERS", "5")
+    """Techo de jugadores al crear un lobby (compatibilidad / env)."""
+    val = os.getenv("IMPOSTOR_MAX_PLAYERS", "10")
     return int(val)
+
+def get_min_impo_players() -> int:
+    """Mínimo de jugadores (humanos+bots) para poder iniciar la partida."""
+    return max(2, int(os.getenv("IMPOSTOR_MIN_PLAYERS", "4")))
+
+def get_global_slot_ceiling() -> int:
+    """Máximo permitido al elegir cupo en /crearsimpostor (nunca por debajo del mínimo)."""
+    return max(get_min_impo_players(), get_max_players())
 
 def get_admin_role_ids() -> Set[int]:
     ids_str = os.getenv("IMPOSTOR_ADMIN_ROLE_IDS", "")
@@ -62,7 +72,8 @@ async def _can_use_admin_commands(interaction: discord.Interaction) -> bool:
 def _generate_lobby_embed(lobby: GameState, bot_user: discord.User) -> discord.Embed:
     """Crea el Embed para el panel de control del lobby."""
     
-    max_players = get_max_players()
+    max_players = lobby.max_slots
+    min_p = get_min_impo_players()
     
     # --- Embed de Lobby (Esperando jugadores) ---
     status_emoji = "🟢" if lobby.is_open else "🔒"
@@ -100,12 +111,15 @@ def _generate_lobby_embed(lobby: GameState, bot_user: discord.User) -> discord.E
     
     # Instrucciones
     if lobby.all_players_count < max_players:
-        embed.set_footer(text=f"Host: usa /invitar o Add Bot. Jugadores: pulsen 'Ready'.")
+        embed.set_footer(
+            text=f"Mínimo {min_p} jugadores para empezar (no hace falta llenar el cupo). "
+            f"Host: /invitar o Add Bot. Jugadores: Ready."
+        )
     else:
         if not lobby.all_humans_ready_in_lobby:
-            embed.set_footer(text="¡Lobby lleno! Esperando que todos los humanos pulsen 'Ready'.")
+            embed.set_footer(text="¡Cupo lleno! Esperando que todos los humanos pulsen 'Ready'.")
         else:
-            embed.set_footer(text="¡Todos listos! El Host puede comenzar la partida.")
+            embed.set_footer(text="¡Todos listos! El host puede comenzar la partida.")
             
     return embed
 
@@ -113,7 +127,8 @@ def _generate_lobby_embed(lobby: GameState, bot_user: discord.User) -> discord.E
 def _generate_lobby_view(lobby: GameState) -> discord.ui.View:
     """Crea la View (botones) para el panel de control del lobby."""
     view = discord.ui.View(timeout=None)
-    max_players = get_max_players()
+    max_players = lobby.max_slots
+    min_p = get_min_impo_players()
     
     # --- Fila 1: Acciones de Lobby ---
     view.add_item(LobbyButton(
@@ -155,7 +170,11 @@ def _generate_lobby_view(lobby: GameState) -> discord.ui.View:
     # --- Fin Botón ---
 
     # --- Fila 3: Acciones Críticas ---
-    can_start = (lobby.all_players_count == max_players and lobby.all_humans_ready_in_lobby)
+    can_start = (
+        lobby.all_players_count >= min_p
+        and lobby.all_players_count <= max_players
+        and lobby.all_humans_ready_in_lobby
+    )
     view.add_item(LobbyButton(
         label="Comenzar", 
         style=discord.ButtonStyle.primary, 
@@ -165,11 +184,18 @@ def _generate_lobby_view(lobby: GameState) -> discord.ui.View:
         row=2
     ))
     view.add_item(LobbyButton(
+        label="Llamar jugadores",
+        style=discord.ButtonStyle.secondary,
+        emoji="📢",
+        custom_id="imp:notify_ping",
+        row=2
+    ))
+    view.add_item(LobbyButton(
         label="Leave", 
         style=discord.ButtonStyle.danger, 
         emoji="🚪", 
         custom_id="imp:leave",
-        row=2
+        row=3
     ))
     
     return view
@@ -333,8 +359,7 @@ async def _handle_add_bot(interaction: discord.Interaction, bot: commands.Bot, l
     if not await _can_use_admin_commands(interaction):
         return await interaction.response.send_message("❌ Solo el host o un admin pueden añadir bots.", ephemeral=True)
 
-    max_players = get_max_players()
-    if lobby.all_players_count >= max_players:
+    if lobby.all_players_count >= lobby.max_slots:
         return await interaction.response.send_message("❌ El lobby está lleno.", ephemeral=True)
 
     # Lógica de bots.py
@@ -377,10 +402,14 @@ async def _handle_start(interaction: discord.Interaction, bot: commands.Bot, lob
     if lobby.host_id != player.user_id:
         return await interaction.response.send_message("❌ Solo el host puede iniciar la partida.", ephemeral=True)
 
-    max_players = get_max_players()
-    if lobby.all_players_count != max_players:
-        return await interaction.response.send_message(f"❌ Se necesitan {max_players} jugadores.", ephemeral=True)
-        
+    min_p = get_min_impo_players()
+    if lobby.all_players_count < min_p:
+        return await interaction.response.send_message(
+            f"❌ Se necesitan al menos **{min_p}** jugadores para empezar.", ephemeral=True
+        )
+    if lobby.all_players_count > lobby.max_slots:
+        return await interaction.response.send_message("❌ Hay más jugadores que el cupo del lobby (error de estado).", ephemeral=True)
+
     if not lobby.all_humans_ready_in_lobby:
         return await interaction.response.send_message("❌ No todos los humanos están listos.", ephemeral=True)
         
@@ -432,8 +461,7 @@ async def _handle_invite_info(interaction: discord.Interaction, bot: commands.Bo
              )
         # Si es admin pero no host, mostrarle igual la info
 
-    max_players = get_max_players()
-    if lobby.all_players_count >= max_players:
+    if lobby.all_players_count >= lobby.max_slots:
          return await interaction.response.send_message(
             "❌ El lobby ya está lleno.", 
             ephemeral=True
@@ -451,6 +479,54 @@ async def _handle_invite_info(interaction: discord.Interaction, bot: commands.Bo
 # --- Fin del nuevo handler ---
 
 
+async def _handle_notify_ping(interaction: discord.Interaction, bot: commands.Bot, lobby: GameState, player: Optional[GameState.Player]):
+    if not player:
+        return await interaction.response.send_message("❌ Solo quien está en el lobby puede usar esto.", ephemeral=True)
+    if lobby.host_id != interaction.user.id:
+        return await interaction.response.send_message("❌ Solo el host puede avisar al rol de Impostor.", ephemeral=True)
+    if lobby.in_progress:
+        return await interaction.response.send_message("❌ No aplica con la partida en curso.", ephemeral=True)
+
+    remaining = impostor_notify.lobby_ping_cooldown_remaining(lobby.channel_id)
+    if remaining > 0:
+        return await interaction.response.send_message(
+            f"❌ Esperá **{remaining:.1f}s** antes de volver a mencionar al rol.",
+            ephemeral=True,
+        )
+
+    guild = interaction.guild
+    if not guild:
+        return await interaction.response.send_message("❌ Solo en un servidor.", ephemeral=True)
+
+    role = guild.get_role(impostor_notify.get_notify_role_id())
+    if not role:
+        return await interaction.response.send_message(
+            "❌ No existe el rol de avisos en este servidor (revisá `IMPOSTOR_NOTIFY_ROLE_ID`).",
+            ephemeral=True,
+        )
+
+    channel = bot.get_channel(lobby.channel_id)
+    if not isinstance(channel, discord.TextChannel):
+        return await interaction.response.send_message("❌ No encontré el canal del lobby.", ephemeral=True)
+
+    await interaction.response.defer(ephemeral=True)
+    try:
+        await channel.send(
+            f"{role.mention} — **{interaction.user.display_name}** busca jugadores para **Impostor** "
+            f"en **{lobby.lobby_name}**.\n"
+            f"Entrá con `/entrar nombre:{lobby.lobby_name}` o mirá la cartelera."
+        )
+        impostor_notify.register_lobby_ping(lobby.channel_id)
+        await interaction.followup.send("✅ Mención enviada.", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.followup.send(
+            "❌ No tengo permiso para mencionar ese rol o enviar en el canal.", ephemeral=True
+        )
+    except discord.HTTPException as e:
+        log.warning("Error al enviar ping de Impostor: %s", e)
+        await interaction.followup.send("❌ No pude enviar el aviso.", ephemeral=True)
+
+
 # Mapa de Handlers para los botones
 _BUTTON_HANDLERS = {
     "imp:ready": _handle_ready,
@@ -458,6 +534,7 @@ _BUTTON_HANDLERS = {
     "imp:addbot": _handle_add_bot,
     "imp:removebot": _handle_remove_bot,
     "imp:start": _handle_start,
+    "imp:notify_ping": _handle_notify_ping,
     "imp:leave": _handle_leave,
     "imp:invite_info": _handle_invite_info, # <-- Registrado
 }
@@ -572,13 +649,31 @@ class ImpostorLobbyCog(commands.Cog, name="ImpostorLobby"):
     # --- Comandos Slash ---
 
     @app_commands.command(name="crearsimpostor", description="Crea un nuevo lobby para el juego Impostor.")
-    @app_commands.describe(nombre="Nombre para tu lobby (ej: 'Pros Only')")
+    @app_commands.describe(
+        nombre="Nombre para tu lobby (ej: 'Pros Only')",
+        jugadores="Cupo máximo (humanos+bots). Podés empezar sin llenarlo; mínimo 4 para iniciar.",
+    )
     @app_commands.choices(tipo=[
         app_commands.Choice(name="Abierto (Cualquiera puede unirse)", value="abierto"),
         app_commands.Choice(name="Cerrado (Solo con invitación)", value="cerrado") # Re-habilitado
     ])
-    async def crearsimpostor(self, interaction: discord.Interaction, nombre: str, tipo: app_commands.Choice[str]):
+    async def crearsimpostor(
+        self,
+        interaction: discord.Interaction,
+        nombre: str,
+        tipo: app_commands.Choice[str],
+        jugadores: int,
+    ):
         await interaction.response.defer(ephemeral=True)
+
+        min_p = get_min_impo_players()
+        ceiling = get_global_slot_ceiling()
+        if jugadores < min_p or jugadores > ceiling:
+            return await interaction.followup.send(
+                f"❌ El cupo debe estar entre **{min_p}** y **{ceiling}** "
+                f"(subí el techo con la variable `IMPOSTOR_MAX_PLAYERS` si hace falta).",
+                ephemeral=True,
+            )
         
         if core.get_lobby_by_user(interaction.user.id):
             return await interaction.followup.send("❌ Ya estás en un lobby. Usa `/leave`.", ephemeral=True)
@@ -615,8 +710,12 @@ class ImpostorLobbyCog(commands.Cog, name="ImpostorLobby"):
             return await interaction.followup.send("❌ Error inesperado al crear canal.", ephemeral=True)
             
         lobby = core.create_lobby(
-            guild_id=interaction.guild_id, channel_id=channel.id, host_id=interaction.user.id,
-            lobby_name=nombre, is_open=is_open
+            guild_id=interaction.guild_id,
+            channel_id=channel.id,
+            host_id=interaction.user.id,
+            lobby_name=nombre,
+            is_open=is_open,
+            max_slots=jugadores,
         )
         
         try:
@@ -652,8 +751,7 @@ class ImpostorLobbyCog(commands.Cog, name="ImpostorLobby"):
         if target_lobby.in_progress:
             return await interaction.followup.send(f"❌ Partida en **{nombre}** ya empezó.", ephemeral=True)
         
-        max_players = get_max_players()
-        if target_lobby.all_players_count >= max_players:
+        if target_lobby.all_players_count >= target_lobby.max_slots:
             return await interaction.followup.send(f"❌ Lobby **{nombre}** está lleno.", ephemeral=True)
             
         channel = interaction.guild.get_channel(target_lobby.channel_id)
@@ -710,8 +808,8 @@ class ImpostorLobbyCog(commands.Cog, name="ImpostorLobby"):
         if lobby.in_progress: return await interaction.followup.send("❌ Partida ya empezó.", ephemeral=True)
         if core.get_lobby_by_user(usuario.id): return await interaction.followup.send(f"❌ {usuario.display_name} ya está en otro lobby.", ephemeral=True)
         
-        max_players = get_max_players()
-        if lobby.all_players_count >= max_players: return await interaction.followup.send("❌ Lobby lleno.", ephemeral=True)
+        if lobby.all_players_count >= lobby.max_slots:
+            return await interaction.followup.send("❌ Lobby lleno.", ephemeral=True)
         if usuario.id == self.bot.user.id or usuario.bot: return await interaction.followup.send("❌ No puedes invitar bots.", ephemeral=True)
         if lobby.get_player(usuario.id): return await interaction.followup.send(f"❌ {usuario.display_name} ya está aquí.", ephemeral=True)
 

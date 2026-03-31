@@ -11,8 +11,9 @@ log = logging.getLogger(__name__)
 
 EMBED_MAIN = discord.Embed(
     title="Bienvenido a Impostor",
-    description="Impostor es un juego de deducción social para 5 jugadores.\n\n"
-                "Un **Impostor** intenta adivinar el personaje secreto que tienen los 4 **Sociales**.\n\n"
+    description="Impostor es un juego de deducción social (mínimo **4** jugadores en el lobby).\n\n"
+                "Un **Impostor** intenta adivinar el personaje secreto que comparten los **Sociales**.\n\n"
+                "Al crear partida elegís el **cupo máximo**; podés empezar sin llenar todas las plazas.\n\n"
                 "Usa los botones de abajo para aprender más.",
     color=discord.Color.blurple()
 )
@@ -52,8 +53,9 @@ EMBED_COMANDOS = discord.Embed(
 EMBED_COMANDOS.add_field(
     name="Generales",
     value="`/helpimpostor` - Muestra esta ayuda.\n"
-          "`/crearsimpostor nombre: [nombre]` - Crea un lobby nuevo.\n"
-          "`/entrar nombre: [nombre]` - Te une a un lobby abierto.",
+          "`/crearsimpostor nombre: … jugadores: …` - Crea un lobby (cupo máx. y tipo abierto/cerrado).\n"
+          "`/entrar nombre: [nombre]` - Te une a un lobby abierto.\n"
+          "En la **cartelera** hay un botón para darte o quitarte el rol de avisos de partidas.",
     inline=False
 )
 EMBED_COMANDOS.add_field(

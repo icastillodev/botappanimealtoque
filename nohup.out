@@ -1,0 +1,243 @@
+[2025-10-12 10:55:55] [INFO    ] discord.client: logging in using static token
+[2025-10-12 10:55:55] [INFO    ] discord.gateway: Shard ID None has connected to Gateway (Session ID: a746768568240c37b90c043e39b68e74).
+[2025-10-12 10:56:47] [INFO    ] discord.client: logging in using static token
+[2025-10-12 10:56:48] [INFO    ] discord.gateway: Shard ID None has connected to Gateway (Session ID: 956a8a7d30470014dbc5766dff777587).
+[2025-10-12 10:58:14] [INFO    ] discord.client: logging in using static token
+[2025-10-12 10:58:15] [INFO    ] discord.gateway: Shard ID None has connected to Gateway (Session ID: d01dca74f66a5b3ea414f5ca0896bc1f).
+[2025-10-12 10:58:46] [INFO    ] discord.client: logging in using static token
+[2025-10-12 10:58:47] [INFO    ] discord.gateway: Shard ID None has connected to Gateway (Session ID: 87de9ad73f9cdc453231004119cce1da).
+[2025-10-12 11:00:41] [INFO    ] discord.client: logging in using static token
+[2025-10-12 11:00:43] [INFO    ] discord.gateway: Shard ID None has connected to Gateway (Session ID: edec1c5b356305d7b7405e19b53007b1).
+[2025-10-12 12:29:53] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'reclamar' not found
+[2025-10-12 12:30:13] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'info' not found
+[2025-10-12 12:43:20] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'info' not found
+[2025-10-12 12:43:29] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'reclamar' not found
+[2025-10-12 12:43:35] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'diarias' not found
+[2025-10-12 12:44:09] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'diarias' not found
+[2025-10-12 12:44:19] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'diarias' not found
+[2025-10-12 13:35:13] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'info' not found
+[2025-10-12 13:35:38] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'scoreboard' not found
+[2025-10-12 13:35:48] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'scoreboard' not found
+[2025-10-12 13:38:19] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'puntos' not found
+[2025-10-12 13:43:03] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'puntos' not found
+[2025-10-12 13:43:13] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'puntos' not found
+[2025-10-12 13:43:22] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'puntos' not found
+[2025-10-12 13:43:28] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'iniciacion' not found
+[2025-10-12 13:50:51] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'puntos' not found
+[2025-10-12 13:50:54] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'iniciacion' not found
+[2025-10-12 13:51:02] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'iniciacion' not found
+[2025-10-12 13:51:12] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'puntos' not found
+[2025-10-12 13:54:29] [INFO    ] discord.gateway: Shard ID None has successfully RESUMED session edec1c5b356305d7b7405e19b53007b1.
+[2025-10-12 13:58:55] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'tienda' not found
+[2025-10-12 14:07:28] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'proximamente' not found
+[2025-10-12 14:07:51] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'comandos' not found
+[2025-10-12 14:08:01] [ERROR   ] discord.app_commands.tree: Ignoring exception in command tree
+Traceback (most recent call last):
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1151, in wrapper
+    await self._call(interaction)
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1283, in _call
+    command, options = self._get_app_command_options(data)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/discordbot/botappanimealtoque/venv/lib/python3.12/site-packages/discord/app_commands/tree.py", line 1187, in _get_app_command_options
+    raise CommandNotFound(name, parents)
+discord.app_commands.errors.CommandNotFound: Application command 'comandos' not found
+python3: can't open file '/root/discordbot/botappanimealtoque/bot.py': [Errno 2] No such file or directory
+python3: can't open file '/root/discordbot/botappanimealtoque/bot.py': [Errno 2] No such file or directory

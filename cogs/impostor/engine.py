@@ -29,6 +29,8 @@ class GameState:
     channel_id: int
     host_id: int
     is_open: bool = True
+    # Cupo máximo de jugadores elegido al crear el lobby (humanos + bots).
+    max_slots: int = 5
     hud_message_id: Optional[int] = None
     feed_message_id: Optional[int] = None # ID del mensaje en el canal feed
     
