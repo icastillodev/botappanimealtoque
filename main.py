@@ -1,4 +1,5 @@
-# main.py
+# main.py — botappanimealtoque (discord.py)
+# Ejecutar: desde esta carpeta, con venv activado → python main.py
 import os
 import asyncio
 import discord
