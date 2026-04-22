@@ -6,6 +6,7 @@ import logging
 # --- ¡¡¡ESTA ES LA LISTA FINAL DE TODOS TUS COGS DE ECONOMÍA!!! ---
 SUB_COGS = [
     "listeners_cog",
+    "minijuegos_cog",
     "tareas_cog",
     "admin_cog",
     "cartas_cog",

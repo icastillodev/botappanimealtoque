@@ -25,16 +25,20 @@ def get_category_id() -> Optional[int]:
 
 def get_max_players() -> int:
     """Techo de jugadores al crear un lobby (compatibilidad / env)."""
-    val = os.getenv("IMPOSTOR_MAX_PLAYERS", "10")
+    val = os.getenv("IMPOSTOR_MAX_PLAYERS", "50")
     return int(val)
 
 def get_min_impo_players() -> int:
     """Mínimo de jugadores (humanos+bots) para poder iniciar la partida."""
-    return max(2, int(os.getenv("IMPOSTOR_MIN_PLAYERS", "4")))
+    return max(2, int(os.getenv("IMPOSTOR_MIN_PLAYERS", "2")))
 
 def get_global_slot_ceiling() -> int:
     """Máximo permitido al elegir cupo en /crearsimpostor (nunca por debajo del mínimo)."""
     return max(get_min_impo_players(), get_max_players())
+
+def get_default_lobby_slots() -> int:
+    """Cupo por defecto si no se indica `jugadores` al crear lobby."""
+    return int(os.getenv("IMPOSTOR_DEFAULT_SLOTS", str(get_global_slot_ceiling())))
 
 def get_admin_role_ids() -> Set[int]:
     ids_str = os.getenv("IMPOSTOR_ADMIN_ROLE_IDS", "")
@@ -112,7 +116,7 @@ def _generate_lobby_embed(lobby: GameState, bot_user: discord.User) -> discord.E
     # Instrucciones
     if lobby.all_players_count < max_players:
         embed.set_footer(
-            text=f"Mínimo {min_p} jugadores para empezar (no hace falta llenar el cupo). "
+            text=f"Mínimo {min_p} jugadores para empezar (el cupo solo limita el máximo). "
             f"Host: /invitar o Add Bot. Jugadores: Ready."
         )
     else:
@@ -651,7 +655,7 @@ class ImpostorLobbyCog(commands.Cog, name="ImpostorLobby"):
     @app_commands.command(name="crearsimpostor", description="Crea un nuevo lobby para el juego Impostor.")
     @app_commands.describe(
         nombre="Nombre para tu lobby (ej: 'Pros Only')",
-        jugadores="Cupo máximo (humanos+bots). Podés empezar sin llenarlo; mínimo 4 para iniciar.",
+        jugadores="Opcional: cupo máximo (humanos+bots). Si lo omitís, se usa `IMPOSTOR_DEFAULT_SLOTS` o el techo del .env.",
     )
     @app_commands.choices(tipo=[
         app_commands.Choice(name="Abierto (Cualquiera puede unirse)", value="abierto"),
@@ -662,16 +666,18 @@ class ImpostorLobbyCog(commands.Cog, name="ImpostorLobby"):
         interaction: discord.Interaction,
         nombre: str,
         tipo: app_commands.Choice[str],
-        jugadores: int,
+        jugadores: Optional[int] = None,
     ):
         await interaction.response.defer(ephemeral=True)
 
         min_p = get_min_impo_players()
         ceiling = get_global_slot_ceiling()
-        if jugadores < min_p or jugadores > ceiling:
+        cupo = jugadores if jugadores is not None else get_default_lobby_slots()
+        if cupo < min_p or cupo > ceiling:
             return await interaction.followup.send(
                 f"❌ El cupo debe estar entre **{min_p}** y **{ceiling}** "
-                f"(subí el techo con la variable `IMPOSTOR_MAX_PLAYERS` si hace falta).",
+                f"(o omití `jugadores` para usar el valor por defecto). "
+                f"Ajustá `IMPOSTOR_MAX_PLAYERS` / `IMPOSTOR_DEFAULT_SLOTS` en el .env.",
                 ephemeral=True,
             )
         
@@ -715,7 +721,7 @@ class ImpostorLobbyCog(commands.Cog, name="ImpostorLobby"):
             host_id=interaction.user.id,
             lobby_name=nombre,
             is_open=is_open,
-            max_slots=jugadores,
+            max_slots=cupo,
         )
         
         try:

@@ -14,6 +14,10 @@ from . import chars
 
 log = logging.getLogger(__name__)
 
+def _tematica_publica(lobby: GameState) -> str:
+    t = lobby.secret_theme or "personaje"
+    return chars.SECRET_THEME_LABELS_ES.get(t, t)
+
 # --- Configuración ---
 
 def get_role_review_seconds() -> int:
@@ -29,9 +33,16 @@ def _build_role_embed(player: GameState.Player, lobby: GameState) -> discord.Emb
         embed = discord.Embed(
             title="🕵️ ROL: IMPOSTOR",
             description="Tu objetivo es simple: no dejes que te descubran.\n\n"
-                        "Da pistas sobre el personaje de los Sociales, "
-                        "pero sin ser demasiado obvio. ¡Engáñalos a todos!",
+                        "Da pistas creíbles sobre el **secreto** que comparten los Sociales "
+                        "(no sabés cuál es ni —si es un personaje— de qué anime es; "
+                        "solo la **temática** de abajo).\n"
+                        "¡Engáñalos a todos!",
             color=discord.Color.red()
+        )
+        embed.add_field(
+            name="Temática del secreto (pública en el canal)",
+            value=_tematica_publica(lobby),
+            inline=False,
         )
     elif player.role == ROLE_SOCIAL:
         embed = discord.Embed(
@@ -42,15 +53,25 @@ def _build_role_embed(player: GameState.Player, lobby: GameState) -> discord.Emb
             color=discord.Color.green()
         )
         
-        # Añadir información del personaje
+        # Añadir información del personaje (el Impostor no recibe esta vista)
         char_name = lobby.character_name or "Personaje Desconocido"
         char_slug = lobby.character_slug or ""
         char_url = chars.get_character_url(char_slug)
-        
+        tema = lobby.secret_theme or ""
+        lines = [f"**{char_name}**"]
+        if tema == "personaje" and lobby.character_anime:
+            lines.append(f"**📺 De qué anime / obra es:** {lobby.character_anime}")
+        lines.append(f"[Ver ficha / enlace]({char_url})")
+
         embed.add_field(
-            name="Tu Personaje",
-            value=f"**{char_name}**\n[Ver ficha del personaje]({char_url})",
-            inline=False
+            name="Tu secreto (compartido con los Sociales)",
+            value="\n".join(lines),
+            inline=False,
+        )
+        embed.add_field(
+            name="Temática",
+            value=_tematica_publica(lobby),
+            inline=False,
         )
     else:
         # Esto no debería ocurrir
@@ -199,9 +220,14 @@ Halfpública llamada por 'game_core' para iniciar esta fase."""
         view = RoleAssignmentView(self.bot)
         
         # Enviar el mensaje inicial (sin lista de listos)
-        content = "Roles entregados. Tocá `Ver mi rol` (es secreto) y `Listo` cuando termines."
+        tematica = _tematica_publica(lobby)
+        content = (
+            f"🎲 **Temática de esta partida:** {tematica}\n"
+            "(No revela el secreto; solo indica si es personaje, anime u objeto.)\n\n"
+            "Roles entregados. Tocá `Ver mi rol` (es secreto) y `Listo` cuando termines."
+        )
         content += f"\n\n**Listos 0/{len(lobby.human_players)}:**\n*(Nadie ha marcado 'Listo' aún...)*"
-        
+
         await channel.send(content, view=view)
 
 

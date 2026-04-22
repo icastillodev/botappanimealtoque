@@ -55,17 +55,21 @@ class ImpostorGameCore(commands.Cog, name="ImpostorGameCore"):
 
             log.info(f"[StartGame C:{lobby.channel_id}] Iniciando partida. Lobby: {lobby.lobby_name}")
 
-            # 1. Obtener personaje
-            log.debug(f"[StartGame C:{lobby.channel_id}] Obteniendo personaje...")
+            # 1. Secreto + temática (personaje / anime / objeto)
+            log.debug(f"[StartGame C:{lobby.channel_id}] Obteniendo secreto...")
             try:
-                char = await chars.get_random_character()
-                lobby.character_name = char['name']
-                lobby.character_slug = char['slug']
-                log.debug(f"[StartGame C:{lobby.channel_id}] Personaje: {lobby.character_name}")
+                sec = await chars.get_random_secret()
+                lobby.character_name = sec['name']
+                lobby.character_slug = sec['slug']
+                lobby.secret_theme = sec['theme']
+                lobby.character_anime = sec.get("anime")
+                log.debug(f"[StartGame C:{lobby.channel_id}] Secreto: {lobby.character_name} ({lobby.secret_theme})")
             except Exception as e:
-                log.exception(f"[StartGame C:{lobby.channel_id}] ERROR al obtener personaje: {e}")
+                log.exception(f"[StartGame C:{lobby.channel_id}] ERROR al obtener secreto: {e}")
                 lobby.character_name = "Error Personaje"
                 lobby.character_slug = "error"
+                lobby.secret_theme = "personaje"
+                lobby.character_anime = None
             
             # 2. Asignar Impostor
             log.debug(f"[StartGame C:{lobby.channel_id}] Asignando impostor...")

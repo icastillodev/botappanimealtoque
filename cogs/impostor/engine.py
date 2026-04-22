@@ -42,6 +42,10 @@ class GameState:
     # --- Personaje (para Sociales) ---
     character_name: Optional[str] = None
     character_slug: Optional[str] = None
+    # Si el secreto es un personaje: anime/obra (solo lo usan los Sociales en el DM/embed efímero).
+    character_anime: Optional[str] = None
+    # Temática pública de la partida: "personaje" | "anime" | "objeto" (no revela el secreto).
+    secret_theme: Optional[str] = None
 
     # --- Jugadores ---
     @dataclass

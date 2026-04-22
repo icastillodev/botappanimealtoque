@@ -63,6 +63,7 @@ INITIAL_EXTENSIONS = [
     "cogs.check_tareas",
     "cogs.comandos_prefijo",
     "cogs.channel_enforcer",
+    "cogs.semanal_versus",
 ]
 
 def load_env_vars(log):
@@ -95,6 +96,10 @@ def load_env_vars(log):
                 "inicial": price_inicial,
                 "diaria": price_diaria,
                 "semanal": price_semanal,
+                "especial_semanal": int(os.getenv("REWARD_ESPECIAL_SEMANAL_POINTS", "400")),
+                "especial_semanal_blisters": int(os.getenv("REWARD_ESPECIAL_SEMANAL_BLISTERS", "2")),
+                "minijuegos_semanal": int(os.getenv("REWARD_MINIJUEGOS_SEMANAL_POINTS", "150")),
+                "minijuegos_semanal_blisters": int(os.getenv("REWARD_MINIJUEGOS_SEMANAL_BLISTERS", "1")),
             }
         }
         shop_config = {
@@ -103,7 +108,15 @@ def load_env_vars(log):
             "id_rol_contenidos": int(os.getenv("ID_ROL_CONTENIDOS")),
             "price_akatsuki": int(os.getenv("SHOP_PRICE_ROLE_AKATSUKI")),
             "price_jonin": int(os.getenv("SHOP_PRICE_ROLE_JONIN")),
-            "price_pin": int(os.getenv("SHOP_PRICE_PIN_MESSAGE"))
+            "price_pin": int(os.getenv("SHOP_PRICE_PIN_MESSAGE")),
+            # Tienda extra (0 = desactivado en la guía / comandos rechazan con mensaje claro)
+            "price_blister_trampa": int(os.getenv("SHOP_PRICE_BLISTER_TRAMPA", "150")),
+            "price_poll_tienda": int(os.getenv("SHOP_PRICE_POLL_TIENDA", "0")),
+            "price_pin_general": int(os.getenv("SHOP_PRICE_PIN_GENERAL", "0")),
+            "price_temp_role": int(os.getenv("SHOP_PRICE_TEMP_ROLE", "0")),
+            "votacion_channel_id": int(os.getenv("VOTACION_CHANNEL_ID", "0")),
+            "temp_role_prefix": (os.getenv("SHOP_TEMP_ROLE_PREFIX", "★ ") or "★ ")[:16],
+            "temp_role_days": int(os.getenv("SHOP_TEMP_ROLE_DAYS", "30")),
         }
         log.info("Configuración de Tareas y Tienda cargada exitosamente.")
         return task_config, shop_config

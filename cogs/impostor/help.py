@@ -11,9 +11,10 @@ log = logging.getLogger(__name__)
 
 EMBED_MAIN = discord.Embed(
     title="Bienvenido a Impostor",
-    description="Impostor es un juego de deducción social (mínimo **4** jugadores en el lobby).\n\n"
-                "Un **Impostor** intenta adivinar el personaje secreto que comparten los **Sociales**.\n\n"
-                "Al crear partida elegís el **cupo máximo**; podés empezar sin llenar todas las plazas.\n\n"
+    description="Impostor es un juego de deducción social (mínimo **2** jugadores; el **cupo** es solo un tope).\n\n"
+                "Un **Impostor** intenta sobrevivir sin conocer el **secreto** que comparten los **Sociales** "
+                "(personaje, anime u objeto, según la **temática** de la partida).\n\n"
+                "Al crear partida podés fijar el cupo máximo u omitirlo y usar el valor por defecto del servidor.\n\n"
                 "Usa los botones de abajo para aprender más.",
     color=discord.Color.blurple()
 )
@@ -25,12 +26,15 @@ EMBED_COMO_JUGAR = discord.Embed(
 )
 EMBED_COMO_JUGAR.add_field(
     name="1. Fase de Roles",
-    value="Al empezar, todos reciben su rol en secreto. Los 4 Sociales reciben un personaje (ej: 'Naruto'), el Impostor no recibe nada. Todos pulsan 'Listo'.",
+    value="Al empezar se anuncia la **temática** del secreto (personaje, anime u objeto). "
+          "Los Sociales ven el **mismo** secreto; si es **personaje**, también **de qué anime es** "
+          "(el Impostor no lo sabe). El Impostor solo ve la temática. Todos pulsan 'Listo'.",
     inline=False
 )
 EMBED_COMO_JUGAR.add_field(
     name="2. Fase de Pistas (Rondas)",
-    value="Por turnos, cada jugador debe decir **una pista** sobre el personaje (ej: 'Ramen'). El Impostor debe fingir y dar una pista creíble.",
+    value="Por turnos, cada jugador da **una pista** sobre el secreto (acorde a la temática). "
+          "El Impostor finge sin conocer el secreto exacto.",
     inline=False
 )
 EMBED_COMO_JUGAR.add_field(
@@ -53,7 +57,7 @@ EMBED_COMANDOS = discord.Embed(
 EMBED_COMANDOS.add_field(
     name="Generales",
     value="`/helpimpostor` - Muestra esta ayuda.\n"
-          "`/crearsimpostor nombre: … jugadores: …` - Crea un lobby (cupo máx. y tipo abierto/cerrado).\n"
+          "`/crearsimpostor nombre: …` — `jugadores` es **opcional** (cupo máx.; por defecto usa el .env).\n"
           "`/entrar nombre: [nombre]` - Te une a un lobby abierto.\n"
           "En la **cartelera** hay un botón para darte o quitarte el rol de avisos de partidas.",
     inline=False

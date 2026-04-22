@@ -111,6 +111,82 @@ class EconomiaDBManagerV2:
                 if 'reclamado_rol_creador' not in columns:
                     cursor.execute("ALTER TABLE economia_usuarios ADD COLUMN reclamado_rol_creador INTEGER DEFAULT 0")
                     print("DATABASE MIGRATED: Added 'reclamado_rol_creador' column to economia_usuarios.")
+
+                cursor.execute("PRAGMA table_info(tareas_diarias)")
+                dcols = [c[1] for c in cursor.fetchall()]
+                for col, sql in [
+                    ("mensajes_servidor", "ALTER TABLE tareas_diarias ADD COLUMN mensajes_servidor INTEGER DEFAULT 0"),
+                    ("reacciones_servidor", "ALTER TABLE tareas_diarias ADD COLUMN reacciones_servidor INTEGER DEFAULT 0"),
+                    ("trampa_enviada", "ALTER TABLE tareas_diarias ADD COLUMN trampa_enviada INTEGER DEFAULT 0"),
+                    ("trampa_sin_objetivo", "ALTER TABLE tareas_diarias ADD COLUMN trampa_sin_objetivo INTEGER DEFAULT 0"),
+                ]:
+                    if col not in dcols:
+                        cursor.execute(sql)
+                        print(f"DATABASE MIGRATED: Added '{col}' to tareas_diarias.")
+
+                cursor.execute("PRAGMA table_info(tareas_semanales)")
+                scols = [c[1] for c in cursor.fetchall()]
+                for col, sql in [
+                    ("impostor_partidas", "ALTER TABLE tareas_semanales ADD COLUMN impostor_partidas INTEGER DEFAULT 0"),
+                    ("impostor_victorias", "ALTER TABLE tareas_semanales ADD COLUMN impostor_victorias INTEGER DEFAULT 0"),
+                    ("completado_especial", "ALTER TABLE tareas_semanales ADD COLUMN completado_especial INTEGER DEFAULT 0"),
+                    ("mg_ret_roll_apuesta", "ALTER TABLE tareas_semanales ADD COLUMN mg_ret_roll_apuesta INTEGER DEFAULT 0"),
+                    ("mg_roll_casual", "ALTER TABLE tareas_semanales ADD COLUMN mg_roll_casual INTEGER DEFAULT 0"),
+                    ("mg_duelo", "ALTER TABLE tareas_semanales ADD COLUMN mg_duelo INTEGER DEFAULT 0"),
+                    ("mg_voto_dom", "ALTER TABLE tareas_semanales ADD COLUMN mg_voto_dom INTEGER DEFAULT 0"),
+                    ("completado_minijuegos", "ALTER TABLE tareas_semanales ADD COLUMN completado_minijuegos INTEGER DEFAULT 0"),
+                ]:
+                    if col not in scols:
+                        cursor.execute(sql)
+                        print(f"DATABASE MIGRATED: Added '{col}' to tareas_semanales.")
+
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS trampa_audit (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        ts INTEGER NOT NULL,
+                        guild_id INTEGER,
+                        channel_id INTEGER,
+                        attacker_id INTEGER NOT NULL,
+                        target_id INTEGER,
+                        carta_id INTEGER NOT NULL,
+                        carta_nombre TEXT
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS temp_roles_shop (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        guild_id INTEGER NOT NULL,
+                        role_id INTEGER NOT NULL,
+                        user_id INTEGER NOT NULL,
+                        granted_by INTEGER NOT NULL,
+                        label TEXT,
+                        created_ts REAL NOT NULL,
+                        expires_ts REAL NOT NULL
+                    )
+                    """
+                )
+
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS minijuego_invite (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        kind TEXT NOT NULL,
+                        guild_id INTEGER NOT NULL,
+                        channel_id INTEGER NOT NULL,
+                        p1_id INTEGER NOT NULL,
+                        p2_id INTEGER NOT NULL,
+                        stake INTEGER NOT NULL,
+                        payload TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        created_ts REAL NOT NULL,
+                        expires_ts REAL NOT NULL
+                    )
+                    """
+                )
+
                 conn.commit()
             except Exception as e:
                 print(f"Error actualizando el schema de economia_usuarios: {e}")
@@ -243,8 +319,138 @@ class EconomiaDBManagerV2:
                 cursor.execute("UPDATE tareas_diarias SET completado = 1 WHERE user_id = ? AND fecha = ?", (user_id, fecha))
             elif task_type == "semanal":
                 cursor.execute("UPDATE tareas_semanales SET completado = 1 WHERE user_id = ? AND semana = ?", (user_id, semana))
+            elif task_type == "semanal_especial":
+                cursor.execute(
+                    "UPDATE tareas_semanales SET completado_especial = 1 WHERE user_id = ? AND semana = ?",
+                    (user_id, semana),
+                )
+            elif task_type == "semanal_minijuegos":
+                cursor.execute(
+                    "UPDATE tareas_semanales SET completado_minijuegos = 1 WHERE user_id = ? AND semana = ?",
+                    (user_id, semana),
+                )
             conn.commit()
             return cursor.rowcount > 0
+
+    def record_impostor_game_end(self, lobby: Any, winner_role: str) -> None:
+        """Cuenta partida jugada para cada humano y victoria del impostor si corresponde."""
+        from cogs.impostor.engine import ROLE_IMPOSTOR
+
+        _, semana = self.get_current_date_keys()
+        imp_id = getattr(lobby, "impostor_id", None)
+        for p in lobby.players.values():
+            if getattr(p, "is_bot", False):
+                continue
+            uid = int(getattr(p, "user_id", 0))
+            if not uid:
+                continue
+            self.ensure_user_exists(uid)
+            self.update_task_semanal(uid, "impostor_partidas", semana, 1)
+        if winner_role == ROLE_IMPOSTOR and imp_id:
+            self.ensure_user_exists(int(imp_id))
+            self.update_task_semanal(int(imp_id), "impostor_victorias", semana, 1)
+
+    def mark_trampa_enviada(self, user_id: int) -> None:
+        """Trampa dirigida a otro usuario (cuenta para diaria 'completa' en un solo uso)."""
+        fecha, _ = self.get_current_date_keys()
+        self.ensure_user_exists(user_id)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT OR IGNORE INTO tareas_diarias (user_id, fecha) VALUES (?, ?)", (user_id, fecha))
+            cursor.execute(
+                "UPDATE tareas_diarias SET trampa_enviada = 1 WHERE user_id = ? AND fecha = ? AND completado = 0",
+                (user_id, fecha),
+            )
+            conn.commit()
+
+    def bump_trampa_sin_objetivo(self, user_id: int) -> None:
+        """Trampa tipo Trampa sin objetivo: suma 1; con 2 en el día equivale a la pista 'casual' de la diaria."""
+        fecha, _ = self.get_current_date_keys()
+        self.update_task_diaria(user_id, "trampa_sin_objetivo", fecha, 1)
+
+    def log_trampa_uso(
+        self,
+        attacker_id: int,
+        target_id: Optional[int],
+        carta_id: int,
+        carta_nombre: str,
+        guild_id: Optional[int],
+        channel_id: Optional[int],
+    ) -> None:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO trampa_audit (ts, guild_id, channel_id, attacker_id, target_id, carta_id, carta_nombre)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (int(time.time()), guild_id, channel_id, attacker_id, target_id, carta_id, carta_nombre[:200]),
+            )
+            conn.commit()
+
+    def mark_minijuego_semanal(self, user_id: int, campo: str) -> None:
+        """Marca un flag de minijuegos semanal (valor 1). campo whitelist."""
+        allowed = {"mg_ret_roll_apuesta", "mg_roll_casual", "mg_duelo", "mg_voto_dom"}
+        if campo not in allowed:
+            raise ValueError("campo inválido")
+        _, semana = self.get_current_date_keys()
+        self.ensure_user_exists(user_id)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT OR IGNORE INTO tareas_semanales (user_id, semana) VALUES (?, ?)", (user_id, semana))
+            cursor.execute(
+                f"UPDATE tareas_semanales SET {campo} = 1 WHERE user_id = ? AND semana = ?",
+                (user_id, semana),
+            )
+            conn.commit()
+
+    # --- Invitaciones roll / duelo (SQLite en economia.db) ---
+    def minijuego_invite_create(
+        self, kind: str, guild_id: int, channel_id: int, p1: int, p2: int, stake: int, payload: str, ttl_sec: int = 300
+    ) -> int:
+        now = time.time()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO minijuego_invite (kind, guild_id, channel_id, p1_id, p2_id, stake, payload, status, created_ts, expires_ts)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                """,
+                (kind, guild_id, channel_id, p1, p2, stake, payload, now, now + ttl_sec),
+            )
+            conn.commit()
+            return int(cursor.lastrowid)
+
+    def minijuego_invite_pending_for_target(self, opponent_user_id: int) -> Optional[Dict[str, Any]]:
+        """Invitación pendiente donde vos sos el retado (p2)."""
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT * FROM minijuego_invite
+                WHERE status = 'pending' AND expires_ts > ? AND p2_id = ?
+                ORDER BY id DESC LIMIT 1
+                """,
+                (time.time(), opponent_user_id),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+    def minijuego_invite_resolve(self, invite_id: int, new_status: str = "done") -> None:
+        with self._get_connection() as conn:
+            conn.cursor().execute("UPDATE minijuego_invite SET status = ? WHERE id = ?", (new_status, invite_id))
+            conn.commit()
+
+    def minijuego_fetch_expired_pending(self) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT * FROM minijuego_invite WHERE status = 'pending' AND expires_ts < ?",
+                (time.time(),),
+            )
+            return [dict(r) for r in cur.fetchall()]
 
     def get_blisters_for_user(self, user_id: int) -> List[Dict[str, Any]]:
         self.ensure_user_exists(user_id)
@@ -343,4 +549,41 @@ class EconomiaDBManagerV2:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("INSERT INTO creador_posts (user_id, message_id, semana_key) VALUES (?, ?, ?)", (user_id, message_id, semana_key))
+            conn.commit()
+
+    def register_temp_shop_role(
+        self,
+        guild_id: int,
+        role_id: int,
+        user_id: int,
+        granted_by: int,
+        label: str,
+        created_ts: float,
+        expires_ts: float,
+    ) -> int:
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO temp_roles_shop (guild_id, role_id, user_id, granted_by, label, created_ts, expires_ts)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (guild_id, role_id, user_id, granted_by, label[:200], created_ts, expires_ts),
+            )
+            conn.commit()
+            return int(cur.lastrowid)
+
+    def get_expired_temp_shop_roles(self, now_ts: float) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT * FROM temp_roles_shop WHERE expires_ts <= ? ORDER BY id ASC",
+                (now_ts,),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+    def delete_temp_shop_role_row(self, row_id: int) -> None:
+        with self._get_connection() as conn:
+            conn.cursor().execute("DELETE FROM temp_roles_shop WHERE id = ?", (row_id,))
             conn.commit()

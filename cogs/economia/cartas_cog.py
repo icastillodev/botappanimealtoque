@@ -8,6 +8,7 @@ import datetime
 
 from .db_manager import EconomiaDBManagerV2
 from .card_db_manager import CardDBManager
+from . import card_effectos
 
 TipoBlister = Literal["trampa"] 
 CantidadBlister = Literal["1", "5", "todos"]
@@ -172,8 +173,11 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
         self.economia_db.modify_blisters(user_id, tipo, -cantidad_a_abrir)
         
         cartas_obtenidas = []
-        for _ in range(cantidad_a_abrir * 3): 
-            carta = self.card_db.get_random_card_by_rarity() 
+        for _ in range(cantidad_a_abrir * 3):
+            if tipo == "trampa":
+                carta = self.card_db.get_random_card_blister_trampa()
+            else:
+                carta = self.card_db.get_random_card_by_rarity()
             if carta:
                 self.economia_db.add_card_to_inventory(user_id, carta['carta_id'], 1)
                 cartas_obtenidas.append(carta)
@@ -277,13 +281,32 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
             await interaction.channel.send(embed=embed)
             
         await interaction.followup.send("¡Carta usada!", ephemeral=True)
-        
-        if usuario_objetivo and carta['efecto'] == "MUTE_10_MIN":
-            try:
-                await usuario_objetivo.timeout(datetime.timedelta(minutes=10), reason=f"Afectado por carta trampa {carta['nombre']}")
-                await interaction.channel.send(f"¡{usuario_objetivo.mention} ha sido silenciado por 10 minutos!")
-            except Exception as e:
-                self.log.warning(f"No se pudo silenciar a {usuario_objetivo.name}: {e}")
+
+        guild = interaction.guild
+        ch_id = interaction.channel.id if interaction.channel else None
+        g_id = guild.id if guild else None
+        if (carta.get("tipo_carta") or "").lower() == "trampa":
+            self.economia_db.log_trampa_uso(
+                user_id,
+                usuario_objetivo.id if usuario_objetivo else None,
+                int(carta_id),
+                str(carta.get("nombre") or "?"),
+                g_id,
+                ch_id,
+            )
+            if usuario_objetivo:
+                self.economia_db.mark_trampa_enviada(user_id)
+            else:
+                self.economia_db.bump_trampa_sin_objetivo(user_id)
+
+        actor = interaction.user
+        if isinstance(actor, discord.Member) and interaction.channel:
+            await card_effectos.aplicar_efecto_al_usar(
+                carta=carta,
+                actor=actor,
+                target=usuario_objetivo,
+                channel=interaction.channel,
+            )
 
     # --- MODIFICADO: Nombre cambiado a 'vercarta' (sin aat_) ---
     @app_commands.command(name="vercarta", description="Muestra el detalle de una carta que posees.")
@@ -309,6 +332,7 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
         embed.add_field(name="Rareza", value=carta['rareza'], inline=True)
         embed.add_field(name="Tipo", value=carta['tipo_carta'], inline=True)
         embed.add_field(name="Numeración", value=carta['numeracion'], inline=True)
+        embed.add_field(name="Poder", value=str(carta.get("poder", 50)), inline=True)
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="aat_catalogo", description="Muestra todas las cartas que existen en el juego.")

@@ -6,10 +6,12 @@ import random
 
 DB_FILE = Path(__file__).parent / "cartas.db"
 
+
 class CardDBManager:
     def __init__(self, db_path: Path = DB_FILE):
         self.db_path = db_path
         self._create_tables()
+        self._migrate_schema()
 
     def _get_connection(self):
         return sqlite3.connect(self.db_path)
@@ -31,28 +33,84 @@ class CardDBManager:
             """)
             conn.commit()
 
-    def add_carta_stock(self, nombre: str, descripcion: str, efecto: str, url_imagen: str, rareza: str, tipo_carta: str, numeracion: str) -> bool:
+    def _migrate_schema(self):
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(cartas_stock)")
+            cols = [c[1] for c in cursor.fetchall()]
+            if "poder" not in cols:
+                cursor.execute("ALTER TABLE cartas_stock ADD COLUMN poder INTEGER NOT NULL DEFAULT 50")
+                conn.commit()
+                print("DATABASE MIGRATED: Added 'poder' to cartas_stock.")
+
+    def add_carta_stock(
+        self,
+        nombre: str,
+        descripcion: str,
+        efecto: str,
+        url_imagen: str,
+        rareza: str,
+        tipo_carta: str,
+        numeracion: str,
+        poder: int = 50,
+    ) -> bool:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             try:
-                cursor.execute("""
-                    INSERT INTO cartas_stock (nombre, descripcion, efecto, url_imagen, rareza, tipo_carta, numeracion)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (nombre, descripcion, efecto, url_imagen, rareza.capitalize(), tipo_carta.capitalize(), numeracion))
+                cursor.execute(
+                    """
+                    INSERT INTO cartas_stock (nombre, descripcion, efecto, url_imagen, rareza, tipo_carta, numeracion, poder)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        nombre,
+                        descripcion,
+                        efecto,
+                        url_imagen,
+                        rareza.capitalize(),
+                        tipo_carta.capitalize(),
+                        numeracion,
+                        int(poder),
+                    ),
+                )
                 conn.commit()
                 return True
             except sqlite3.IntegrityError:
                 return False
-    
-    def update_carta_stock(self, carta_id: int, nombre: str, descripcion: str, efecto: str, url_imagen: str, rareza: str, tipo_carta: str, numeracion: str) -> bool:
+
+    def update_carta_stock(
+        self,
+        carta_id: int,
+        nombre: str,
+        descripcion: str,
+        efecto: str,
+        url_imagen: str,
+        rareza: str,
+        tipo_carta: str,
+        numeracion: str,
+        poder: int = 50,
+    ) -> bool:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             try:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     UPDATE cartas_stock SET
-                    nombre = ?, descripcion = ?, efecto = ?, url_imagen = ?, rareza = ?, tipo_carta = ?, numeracion = ?
+                    nombre = ?, descripcion = ?, efecto = ?, url_imagen = ?, rareza = ?, tipo_carta = ?, numeracion = ?, poder = ?
                     WHERE carta_id = ?
-                """, (nombre, descripcion, efecto, url_imagen, rareza.capitalize(), tipo_carta.capitalize(), numeracion, carta_id))
+                    """,
+                    (
+                        nombre,
+                        descripcion,
+                        efecto,
+                        url_imagen,
+                        rareza.capitalize(),
+                        tipo_carta.capitalize(),
+                        numeracion,
+                        int(poder),
+                        carta_id,
+                    ),
+                )
                 conn.commit()
                 return True
             except sqlite3.IntegrityError:
@@ -69,12 +127,15 @@ class CardDBManager:
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT carta_id, nombre, numeracion FROM cartas_stock
                 WHERE nombre LIKE ? OR numeracion LIKE ?
                 ORDER BY numeracion
                 LIMIT 25
-            """, (f'%{query}%', f'%{query}%'))
+                """,
+                (f"%{query}%", f"%{query}%"),
+            )
             return [dict(row) for row in cursor.fetchall()]
 
     def get_carta_stock_by_id(self, carta_id: int) -> Optional[Dict[str, Any]]:
@@ -83,48 +144,70 @@ class CardDBManager:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM cartas_stock WHERE carta_id = ?", (carta_id,))
             row = cursor.fetchone()
-            return dict(row) if row else None
-            
-    # --- LÓGICA DE GACHA CORREGIDA ---
-    # Ya no pedimos 'tipo_carta', ahora da cualquiera según la rareza
+            if not row:
+                return None
+            d = dict(row)
+            if d.get("poder") is None:
+                d["poder"] = 50
+            return d
+
     def get_random_card_by_rarity(self) -> Optional[Dict[str, Any]]:
-        """
-        Obtiene una carta aleatoria de CUALQUIER tipo.
-        Probabilidades: 70% Común, 25% Rara, 5% Legendaria.
-        """
         roll = random.randint(1, 100)
-        
-        if roll <= 70: 
+
+        if roll <= 70:
             rareza = "Común"
-        elif roll <= 95: 
+        elif roll <= 95:
             rareza = "Rara"
-        else: 
+        else:
             rareza = "Legendaria"
-            
+
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            
-            # Seleccionamos CUALQUIER carta que coincida con la rareza
-            cursor.execute("""
+
+            cursor.execute(
+                """
                 SELECT * FROM cartas_stock
                 WHERE rareza = ?
                 ORDER BY RANDOM() LIMIT 1
-            """, (rareza,))
-            
+                """,
+                (rareza,),
+            )
+
             row = cursor.fetchone()
-            
-            # Fallback: Si salió Legendaria pero no hay ninguna creada,
-            # intenta devolver una Común para no dar error.
+
             if not row and rareza != "Común":
-                 cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT * FROM cartas_stock
                     WHERE rareza = 'Común'
                     ORDER BY RANDOM() LIMIT 1
-                """)
-                 row = cursor.fetchone()
+                    """
+                )
+                row = cursor.fetchone()
 
             return dict(row) if row else None
+
+    def get_random_card_blister_trampa(self) -> Optional[Dict[str, Any]]:
+        """Sobres tipo trampa: prioriza cartas con tipo Trampa (~70%), si no hay stock cae al gacha normal."""
+        if random.randint(1, 100) > 30:
+            with self._get_connection() as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT * FROM cartas_stock
+                    WHERE LOWER(tipo_carta) = 'trampa'
+                    ORDER BY RANDOM() LIMIT 1
+                    """
+                )
+                row = cursor.fetchone()
+                if row:
+                    d = dict(row)
+                    if d.get("poder") is None:
+                        d["poder"] = 50
+                    return d
+        return self.get_random_card_by_rarity()
 
     def get_all_cards_stock(self) -> List[Dict[str, Any]]:
         with self._get_connection() as conn:
@@ -137,9 +220,12 @@ class CardDBManager:
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT nombre, rareza, numeracion, tipo_carta FROM cartas_stock
                 WHERE LOWER(tipo_carta) = LOWER(?)
                 ORDER BY numeracion ASC
-            """, (tipo_carta,))
+                """,
+                (tipo_carta,),
+            )
             return [dict(row) for row in cursor.fetchall()]

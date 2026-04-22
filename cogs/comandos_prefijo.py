@@ -1,13 +1,15 @@
 # cogs/comandos_prefijo.py
+import datetime
 import discord
 from discord.ext import commands
 import logging
 import os
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from cogs.economia.db_manager import EconomiaDBManagerV2
 from cogs.economia.card_db_manager import CardDBManager
 from cogs.economia.cartas_cog import StockCatalogView
+from cogs.economia import card_effectos
 
 class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
     def __init__(self, bot: commands.Bot):
@@ -51,9 +53,15 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         prog = self.db.get_progress_diaria(user_id)
         
         embed = discord.Embed(title=f"Progreso Diario ({fecha})", color=discord.Color.orange())
+        msg_n = int(prog.get("mensajes_servidor") or 0)
+        rx_n = int(prog.get("reacciones_servidor") or 0)
+        tr = int(prog.get("trampa_enviada") or 0)
+        ts = int(prog.get("trampa_sin_objetivo") or 0)
+        tr_ok = tr >= 1 or ts >= 2
         desc = (
-            f"{self._check_task(prog['general_mensajes'], 5)} Escribir 5 mensajes en `#general` ({prog['general_mensajes']}/5)\n"
-            f"{self._check_task(prog['media_actividad'])} Participar en canales de Media\n\n"
+            f"{self._check_task(msg_n, 10)} 10 mensajes en el servidor ({msg_n}/10)\n"
+            f"{self._check_task(rx_n, 3)} 3 reacciones en el servidor ({rx_n}/3)\n"
+            f"{'✅' if tr_ok else '❌'} **Trampa:** dirigida a alguien o 2× sin objetivo — {tr}/1 · casual {ts}/2\n\n"
         )
         if prog['completado'] == 1:
             desc += "✅ **¡Completado!**"
@@ -71,15 +79,36 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         prog = self.db.get_progress_semanal(user_id)
 
         embed = discord.Embed(title=f"Progreso Semanal", color=discord.Color.purple())
+        ip = int(prog.get("impostor_partidas") or 0)
+        iv = int(prog.get("impostor_victorias") or 0)
+        ra = int(prog.get("mg_ret_roll_apuesta") or 0)
+        rc = int(prog.get("mg_roll_casual") or 0)
+        du = int(prog.get("mg_duelo") or 0)
+        vo = int(prog.get("mg_voto_dom") or 0)
+        rw = self.task_config["rewards"]
         desc = (
-            f"{self._check_task(prog['debate_post'])} Crear 1 post en Foros de Debate\n"
+            f"{self._check_task(prog['debate_post'])} Foro (hilo en debate)\n"
+            f"{self._check_task(prog['media_escrito'])} Meme / cosplay / dibujo (media)\n"
             f"{self._check_task(prog['videos_reaccion'])} Reaccionar en `#videos`\n"
-            f"{self._check_task(prog['media_escrito'])} Escribir en canales de Media\n\n"
+            f"{self._check_task(ip, 3)} 3× Impostor ({ip}/3)\n"
+            f"{self._check_task(iv)} Ganar como Impostor\n\n"
+            "**Minijuegos (slash `/aat_…`)**\n"
+            f"{self._check_task(ra)} Reto con apuesta (roll o duelo)\n"
+            f"{self._check_task(rc)} Roll casual `/aat_roll`\n"
+            f"{self._check_task(du)} Duelo completado\n"
+            f"{self._check_task(vo)} Voto `/aat_voto_semanal`\n"
         )
         if prog['completado'] == 1:
-            desc += "✅ **¡Completado!**"
+            desc += "✅ **¡Semanal base completado!**"
         else:
             desc += f"**Premio:** {self.task_config['rewards']['semanal']} Puntos + 1 Blister."
+        if int(prog.get("completado_minijuegos") or 0) == 1:
+            desc += "\n✅ **Minijuegos semanal:** ya reclamado."
+        else:
+            desc += (
+                f"\n**Premio minijuegos:** {rw.get('minijuegos_semanal', 150)} pts + "
+                f"{rw.get('minijuegos_semanal_blisters', 1)} Blister — `/aat_reclamar` `semanal_minijuegos`."
+            )
 
         embed.description = desc
         embed.set_footer(text="Usa !reclamar para obtener tus premios.")
@@ -143,7 +172,8 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
             mensajes.append("✅ **Inicial:** ¡Reclamado!")
 
         prog_dia = self.db.get_progress_diaria(user_id)
-        if prog_dia['completado'] == 0 and (prog_dia['general_mensajes'] >= 5 and prog_dia['media_actividad'] >= 1):
+        tr_ok_d = int(prog_dia.get("trampa_enviada") or 0) >= 1 or int(prog_dia.get("trampa_sin_objetivo") or 0) >= 2
+        if prog_dia['completado'] == 0 and int(prog_dia.get("mensajes_servidor") or 0) >= 10 and int(prog_dia.get("reacciones_servidor") or 0) >= 3 and tr_ok_d:
             self.db.modify_points(user_id, self.task_config['rewards']['diaria'])
             self.db.modify_blisters(user_id, "trampa", 1)
             self.db.claim_reward(user_id, "diaria")
@@ -155,6 +185,28 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
             self.db.modify_blisters(user_id, "trampa", 1)
             self.db.claim_reward(user_id, "semanal")
             mensajes.append("✅ **Semanal:** ¡Reclamado!")
+
+        rw = self.task_config["rewards"]
+        if int(prog_sem.get("completado_especial") or 0) == 0:
+            ip = int(prog_sem.get("impostor_partidas") or 0)
+            iv = int(prog_sem.get("impostor_victorias") or 0)
+            if ip >= 3 and iv >= 1:
+                self.db.modify_points(user_id, int(rw.get("especial_semanal", 400)))
+                self.db.modify_blisters(user_id, "trampa", int(rw.get("especial_semanal_blisters", 2)))
+                self.db.claim_reward(user_id, "semanal_especial")
+                mensajes.append("✅ **Especial semanal (Impostor):** ¡Reclamado!")
+
+        if int(prog_sem.get("completado_minijuegos") or 0) == 0:
+            if (
+                int(prog_sem.get("mg_ret_roll_apuesta") or 0) >= 1
+                and int(prog_sem.get("mg_roll_casual") or 0) >= 1
+                and int(prog_sem.get("mg_duelo") or 0) >= 1
+                and int(prog_sem.get("mg_voto_dom") or 0) >= 1
+            ):
+                self.db.modify_points(user_id, int(rw.get("minijuegos_semanal", 150)))
+                self.db.modify_blisters(user_id, "trampa", int(rw.get("minijuegos_semanal_blisters", 1)))
+                self.db.claim_reward(user_id, "semanal_minijuegos")
+                mensajes.append("✅ **Minijuegos semanal:** ¡Reclamado!")
 
         if mensajes:
             embed = discord.Embed(title="🎉 Recompensas obtenidas", description="\n".join(mensajes), color=discord.Color.green())
@@ -229,7 +281,10 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
                 self.db.modify_blisters(user_id, b['blister_tipo'], -cant)
                 count += cant
                 for _ in range(cant * 3):
-                    c = self.card_db.get_random_card_by_rarity()
+                    if b["blister_tipo"].lower() == "trampa":
+                        c = self.card_db.get_random_card_blister_trampa()
+                    else:
+                        c = self.card_db.get_random_card_by_rarity()
                     if c:
                         self.db.add_card_to_inventory(user_id, c['carta_id'], 1)
                         cartas_nuevas.append(c['nombre'])
@@ -247,13 +302,17 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
 
     @commands.command(aliases=["ayudaeconomia"])
     async def ayudaeconomiacomandos(self, ctx):
-        embed = discord.Embed(title="Ayuda Comandos (!)", description="`!progreso`, `!reclamar`, `!inventario`, `!abrir`, `!top`, `!usar`", color=discord.Color.gold())
+        embed = discord.Embed(
+            title="Ayuda Comandos (!)",
+            description="`!progreso`, `!reclamar`, `!inventario`, `!abrir`, `!top`, `!usar`\n\nSlash: `/aat_ayuda` (economía, minijuegos, duelos, voto).",
+            color=discord.Color.gold(),
+        )
         await ctx.send(embed=embed)
         
     @commands.command(aliases=["usarcarta"])
-    async def usar(self, ctx, carta_id: str):
+    async def usar(self, ctx, carta_id: str, target: Optional[discord.Member] = None):
         if not carta_id.isdigit():
-            await ctx.send("Debes poner el ID numérico de la carta. Ej: `!usar 5`")
+            await ctx.send("Debes poner el ID numérico de la carta. Ej: `!usar 5` o trampa a alguien: `!usar 5 @usuario`")
             return
         cid = int(carta_id)
         user_id = ctx.author.id
@@ -267,13 +326,37 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         self.db.use_card_from_inventory(user_id, cid)
         self.db.log_card_usage(user_id)
         c_data = self.card_db.get_carta_stock_by_id(cid)
-        
-        embed = discord.Embed(title="¡Carta Activada!", description=f"**{ctx.author.name}** usó **{c_data['nombre']}**", color=discord.Color.red())
-        if c_data['url_imagen']:
-            embed.set_image(url=c_data['url_imagen'])
-        embed.add_field(name="Efecto", value=c_data['efecto'])
-        
+        if not c_data:
+            await ctx.send("Error: carta no encontrada en el catálogo.")
+            return
+
+        g_id = ctx.guild.id if ctx.guild else None
+        if (c_data.get("tipo_carta") or "").lower() == "trampa":
+            self.db.log_trampa_uso(user_id, target.id if target else None, cid, str(c_data.get("nombre") or "?"), g_id, ctx.channel.id)
+            if target:
+                self.db.mark_trampa_enviada(user_id)
+            else:
+                self.db.bump_trampa_sin_objetivo(user_id)
+
+        titulo = "¡Carta Activada!"
+        desc = f"**{ctx.author.name}** usó **{c_data['nombre']}**"
+        if target:
+            titulo = "¡Ataque de carta!"
+            desc = f"**{ctx.author.name}** usó **{c_data['nombre']}** contra {target.mention}"
+        embed = discord.Embed(title=titulo, description=desc, color=discord.Color.red())
+        if c_data.get("url_imagen"):
+            embed.set_image(url=c_data["url_imagen"])
+        embed.add_field(name="Efecto", value=str(c_data.get("efecto") or "—"))
+
         await ctx.send(embed=embed)
+
+        if ctx.guild and isinstance(ctx.author, discord.Member):
+            await card_effectos.aplicar_efecto_al_usar(
+                carta=c_data,
+                actor=ctx.author,
+                target=target,
+                channel=ctx.channel,
+            )
 
 async def setup(bot):
     await bot.add_cog(ComandosPrefijoCog(bot))

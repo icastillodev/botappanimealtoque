@@ -57,6 +57,7 @@ class CardStockView(discord.ui.View):
         embed.add_field(name="Rareza", value=carta['rareza'], inline=True)
         embed.add_field(name="Tipo", value=carta['tipo_carta'], inline=True)
         embed.add_field(name="Numeración", value=carta['numeracion'], inline=True)
+        embed.add_field(name="Poder (duelos)", value=str(carta.get("poder", 50)), inline=True)
         embed.set_footer(text=f"Carta {self.current_page + 1} / {self.max_pages}")
         return embed
 
@@ -153,10 +154,30 @@ class AdminCog(commands.Cog, name="Economia Admin"):
         await interaction.response.send_message(f"📌 Se establecieron los créditos de {usuario.mention} a {cantidad}.", ephemeral=True)
 
     @app_commands.command(name="aat_admin_crear_carta", description="[ADMIN] Añade una nueva carta al stock global.")
-    @app_commands.describe(nombre="Nombre exacto", rareza="Rareza", tipo_carta="Tipo", url_imagen="Link PERMANENTE", numeracion="Código (ej: AAT-001)", descripcion="Texto 'flavor'", efecto="Poder de la carta")
-    async def crear_carta(self, interaction: discord.Interaction, nombre: str, rareza: RarezaCarta, tipo_carta: TipoCarta, url_imagen: str, numeracion: str, descripcion: Optional[str] = "Sin descripción.", efecto: Optional[str] = "Sin efecto."):
+    @app_commands.describe(
+        nombre="Nombre exacto",
+        rareza="Rareza",
+        tipo_carta="Tipo",
+        url_imagen="Link PERMANENTE",
+        numeracion="Código (ej: AAT-001)",
+        descripcion="Texto 'flavor'",
+        efecto="Código de efecto (ej: MUTE_10_MIN, BROMA_DM, BROMA_EPHEMERAL) — mecánicos solo Rara/Legendaria",
+        poder="Número de poder para duelos (default 50)",
+    )
+    async def crear_carta(
+        self,
+        interaction: discord.Interaction,
+        nombre: str,
+        rareza: RarezaCarta,
+        tipo_carta: TipoCarta,
+        url_imagen: str,
+        numeracion: str,
+        descripcion: Optional[str] = "Sin descripción.",
+        efecto: Optional[str] = "Sin efecto.",
+        poder: int = 50,
+    ):
         await interaction.response.defer(ephemeral=True)
-        success = self.card_db.add_carta_stock(nombre, descripcion, efecto, url_imagen, rareza, tipo_carta, numeracion)
+        success = self.card_db.add_carta_stock(nombre, descripcion, efecto, url_imagen, rareza, tipo_carta, numeracion, poder=int(poder))
         if not success:
             await interaction.followup.send(f"❌ Error: Ya existe una carta con el nombre '{nombre}'.", ephemeral=True)
             return
@@ -166,6 +187,7 @@ class AdminCog(commands.Cog, name="Economia Admin"):
         embed.add_field(name="Rareza", value=rareza, inline=True)
         embed.add_field(name="Tipo", value=tipo_carta, inline=True)
         embed.add_field(name="Numeración", value=numeracion, inline=True)
+        embed.add_field(name="Poder", value=str(poder), inline=True)
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="aat_admin_modificar_carta", description="[ADMIN] Modifica una carta existente en el stock.")

@@ -10,7 +10,8 @@ from typing import Optional
 # Importaciones locales
 from . import core
 from .engine import GameState, PHASE_END, ROLE_IMPOSTOR, ROLE_SOCIAL
-from . import feed 
+from . import feed
+from . import chars
 
 log = logging.getLogger(__name__)
 
@@ -200,8 +201,14 @@ class ImpostorEndgameCog(commands.Cog, name="ImpostorEndgame"):
             
             embed.add_field(name="🕵️ Impostor", value=impostor_mention, inline=False)
             embed.add_field(name="🧑‍🤝‍🧑 Sociales", value=", ".join(social_mentions) or "Ninguno", inline=False)
-            char_name = lobby.character_name or "Personaje Desconocido"
-            embed.add_field(name="🧩 Personaje", value=f"{char_name}", inline=False)
+            char_name = lobby.character_name or "Secreto desconocido"
+            tema = lobby.secret_theme or "personaje"
+            tema_txt = chars.SECRET_THEME_LABELS_ES.get(tema, tema)
+            embed.add_field(name="🎲 Temática", value=tema_txt, inline=False)
+            secreto_val = char_name
+            if tema == "personaje" and getattr(lobby, "character_anime", None):
+                secreto_val = f"{char_name}\n*{lobby.character_anime}*"
+            embed.add_field(name="🧩 Secreto", value=secreto_val, inline=False)
             log.debug(f"[Endgame C:{lobby.channel_id}] Embed preparado OK.")
         except Exception as e:
             log.exception(f"[Endgame C:{lobby.channel_id}] EXCEPCIÓN preparando el embed final: {e}")
@@ -229,6 +236,14 @@ class ImpostorEndgameCog(commands.Cog, name="ImpostorEndgame"):
                  # No podemos hacer mucho más si no podemos enviar el mensaje
         else:
              log.warning(f"[Endgame C:{lobby.channel_id}] No se envió mensaje final porque el embed falló.")
+
+        # Economía: estadísticas semanales (partidas / victoria como impostor)
+        eco = getattr(self.bot, "economia_db", None)
+        if eco:
+            try:
+                eco.record_impostor_game_end(lobby, winner_role)
+            except Exception as e:
+                log.warning(f"[Endgame C:{lobby.channel_id}] No se pudo registrar stats Impostor: {e}")
 
         # Iniciar la tarea de limpieza automática
         log.debug(f"[Endgame C:{lobby.channel_id}] Iniciando tarea de cleanup...")

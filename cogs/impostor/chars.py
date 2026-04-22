@@ -4,7 +4,7 @@ import os
 import aiohttp
 import logging
 import random
-from typing import List, Optional, TypedDict
+from typing import List, NotRequired, Optional, TypedDict
 import asyncio  
 
 log = logging.getLogger(__name__)
@@ -427,6 +427,158 @@ _FALLBACK_CHARACTERS: List[Character] = [
 
 
 ]
+
+# --- Pools para temática de secreto (personaje / anime / objeto) ---
+# Personajes conocidos (no incluye títulos de series como ítem de "personaje").
+_SECRET_PERSONAJES: List[Character] = [
+    {"name": "Naruto Uzumaki", "slug": "naruto-uzumaki"},
+    {"name": "Monkey D. Luffy", "slug": "monkey-d-luffy"},
+    {"name": "Eren Yeager", "slug": "eren-yeager"},
+    {"name": "Tanjiro Kamado", "slug": "tanjiro-kamado"},
+    {"name": "Izuku Midoriya", "slug": "izuku-midoriya"},
+    {"name": "Gojo Satoru", "slug": "satoru-gojo"},
+    {"name": "Killua Zoldyck", "slug": "killua-zoldyck"},
+    {"name": "Mikasa Ackerman", "slug": "mikasa-ackerman"},
+    {"name": "Levi Ackerman", "slug": "levi-ackerman"},
+    {"name": "Vegeta", "slug": "vegeta"},
+    {"name": "Light Yagami", "slug": "light-yagami"},
+    {"name": "Edward Elric", "slug": "edward-elric"},
+    {"name": "Kakashi Hatake", "slug": "kakashi-hatake"},
+    {"name": "Itachi Uchiha", "slug": "itachi-uchiha"},
+    {"name": "Rukia Kuchiki", "slug": "rukia-kuchiki"},
+    {"name": "Nezuko Kamado", "slug": "nezuko-kamado"},
+    {"name": "Asuka Langley Soryu", "slug": "asuka-langley-soryu"},
+    {"name": "Kurisu Makise", "slug": "kurisu-makise"},
+    {"name": "Spike Spiegel", "slug": "spike-spiegel"},
+    {"name": "Rem", "slug": "rem"},
+    {"name": "Megumin", "slug": "megumin"},
+    {"name": "Shigeo Kageyama", "slug": "shigeo-kageyama"},
+    {"name": "Osamu Dazai", "slug": "osamu-dazai"},
+    {"name": "Yor Forger", "slug": "yor-forger"},
+    {"name": "Power", "slug": "power"},
+    {"name": "Boa Hancock", "slug": "boa-hancock"},
+    {"name": "Shanks", "slug": "shanks"},
+    {"name": "All Might", "slug": "all-might"},
+    {"name": "Hisoka Morow", "slug": "hisoka-morow"},
+    {"name": "Kento Nanami", "slug": "kento-nanami"},
+    {"name": "Inosuke Hashibira", "slug": "inosuke-hashibira"},
+]
+
+# Origen (anime/obra) de cada personaje del pool secreto — solo lo ven los Sociales, nunca el Impostor.
+_ORIGEN_ANIME_POR_PERSONAJE_SLUG: dict[str, str] = {
+    "naruto-uzumaki": "Naruto / Naruto Shippuden",
+    "monkey-d-luffy": "One Piece",
+    "eren-yeager": "Attack on Titan",
+    "tanjiro-kamado": "Demon Slayer (Kimetsu no Yaiba)",
+    "izuku-midoriya": "My Hero Academia",
+    "satoru-gojo": "Jujutsu Kaisen",
+    "killua-zoldyck": "Hunter x Hunter",
+    "mikasa-ackerman": "Attack on Titan",
+    "levi-ackerman": "Attack on Titan",
+    "vegeta": "Dragon Ball Z",
+    "light-yagami": "Death Note",
+    "edward-elric": "Fullmetal Alchemist: Brotherhood",
+    "kakashi-hatake": "Naruto / Naruto Shippuden",
+    "itachi-uchiha": "Naruto / Naruto Shippuden",
+    "rukia-kuchiki": "Bleach",
+    "nezuko-kamado": "Demon Slayer (Kimetsu no Yaiba)",
+    "asuka-langley-soryu": "Neon Genesis Evangelion",
+    "kurisu-makise": "Steins;Gate",
+    "spike-spiegel": "Cowboy Bebop",
+    "rem": "Re:Zero − Starting Life in Another World",
+    "megumin": "KonoSuba",
+    "shigeo-kageyama": "Mob Psycho 100",
+    "osamu-dazai": "Bungo Stray Dogs",
+    "yor-forger": "Spy x Family",
+    "power": "Chainsaw Man",
+    "boa-hancock": "One Piece",
+    "shanks": "One Piece",
+    "all-might": "My Hero Academia",
+    "hisoka-morow": "Hunter x Hunter",
+    "kento-nanami": "Jujutsu Kaisen",
+    "inosuke-hashibira": "Demon Slayer (Kimetsu no Yaiba)",
+}
+
+_SECRET_ANIMES: List[Character] = [
+    {"name": "Naruto Shippuden", "slug": "naruto-shippuden"},
+    {"name": "One Piece", "slug": "one-piece"},
+    {"name": "Attack on Titan", "slug": "attack-on-titan"},
+    {"name": "Demon Slayer", "slug": "demon-slayer"},
+    {"name": "My Hero Academia", "slug": "my-hero-academia"},
+    {"name": "Jujutsu Kaisen", "slug": "jujutsu-kaisen"},
+    {"name": "Dragon Ball Z", "slug": "dragon-ball-z"},
+    {"name": "Death Note", "slug": "death-note"},
+    {"name": "Fullmetal Alchemist: Brotherhood", "slug": "fullmetal-alchemist-brotherhood"},
+    {"name": "Hunter x Hunter", "slug": "hunter-x-hunter"},
+    {"name": "Bleach", "slug": "bleach"},
+    {"name": "Steins;Gate", "slug": "steins-gate"},
+    {"name": "Cowboy Bebop", "slug": "cowboy-bebop"},
+    {"name": "Neon Genesis Evangelion", "slug": "neon-genesis-evangelion"},
+    {"name": "Chainsaw Man", "slug": "chainsaw-man"},
+    {"name": "Spy x Family", "slug": "spy-x-family"},
+    {"name": "Vinland Saga", "slug": "vinland-saga"},
+    {"name": "Code Geass", "slug": "code-geass"},
+    {"name": "Mob Psycho 100", "slug": "mob-psycho-100"},
+    {"name": "Re:Zero", "slug": "re-zero"},
+]
+
+_SECRET_OBJETOS: List[Character] = [
+    {"name": "Kunai de ninja", "slug": "obj-kunai"},
+    {"name": "Ramen Ichiraku", "slug": "obj-ramen"},
+    {"name": "Poke Ball", "slug": "obj-pokeball"},
+    {"name": "Death Note (cuaderno)", "slug": "obj-death-note"},
+    {"name": "Anillo de compromiso de Vegeta", "slug": "obj-anillo-vegeta"},
+    {"name": "Espada de rengoku (katana llama)", "slug": "obj-nichirin-rengoku"},
+    {"name": "Bufanda de Mikasa", "slug": "obj-bufanda-mikasa"},
+    {"name": "Máscara de Kakashi", "slug": "obj-mascara-kakashi"},
+    {"name": "Sombrero de paja de Luffy", "slug": "obj-sombrero-paja"},
+    {"name": "Mapa del tesoro", "slug": "obj-mapa-tesoro"},
+    {"name": "Anillo del hollow (Bleach)", "slug": "obj-anillo-hollow"},
+    {"name": "Uniforme UA (My Hero)", "slug": "obj-uniforme-ua"},
+    {"name": "Maletín de Loid (Spy x Family)", "slug": "obj-maletin-loid"},
+    {"name": "Core de Iron Man… versión anime (figura)", "slug": "obj-figura"},
+    {"name": "Sake de Jiraiya", "slug": "obj-sake"},
+    {"name": "Dango tricolor", "slug": "obj-dango"},
+    {"name": "Gema del infinito… parodia (esfera del dragón)", "slug": "obj-esfera-dragon"},
+    {"name": "Manzana de Ryuk", "slug": "obj-manzana-ryuk"},
+    {"name": "Guantelete… estilo chibi", "slug": "obj-guantelete-chibi"},
+    {"name": "Katana negra de Tanjiro", "slug": "obj-katana-tanjiro"},
+]
+
+SECRET_THEME_LABELS_ES = {
+    "personaje": "🎭 **Personaje** (alguien de un anime)",
+    "anime": "📺 **Anime / serie** (el título de una obra)",
+    "objeto": "🎒 **Objeto icónico** (cosa reconocible del mundo del anime)",
+}
+
+
+class SecretPick(TypedDict):
+    name: str
+    slug: str
+    theme: str
+    # Solo cuando theme == "personaje": obra de origen (los Sociales lo ven; el Impostor no).
+    anime: NotRequired[str]
+
+
+async def get_random_secret() -> SecretPick:
+    """Elige temática y un secreto acorde (no es una pista, solo define el tipo de cosa a adivinar)."""
+    theme = random.choice(["personaje", "anime", "objeto"])
+    if theme == "personaje":
+        pool = _SECRET_PERSONAJES
+    elif theme == "anime":
+        pool = _SECRET_ANIMES
+    else:
+        pool = _SECRET_OBJETOS
+    pick = random.choice(pool)
+    out: SecretPick = {"name": pick["name"], "slug": pick["slug"], "theme": theme}
+    if theme == "personaje":
+        slug = pick["slug"]
+        out["anime"] = _ORIGEN_ANIME_POR_PERSONAJE_SLUG.get(
+            slug,
+            "Obra no catalogada (avisá al staff para sumar el slug en el bot).",
+        )
+    return out
+
 
 # --- Caché en Memoria ---
 

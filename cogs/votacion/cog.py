@@ -233,6 +233,78 @@ class VotacionCog(commands.Cog):
             self.log.error(f"Error al actualizar el mensaje de votación {message_id}: {e}")
             return False, str(e)
 
+    async def create_shop_poll(
+        self,
+        channel: discord.abc.Messageable,
+        guild: discord.Guild,
+        creator: discord.Member,
+        titulo: str,
+        opcion1: str,
+        opcion2: str,
+        minutes: int,
+        descripcion: Optional[str] = None,
+        opcion3: Optional[str] = None,
+        opcion4: Optional[str] = None,
+        url_imagen: Optional[str] = None,
+    ) -> tuple[bool, str, Optional[discord.Message]]:
+        """
+        Crea una votación de usuario en un canal concreto (p. ej. canal de votaciones de la tienda).
+        Devuelve (éxito, mensaje_error, mensaje_publicado).
+        """
+        end_timestamp = int(time.time() + (minutes * 60))
+        options_labels = [op for op in [opcion1, opcion2, opcion3, opcion4] if op is not None]
+        temp_poll_data = {
+            "title": titulo,
+            "description": descripcion,
+            "link_url": None,
+            "image_url": url_imagen,
+            "options": [{"label": label, "vote_count": 0} for label in options_labels],
+            "limite_votos": 1,
+            "formato_votos": "ambos",
+            "is_active": True,
+            "end_timestamp": end_timestamp,
+        }
+        embed = create_poll_embed(temp_poll_data, author=creator)
+        view = PollView(poll_options=None, db_manager=self.db)
+        try:
+            poll_message = await channel.send(
+                content=f"🛒 **Votación de la tienda** — pedida por **{creator.display_name}**.",
+                embed=embed,
+                view=view,
+            )
+        except discord.Forbidden:
+            return False, "Sin permiso para escribir en el canal de votaciones.", None
+        except Exception as e:
+            self.log.exception("create_shop_poll send: %s", e)
+            return False, str(e), None
+        try:
+            self.db.add_poll(
+                message_id=poll_message.id,
+                guild_id=guild.id,
+                channel_id=poll_message.channel.id,
+                creator_id=creator.id,
+                title=titulo,
+                options=options_labels,
+                description=descripcion,
+                image_url=url_imagen,
+                link_url=None,
+                limite_votos=1,
+                formato_votos="ambos",
+                end_timestamp=end_timestamp,
+            )
+        except Exception as e:
+            self.log.exception("create_shop_poll DB: %s", e)
+            try:
+                await poll_message.delete()
+            except Exception:
+                pass
+            return False, f"Error al guardar la votación: {e}", None
+        final_poll_data = self.db.get_poll_data(poll_message.id)
+        final_view = PollView(poll_options=final_poll_data["options"], db_manager=self.db)
+        final_embed = create_poll_embed(final_poll_data, author=creator)
+        await poll_message.edit(embed=final_embed, view=final_view)
+        return True, "", poll_message
+
     @app_commands.command(name="crear_votacion", description="Crea una votación de usuario simple (max 4 opciones).")
     @app_commands.describe(
         titulo="El título de la votación",

@@ -14,7 +14,9 @@ class EconomiaHelpView(discord.ui.View):
             self._create_page_1(),
             self._create_page_2(),
             self._create_page_3(),
-            self._create_page_4()
+            self._create_page_4(),
+            self._create_page_5(),
+            self._create_page_6(),
         ]
         self._update_buttons()
 
@@ -25,20 +27,23 @@ class EconomiaHelpView(discord.ui.View):
         return True
 
     def _create_page_1(self) -> discord.Embed:
-        embed = discord.Embed(title="Ayuda de Economía 🪙 (Página 1/4)", color=discord.Color.blue())
-        embed.description = "¡Bienvenido al sistema de economía y cartas del servidor!"
-        embed.add_field(name="¿Qué es esto?", value="Gana Puntos y Blisters completando tareas...", inline=False)
+        embed = discord.Embed(title="Ayuda de Economía 🪙 (Página 1/6)", color=discord.Color.blue())
+        embed.description = (
+            "Ganás **puntos** y **sobres** con tareas; los puntos se gastan en la **tienda** y minijuegos.\n"
+            "**Flujo:** tareas → `/aat_reclamar` → puntos → `/aat_tienda_ver` (u otras tiendas) → disfrutás."
+        )
+        embed.add_field(name="¿Qué es esto?", value="Puntos, blisters, cartas trampa, tienda y ranking del servidor.", inline=False)
         embed.add_field(name="Tareas (Comandos)", value=(
             "`/aat_progreso_iniciacion` - Muestra tus misiones de bienvenida.\n"
-            "`/aat_progreso_diaria` - Muestra tus misiones diarias.\n"
-            "`/aat_progreso_semanal` - Muestra tus misiones semanales.\n"
-            "`/aat_reclamar [tipo]` - Reclama tus recompensas (inicial, diaria, semanal)."
+            "`/aat_progreso_diaria` - Diaria: 10 mensajes + 3 reacciones + **Trampa**: a alguien **o** 2× sin objetivo.\n"
+            "`/aat_progreso_semanal` - Semanal, especial Impostor y **minijuegos** (ver página 5).\n"
+            "`/aat_reclamar [tipo]` - `inicial`, `diaria`, `semanal`, `semanal_especial`, `semanal_minijuegos`."
         ), inline=False)
         embed.set_footer(text="Usa los botones para navegar.")
         return embed
 
     def _create_page_2(self) -> discord.Embed:
-        embed = discord.Embed(title="Ayuda de Cartas y Blisters 🃏 (Página 2/4)", color=discord.Color.purple())
+        embed = discord.Embed(title="Ayuda de Cartas y Blisters 🃏 (Página 2/6)", color=discord.Color.purple())
         embed.add_field(name="`/aat_puntos`", value="Un atajo rápido para ver solo tus puntos.", inline=False)
         embed.add_field(name="`/aat_inventario`", value="Tu comando principal. Úsalo para ver tus Puntos, Créditos y Blisters.", inline=False)
         embed.add_field(name="`/aat_abrirblister`", value="¡Abre los blisters que ganaste! Cada uno da 3 cartas aleatorias.", inline=False)
@@ -49,18 +54,106 @@ class EconomiaHelpView(discord.ui.View):
         return embed
         
     def _create_page_3(self) -> discord.Embed:
-        embed = discord.Embed(title="Ayuda de Cartas Trampa ⚔️ (Página 3/4)", color=discord.Color.red())
+        embed = discord.Embed(title="Ayuda de Cartas Trampa ⚔️ (Página 3/6)", color=discord.Color.red())
         # --- MODIFICADO: Nombre actualizado ---
-        embed.add_field(name="`/usar`", value="Consume una carta de tu inventario. Puedes usarla 'al aire' o contra un usuario.", inline=False)
+        embed.add_field(
+            name="`/usar`",
+            value=(
+                "Consume una carta. **Diaria (Trampa):** 1 uso **contra un miembro** **o** 2 usos **sin objetivo**. "
+                "Cartas **Rara/Legendaria** pueden tener efectos extra (mute breve, broma, etc.) según el campo del staff. "
+                "`!usar ID @usuario`."
+            ),
+            inline=False,
+        )
         embed.add_field(name="Límites", value="Las cartas son **consumibles** y tienes un límite de **5 cartas cada 10 minutos**.", inline=False)
         return embed
 
     def _create_page_4(self) -> discord.Embed:
-        embed = discord.Embed(title="Ayuda de Tienda y Ranking 🏆 (Página 4/4)", color=discord.Color.gold())
-        embed.add_field(name="`/aat_tienda_ver`", value="Muestra la tienda donde puedes gastar tus puntos 🪙.", inline=False)
-        embed.add_field(name="`/aat_tienda_canjear`", value="Compra un ítem de la tienda (roles o créditos).", inline=False)
-        embed.add_field(name="`/aat_tienda_fijar`", value="Usa un crédito para fijar un mensaje.", inline=False)
-        embed.add_field(name="`/aat_ranking_top`", value="Muestra el Top 10 del servidor.", inline=False)
+        embed = discord.Embed(title="Tienda paso a paso 🏪 (Página 4/6)", color=discord.Color.gold())
+        embed.description = "Todo con **slash**; los precios los pone el staff en el `.env`."
+        embed.add_field(
+            name="1 · Ver catálogo",
+            value="`/aat_tienda_ver` — saldo, precios e ítems activos.",
+            inline=False,
+        )
+        embed.add_field(
+            name="2 · Canje clásico",
+            value=(
+                "`/aat_tienda_canjear` → **akatsuki** / **jonin** / **pin** / **blister_trampa**\n"
+                "· **pin** suma 1 crédito; después `/aat_tienda_fijar` con la **ID** del mensaje **en ese canal**.\n"
+                "· **blister_trampa** suma 1 sobre trampa para abrir con `/aat_abrirblister`."
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="3 · Pin solo en #general",
+            value="`/aat_tienda_pin_general` — pagás de una vez (sin crédito) si está `SHOP_PRICE_PIN_GENERAL`.",
+            inline=False,
+        )
+        embed.add_field(
+            name="4 · Encuesta de pago",
+            value="`/aat_tienda_encuesta` — publica en el canal de votaciones (`VOTACION_CHANNEL_ID` + precio `SHOP_PRICE_POLL_TIENDA`).",
+            inline=False,
+        )
+        embed.add_field(
+            name="5 · Rol decorativo temporal",
+            value="`/aat_tienda_rol_temporal` — creás un rol con nombre, se lo das a alguien (o a vos) **30 días** (configurable).",
+            inline=False,
+        )
+        embed.add_field(name="Ranking", value="`/aat_ranking_top` — top 10 del servidor.", inline=False)
+        return embed
+
+    def _create_page_5(self) -> discord.Embed:
+        embed = discord.Embed(title="Minijuegos y semanal extra 🎲 (Página 5/6)", color=discord.Color.teal())
+        embed.description = (
+            "Cumplí las 4 marcas en `/aat_progreso_semanal` y reclamá con `/aat_reclamar` → **`semanal_minijuegos`**."
+        )
+        embed.add_field(
+            name="Comandos",
+            value=(
+                "`/aat_roll` — dado casual (rango acotado).\n"
+                "`/aat_roll_retar` + `/aat_roll_aceptar` — apuesta 1–100, gana el mayor.\n"
+                "`/aat_duelo_retar` + `/aat_duelo_aceptar` — apuestan puntos y **cartas**; total = **poder** + dado; el retador elige si gana **mayor** o **menor**.\n"
+                "`/aat_voto_semanal` — voto A/B (opciones por variables de entorno del bot)."
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="Notas",
+            value="No podés retar a alguien que ya tenga un reto pendiente. Las invitaciones expiran y se devuelve la apuesta del retador si no responden.",
+            inline=False,
+        )
+        return embed
+
+    def _create_page_6(self) -> discord.Embed:
+        embed = discord.Embed(
+            title="Resumen: puntos y reclamos 📋 (Página 6/6)",
+            color=discord.Color.dark_green(),
+        )
+        embed.description = "Checklist para no perderte."
+        embed.add_field(
+            name="Ganar",
+            value=(
+                "`/aat_progreso_*` para ver qué falta.\n"
+                "`/aat_reclamar` sin tipo intenta **todo** lo listo.\n"
+                "Tipos: `inicial`, `diaria`, `semanal`, `semanal_especial`, `semanal_minijuegos`."
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="Gastar",
+            value="Tienda (pág. 4), minijuegos con apuesta (pág. 5), tienda de roles fijos.",
+            inline=False,
+        )
+        embed.add_field(
+            name="Otras ideas que suman",
+            value=(
+                "Canje por **título en /nick** temporal; sorteo de puntos entre reacciones; "
+                "**doble puntos** un día a la semana; ítem **color de rol** (sin permisos extra); "
+                "donación de puntos a otro usuario con comisión."
+            ),
+            inline=False,
+        )
         return embed
 
     def _update_buttons(self):

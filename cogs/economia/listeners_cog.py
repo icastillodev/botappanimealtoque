@@ -17,7 +17,7 @@ class EconomiaListenersCog(commands.Cog):
     def cog_unload(self):
         self.log.info("EconomiaListenersCog descargado.")
 
-    def _get_current_date_keys(self) -> (str, str):
+    def _get_current_date_keys(self) -> tuple:
         now = datetime.datetime.now()
         fecha = now.strftime("%Y-%m-%d")
         semana = now.strftime("%Y-%U")
@@ -25,7 +25,7 @@ class EconomiaListenersCog(commands.Cog):
 
     def _get_channel_id(self, name: str) -> int:
         return self.config.get("channels", {}).get(name, 0)
-        
+
     def _get_message_id(self, name: str) -> int:
         return self.config.get("messages", {}).get(name, 0)
 
@@ -35,34 +35,50 @@ class EconomiaListenersCog(commands.Cog):
             return
         user_id = message.author.id
         channel_id = message.channel.id
-        
-        if not hasattr(self, 'db'): return
+
+        if not hasattr(self, "db"):
+            return
         fecha, semana = self._get_current_date_keys()
 
         if channel_id == self._get_channel_id("presentacion"):
             self.db.update_task_inicial(user_id, "presentacion")
         if channel_id == self._get_channel_id("general"):
             self.db.update_task_inicial(user_id, "general_mensaje")
-            self.db.update_task_diaria(user_id, "general_mensajes", fecha, 1)
-        
-        # --- MODIFICADO: Ya no actualiza 'debate_actividad' aquí ---
-        if channel_id in [self._get_channel_id("anime_debate"), self._get_channel_id("manga_debate")]:
-            pass # (La tarea diaria fue removida)
 
-        if channel_id in [self._get_channel_id("fanarts"), self._get_channel_id("cosplays"), self._get_channel_id("memes")]:
-            self.db.update_task_diaria(user_id, "media_actividad", fecha, 1)
+        # Diaria: mensajes en cualquier canal de texto o hilo del servidor
+        if isinstance(message.channel, (discord.TextChannel, discord.Thread)):
+            text = (message.content or "").strip()
+            if text:
+                self.db.update_task_diaria(user_id, "mensajes_servidor", fecha, 1)
+
+        if channel_id in [
+            self._get_channel_id("fanarts"),
+            self._get_channel_id("cosplays"),
+            self._get_channel_id("memes"),
+        ]:
             self.db.update_task_semanal(user_id, "media_escrito", semana, 1)
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
-        if not payload.guild_id or (payload.member and payload.member.bot):
+        if not payload.guild_id:
             return
-        if not hasattr(self, 'db'): return
-            
+        guild = self.bot.get_guild(payload.guild_id)
+        if not guild:
+            return
+        member = payload.member
+        if member is None:
+            member = guild.get_member(payload.user_id)
+        if not member or member.bot:
+            return
+        if not hasattr(self, "db"):
+            return
+
         user_id = payload.user_id
         channel_id = payload.channel_id
         message_id = payload.message_id
         fecha, semana = self._get_current_date_keys()
+
+        self.db.update_task_diaria(user_id, "reacciones_servidor", fecha, 1)
 
         if channel_id == self._get_channel_id("autorol"):
             if message_id == self._get_message_id("pais"):
@@ -73,28 +89,21 @@ class EconomiaListenersCog(commands.Cog):
             self.db.update_task_inicial(user_id, "reaccion_social")
         if channel_id == self._get_channel_id("reglas"):
             self.db.update_task_inicial(user_id, "reaccion_reglas")
-            
-        # --- MODIFICADO: Ya no actualiza 'debate_actividad' aquí ---
-        if channel_id in [self._get_channel_id("anime_debate"), self._get_channel_id("manga_debate")]:
-            pass # (La tarea diaria fue removida)
-            
-        if channel_id in [self._get_channel_id("fanarts"), self._get_channel_id("cosplays"), self._get_channel_id("memes")]:
-            self.db.update_task_diaria(user_id, "media_actividad", fecha, 1)
+
         if channel_id == self._get_channel_id("videos"):
             self.db.update_task_semanal(user_id, "videos_reaccion", semana, 1)
 
     @commands.Cog.listener()
     async def on_thread_create(self, thread: discord.Thread):
-        if not hasattr(self, 'db'): return
-        if thread.owner.bot:
+        if not hasattr(self, "db"):
             return
-            
+        if thread.owner and thread.owner.bot:
+            return
+
         user_id = thread.owner_id
         channel_id = thread.parent_id
-        fecha, semana = self._get_current_date_keys()
-        
-        # --- MODIFICADO: Ya no actualiza 'debate_actividad' aquí ---
-        # (Pero mantiene la tarea semanal 'debate_post')
+        _, semana = self._get_current_date_keys()
+
         if channel_id in [self._get_channel_id("anime_debate"), self._get_channel_id("manga_debate")]:
             self.db.update_task_semanal(user_id, "debate_post", semana, 1)
 

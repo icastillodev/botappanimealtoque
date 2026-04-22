@@ -52,11 +52,16 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
         fecha, _ = self.db.get_current_date_keys()
         prog_dia = self.db.get_progress_diaria(user_id)
         embed_dia = discord.Embed(title=f"Progreso: Tareas Diarias ({fecha})", color=discord.Color.orange())
-        
-        check_general = self._check_task(prog_dia['general_mensajes'], 5)
+
+        msg_n = int(prog_dia.get("mensajes_servidor") or 0)
+        rx_n = int(prog_dia.get("reacciones_servidor") or 0)
+        tr = int(prog_dia.get("trampa_enviada") or 0)
+        ts = int(prog_dia.get("trampa_sin_objetivo") or 0)
+        tr_ok = tr >= 1 or ts >= 2
         desc_dia = (
-            f"{check_general} Escribir 5 mensajes en `#general` (Llevas {prog_dia['general_mensajes']}/5)\n"
-            f"{self._check_task(prog_dia['media_actividad'])} Participar (escribir/reaccionar) en canales de Media (Fanarts, etc)\n\n"
+            f"{self._check_task(msg_n, 10)} Enviar **10** mensajes en el servidor (cualquier canal de texto) — {msg_n}/10\n"
+            f"{self._check_task(rx_n, 3)} Añadir **3** reacciones en el servidor — {rx_n}/3\n"
+            f"{'✅' if tr_ok else '❌'} **Trampa:** contra alguien (`/usar`+objetivo) **o** 2× trampa sin objetivo — Dirigida: {tr}/1 · Casual: {ts}/2\n\n"
         )
         if prog_dia['completado'] == 1:
             desc_dia += "✅ **¡Ya reclamaste la recompensa de hoy!**"
@@ -72,28 +77,59 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
         _, semana = self.db.get_current_date_keys()
         prog_sem = self.db.get_progress_semanal(user_id)
         embed_sem = discord.Embed(title=f"Progreso: Tareas Semanales (Semana {semana.split('-')[-1]})", color=discord.Color.purple())
+        ip = int(prog_sem.get("impostor_partidas") or 0)
+        iv = int(prog_sem.get("impostor_victorias") or 0)
         desc_sem = (
-            f"{self._check_task(prog_sem['debate_post'])} Crear 1 post en Foros de Debate\n"
-            f"{self._check_task(prog_sem['videos_reaccion'])} Reaccionar a un post en `#videos`\n"
-            f"{self._check_task(prog_sem['media_escrito'])} Escribir en canales de Media (Fanarts, etc)\n\n"
+            f"{self._check_task(prog_sem['debate_post'])} Escribir en el **foro** (nuevo hilo en debate anime/manga)\n"
+            f"{self._check_task(prog_sem['media_escrito'])} Enviar un **meme**, **cosplay** o **dibujo** (mensaje en los canales de media)\n"
+            f"{self._check_task(prog_sem['videos_reaccion'])} Reaccionar en `#videos`\n\n"
+            "**Especial semanal (Impostor)**\n"
+            f"{self._check_task(ip, 3)} Jugar al menos **3** partidas a Impostor — {ip}/3\n"
+            f"{self._check_task(iv)} Ganar **1** vez como Impostor en la semana\n\n"
         )
         if prog_sem['completado'] == 1:
-            desc_sem += "✅ **¡Ya reclamaste la recompensa de esta semana!**"
+            desc_sem += "✅ **¡Ya reclamaste la recompensa semanal base!**"
         else:
-            desc_sem += f"**Recompensa:** {self.task_config['rewards']['semanal']} Puntos + 1 Blister.\n*Cuando completes todo, usa `/aat_reclamar`.*"
+            desc_sem += f"**Recompensa semanal:** {self.task_config['rewards']['semanal']} Puntos + 1 Blister.\n*Usa `/aat_reclamar`.*\n"
+        rw = self.task_config["rewards"]
+        if int(prog_sem.get("completado_especial") or 0) == 1:
+            desc_sem += "\n✅ **Especial semanal:** ya reclamado."
+        else:
+            desc_sem += (
+                f"\n**Recompensa especial:** {rw.get('especial_semanal', 400)} pts + "
+                f"{rw.get('especial_semanal_blisters', 2)} Blisters — `/aat_reclamar` → `semanal_especial`."
+            )
+        ra = int(prog_sem.get("mg_ret_roll_apuesta") or 0)
+        rc = int(prog_sem.get("mg_roll_casual") or 0)
+        du = int(prog_sem.get("mg_duelo") or 0)
+        vo = int(prog_sem.get("mg_voto_dom") or 0)
+        desc_sem += (
+            "\n\n**Minijuegos semanal** (recompensa aparte)\n"
+            f"{self._check_task(ra)} Reto con apuesta: `/aat_roll_retar` **o** completar un duelo (`/aat_duelo_retar`…)\n"
+            f"{self._check_task(rc)} Roll casual: `/aat_roll`\n"
+            f"{self._check_task(du)} Completar un **duelo** (`/aat_duelo_aceptar`)\n"
+            f"{self._check_task(vo)} Voto semanal: `/aat_voto_semanal`\n"
+        )
+        if int(prog_sem.get("completado_minijuegos") or 0) == 1:
+            desc_sem += "\n✅ **Minijuegos:** ya reclamado."
+        else:
+            desc_sem += (
+                f"\n**Premio minijuegos:** {rw.get('minijuegos_semanal', 150)} pts + "
+                f"{rw.get('minijuegos_semanal_blisters', 1)} Blister — `/aat_reclamar` → `semanal_minijuegos`."
+            )
         embed_sem.description = desc_sem
         await interaction.followup.send(embed=embed_sem, ephemeral=True)
 
 
     # --- ¡¡¡COMANDO RECLAMAR MEJORADO!!! ---
-    @app_commands.command(name="aat_reclamar", description="Reclama tus recompensas disponibles (Inicial, Diaria, Semanal).")
+    @app_commands.command(name="aat_reclamar", description="Reclama recompensas: inicial, diaria, semanal, especial Impostor, minijuegos semanal.")
     @app_commands.describe(tipo="Opcional: Elige un tipo específico. Si lo dejas vacío, intenta reclamar TODO lo disponible.")
-    async def reclamar(self, interaction: discord.Interaction, tipo: Optional[Literal["inicial", "diaria", "semanal"]] = None):
+    async def reclamar(self, interaction: discord.Interaction, tipo: Optional[Literal["inicial", "diaria", "semanal", "semanal_especial", "semanal_minijuegos"]] = None):
         await interaction.response.defer(ephemeral=True)
         user_id = interaction.user.id
         
         # Definir qué vamos a revisar
-        tipos_a_revisar = [tipo] if tipo else ["inicial", "diaria", "semanal"]
+        tipos_a_revisar = [tipo] if tipo else ["inicial", "diaria", "semanal", "semanal_especial", "semanal_minijuegos"]
         
         reclamado_algo = False
         mensajes_exito = []
@@ -125,7 +161,12 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
                     if tipo: mensajes_error.append("Diaria: Ya reclamado hoy.")
                     continue
                 
-                if (prog['general_mensajes'] >= 5 and prog['media_actividad'] >= 1):
+                msg_n = int(prog.get("mensajes_servidor") or 0)
+                rx_n = int(prog.get("reacciones_servidor") or 0)
+                tr = int(prog.get("trampa_enviada") or 0)
+                ts = int(prog.get("trampa_sin_objetivo") or 0)
+                tr_ok = tr >= 1 or ts >= 2
+                if msg_n >= 10 and rx_n >= 3 and tr_ok:
                     recompensa = self.task_config['rewards']['diaria']
                     self.db.modify_points(user_id, recompensa)
                     self.db.modify_blisters(user_id, "trampa", 1)
@@ -151,6 +192,51 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
                     reclamado_algo = True
                 else:
                     if tipo: mensajes_error.append("Semanal: Tareas incompletas.")
+
+            elif objetivo == "semanal_especial":
+                prog = self.db.get_progress_semanal(user_id)
+                if int(prog.get("completado_especial") or 0) == 1:
+                    if tipo:
+                        mensajes_error.append("Especial semanal: Ya reclamado.")
+                    continue
+                ip = int(prog.get("impostor_partidas") or 0)
+                iv = int(prog.get("impostor_victorias") or 0)
+                if ip >= 3 and iv >= 1:
+                    rw = self.task_config["rewards"]
+                    pts = int(rw.get("especial_semanal", 400))
+                    bl = int(rw.get("especial_semanal_blisters", 2))
+                    self.db.modify_points(user_id, pts)
+                    self.db.modify_blisters(user_id, "trampa", bl)
+                    self.db.claim_reward(user_id, "semanal_especial")
+                    mensajes_exito.append(f"**Especial semanal:** {pts} Puntos + {bl} Blisters 🃏")
+                    reclamado_algo = True
+                else:
+                    if tipo:
+                        mensajes_error.append("Especial semanal: Necesitás 3 partidas Impostor y 1 victoria como impostor.")
+
+            elif objetivo == "semanal_minijuegos":
+                prog = self.db.get_progress_semanal(user_id)
+                if int(prog.get("completado_minijuegos") or 0) == 1:
+                    if tipo:
+                        mensajes_error.append("Minijuegos semanal: Ya reclamado.")
+                    continue
+                if (
+                    int(prog.get("mg_ret_roll_apuesta") or 0) >= 1
+                    and int(prog.get("mg_roll_casual") or 0) >= 1
+                    and int(prog.get("mg_duelo") or 0) >= 1
+                    and int(prog.get("mg_voto_dom") or 0) >= 1
+                ):
+                    rw = self.task_config["rewards"]
+                    pts = int(rw.get("minijuegos_semanal", 150))
+                    bl = int(rw.get("minijuegos_semanal_blisters", 1))
+                    self.db.modify_points(user_id, pts)
+                    self.db.modify_blisters(user_id, "trampa", bl)
+                    self.db.claim_reward(user_id, "semanal_minijuegos")
+                    mensajes_exito.append(f"**Minijuegos semanal:** {pts} Puntos + {bl} Blister(s) 🃏")
+                    reclamado_algo = True
+                else:
+                    if tipo:
+                        mensajes_error.append("Minijuegos: faltan reto con apuesta, roll casual, duelo y voto.")
 
         # --- ENVIAR RESPUESTA ---
         
