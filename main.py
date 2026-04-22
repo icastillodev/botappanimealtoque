@@ -18,6 +18,9 @@ from cogs.economia.db_manager import EconomiaDBManagerV2, DB_FILE as ECON_DB_FIL
 from cogs.economia.card_db_manager import CardDBManager, DB_FILE as CARD_DB_FILE
 
 load_dotenv()
+
+from env_loader import load_task_and_shop_config
+
 log_level = logging.DEBUG
 root_logger = logging.getLogger()
 root_logger.setLevel(log_level)
@@ -61,69 +64,9 @@ INITIAL_EXTENSIONS = [
     "cogs.creador",
     "cogs.reaction_limiter",
     "cogs.check_tareas",
-    "cogs.comandos_prefijo",
     "cogs.channel_enforcer",
     "cogs.semanal_versus",
 ]
-
-def load_env_vars(log):
-    log.info("Cargando IDs de configuración...")
-    try:
-        price_inicial = int(os.getenv("REWARD_INICIAL_POINTS", 1000))
-        price_diaria = int(os.getenv("REWARD_DIARIA_POINTS", 50))
-        price_semanal = int(os.getenv("REWARD_SEMANAL_POINTS", 300))
-
-        task_config = {
-            "channels": {
-                "general": int(os.getenv("GENERAL_CHANNEL_ID")),
-                "presentacion": int(os.getenv("PRESENTACION_CHANNEL_ID")),
-                "reglas": int(os.getenv("REGLAS_CHANNEL_ID")),
-                "social": int(os.getenv("SOCIAL_CHANNEL_ID")),
-                "autorol": int(os.getenv("AUTOROL_CHANNEL_ID")),
-                "fanarts": int(os.getenv("FANARTS_CHANNEL_ID")),
-                "cosplays": int(os.getenv("COSPLAYS_CHANNEL_ID")),
-                "memes": int(os.getenv("MEMES_CHANNEL_ID")),
-                "videos": int(os.getenv("VIDEOS_CHANNEL_ID")),
-                "anime_debate": int(os.getenv("ANIMEDEBATE_CHANNEL_ID")),
-                "manga_debate": int(os.getenv("MANGA_CHANNEL_ID")),
-                "contenido_comunidad": int(os.getenv("ID_CANAL_CONTENIDOCOMUNIDAD")),
-            },
-            "messages": {
-                "rol": int(os.getenv("ROL_COMENTARIO_ID")),
-                "pais": int(os.getenv("PAIS_COMENTARIO_ID")),
-            },
-            "rewards": {
-                "inicial": price_inicial,
-                "diaria": price_diaria,
-                "semanal": price_semanal,
-                "especial_semanal": int(os.getenv("REWARD_ESPECIAL_SEMANAL_POINTS", "400")),
-                "especial_semanal_blisters": int(os.getenv("REWARD_ESPECIAL_SEMANAL_BLISTERS", "2")),
-                "minijuegos_semanal": int(os.getenv("REWARD_MINIJUEGOS_SEMANAL_POINTS", "150")),
-                "minijuegos_semanal_blisters": int(os.getenv("REWARD_MINIJUEGOS_SEMANAL_BLISTERS", "1")),
-            }
-        }
-        shop_config = {
-            "akatsuki_role_id": int(os.getenv("AKATSUKI_ROLE_ID")),
-            "jonin_role_id": int(os.getenv("JONIN_ROLE_ID")),
-            "id_rol_contenidos": int(os.getenv("ID_ROL_CONTENIDOS")),
-            "price_akatsuki": int(os.getenv("SHOP_PRICE_ROLE_AKATSUKI")),
-            "price_jonin": int(os.getenv("SHOP_PRICE_ROLE_JONIN")),
-            "price_pin": int(os.getenv("SHOP_PRICE_PIN_MESSAGE")),
-            # Tienda extra (0 = desactivado en la guía / comandos rechazan con mensaje claro)
-            "price_blister_trampa": int(os.getenv("SHOP_PRICE_BLISTER_TRAMPA", "150")),
-            "price_poll_tienda": int(os.getenv("SHOP_PRICE_POLL_TIENDA", "0")),
-            "price_pin_general": int(os.getenv("SHOP_PRICE_PIN_GENERAL", "0")),
-            "price_temp_role": int(os.getenv("SHOP_PRICE_TEMP_ROLE", "0")),
-            "votacion_channel_id": int(os.getenv("VOTACION_CHANNEL_ID", "0")),
-            "temp_role_prefix": (os.getenv("SHOP_TEMP_ROLE_PREFIX", "★ ") or "★ ")[:16],
-            "temp_role_days": int(os.getenv("SHOP_TEMP_ROLE_DAYS", "30")),
-        }
-        log.info("Configuración de Tareas y Tienda cargada exitosamente.")
-        return task_config, shop_config
-        
-    except (TypeError, ValueError) as e:
-        log.critical(f"¡ERROR CRÍTICO! Faltan IDs en .env o no son números. Los cogs de economía no funcionarán. {e}")
-        return None, None
 
 class MiBot(commands.Bot):
     def __init__(self):
@@ -150,7 +93,7 @@ class MiBot(commands.Bot):
         self.card_db = CardDBManager(db_path=CARD_DB_FILE)
         
         self.hokage_role_id = HOKAGE_ID
-        self.task_config, self.shop_config = load_env_vars(log)
+        self.task_config, self.shop_config = load_task_and_shop_config(log)
 
     async def setup_hook(self):
         self.log.info("Cargando vistas persistentes de votaciones...")

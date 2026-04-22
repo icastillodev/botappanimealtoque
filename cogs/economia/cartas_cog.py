@@ -300,12 +300,17 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
                 self.economia_db.bump_trampa_sin_objetivo(user_id)
 
         actor = interaction.user
+        sc = getattr(self.bot, "shop_config", None) or {}
         if isinstance(actor, discord.Member) and interaction.channel:
             await card_effectos.aplicar_efecto_al_usar(
                 carta=carta,
                 actor=actor,
                 target=usuario_objetivo,
                 channel=interaction.channel,
+                economia_db=self.economia_db,
+                guild=interaction.guild,
+                trampa_carta_rol_id=int(sc.get("trampa_carta_rol_24h_id") or 0),
+                trampa_carta_rol_hours=int(sc.get("trampa_carta_rol_24h_hours") or 24),
             )
 
     # --- MODIFICADO: Nombre cambiado a 'vercarta' (sin aat_) ---

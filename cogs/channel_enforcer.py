@@ -27,15 +27,6 @@ class ChannelEnforcerCog(commands.Cog, name="Limpieza de Chat"):
             
             # Verificar si es un comando de prefijo
             if message.content.startswith("!") and len(message.content) > 1 and not message.content.startswith("! "):
-                
-                # --- ¡¡¡EXCEPCIÓN!!! ---
-                # Si es el comando !usar o !usarcarta, NO hacemos nada (lo permitimos)
-                # Obtenemos la primera palabra sin el '!' y en minúsculas
-                first_word = message.content[1:].split()[0].lower()
-                if first_word in ["usar", "usarcarta"]:
-                    return 
-                # -----------------------
-
                 # 1. Borrar el mensaje del usuario
                 try:
                     await message.delete()
@@ -44,7 +35,11 @@ class ChannelEnforcerCog(commands.Cog, name="Limpieza de Chat"):
 
                 # 2. Enviar Embed al CANAL (no DM)
                 embed = discord.Embed(
-                    description=f"🚫 **{message.author.mention}, los comandos de gestión van en <#{self.bot_channel_id}>**\n*(Solo `!usar` está permitido aquí para las batallas)*",
+                    description=(
+                        f"🚫 **{message.author.mention}, en #general no se usan comandos con `!`.**\n"
+                        f"Usá los **comandos /** en <#{self.bot_channel_id}> o donde el staff indique "
+                        f"(economía: `/aat_ayuda`, cartas: `/usar`)."
+                    ),
                     color=discord.Color.red()
                 )
                 

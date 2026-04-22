@@ -1,7 +1,13 @@
 # cogs/impostor/notify.py — Rol de avisos y cooldown de ping en lobby
+#
+# Requisitos:
+# - IMPOSTOR_NOTIFY_ROLE_ID: rol que DEBE existir en el servidor (avisos @mención).
+# - Opcional IMPOSTOR_NOTIFY_PING_CHANNEL_ID: si está definido, el host “🔔 avisar”
+#   publica el @rol ahí (p. ej. #general-impostor). Si no, el mensaje va al canal del lobby.
 
 import os
 import time
+from typing import Optional
 import discord
 from discord.ext import commands
 import logging
@@ -15,6 +21,17 @@ _last_lobby_ping_ts: dict[int, float] = {}
 def get_notify_role_id() -> int:
     val = os.getenv("IMPOSTOR_NOTIFY_ROLE_ID", "1437939011212546068")
     return int(val)
+
+
+def get_notify_ping_broadcast_channel_id() -> Optional[int]:
+    """Canal fijo para el ping de ‘buscan jugadores’ (ej. #general-impostor). None = usar canal del lobby."""
+    raw = (os.getenv("IMPOSTOR_NOTIFY_PING_CHANNEL_ID") or "").strip()
+    if not raw:
+        return None
+    try:
+        return int(raw.split("#", 1)[0].strip())
+    except ValueError:
+        return None
 
 
 def lobby_ping_cooldown_remaining(channel_id: int) -> float:

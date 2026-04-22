@@ -103,7 +103,7 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
         if poll > 0 and vch > 0:
             extra = f"**Encuesta en canal votación** — **{poll}** pts → `/aat_tienda_encuesta`\n"
         elif poll > 0 and vch <= 0:
-            extra = "_Encuesta tienda:_ falta `VOTACION_CHANNEL_ID` en el `.env`.\n"
+            extra = "_Encuesta tienda:_ falta `VOTACION_CHANNEL_ID` (o `VOTING_CHANNEL_ID`) en el `.env`.\n"
         if ptr > 0:
             extra += f"**Rol personal 30 días** — **{ptr}** pts → `/aat_tienda_rol_temporal`\n"
         if extra:
@@ -332,7 +332,7 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
         cid = self._cfg("votacion_channel_id", 0)
         if precio <= 0 or cid <= 0:
             await interaction.followup.send(
-                "No habilitado: definí `SHOP_PRICE_POLL_TIENDA` (>0) y `VOTACION_CHANNEL_ID` en el `.env`.",
+                "No habilitado: definí `SHOP_PRICE_POLL_TIENDA` (>0) y `VOTACION_CHANNEL_ID` (o `VOTING_CHANNEL_ID`) en el `.env`.",
                 ephemeral=True,
             )
             return
@@ -453,6 +453,7 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
                 clean,
                 now,
                 exp,
+                kind="shop",
             )
             await interaction.followup.send(
                 f"✅ **-{precio}** pts. Rol {role.mention} → {usuario.mention} por **{days}** días.",
@@ -489,16 +490,20 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
                 guild_id = int(row["guild_id"])
                 role_id = int(row["role_id"])
                 user_id = int(row["user_id"])
+                kind = str(row.get("kind") or "shop")
                 g = self.bot.get_guild(guild_id)
                 if g:
                     role = g.get_role(role_id)
                     mem = g.get_member(user_id)
                     if mem and role and role in mem.roles:
                         try:
-                            await mem.remove_roles(role, reason="Rol temporal tienda — vencido")
+                            await mem.remove_roles(
+                                role,
+                                reason="Rol temporal — vencido (tienda o carta)",
+                            )
                         except Exception:
                             pass
-                    if role:
+                    if kind == "shop" and role:
                         try:
                             await role.delete(reason="Rol temporal tienda — vencido")
                         except Exception:

@@ -509,9 +509,13 @@ async def _handle_notify_ping(interaction: discord.Interaction, bot: commands.Bo
             ephemeral=True,
         )
 
-    channel = bot.get_channel(lobby.channel_id)
+    ping_ch_id = impostor_notify.get_notify_ping_broadcast_channel_id() or lobby.channel_id
+    channel = bot.get_channel(ping_ch_id)
     if not isinstance(channel, discord.TextChannel):
-        return await interaction.response.send_message("❌ No encontré el canal del lobby.", ephemeral=True)
+        return await interaction.response.send_message(
+            "❌ No encontré el canal para el aviso (lobby o `IMPOSTOR_NOTIFY_PING_CHANNEL_ID`).",
+            ephemeral=True,
+        )
 
     await interaction.response.defer(ephemeral=True)
     try:

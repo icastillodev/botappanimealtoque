@@ -8,6 +8,7 @@ import datetime
 from typing import Literal, Optional
 
 from .db_manager import EconomiaDBManagerV2
+from .reclamar_service import reclaim_rewards
 
 class TareasCog(commands.Cog, name="Economia Tareas"):
     def __init__(self, bot: commands.Bot):
@@ -127,119 +128,11 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
     async def reclamar(self, interaction: discord.Interaction, tipo: Optional[Literal["inicial", "diaria", "semanal", "semanal_especial", "semanal_minijuegos"]] = None):
         await interaction.response.defer(ephemeral=True)
         user_id = interaction.user.id
-        
-        # Definir qué vamos a revisar
-        tipos_a_revisar = [tipo] if tipo else ["inicial", "diaria", "semanal", "semanal_especial", "semanal_minijuegos"]
-        
-        reclamado_algo = False
-        mensajes_exito = []
-        mensajes_error = []
 
-        for objetivo in tipos_a_revisar:
-            
-            # 1. INICIAL
-            if objetivo == "inicial":
-                prog = self.db.get_progress_inicial(user_id)
-                if prog['completado'] == 1:
-                    if tipo: mensajes_error.append("Inicial: Ya reclamado.")
-                    continue
-                
-                if all(prog[key] >= 1 for key in ['presentacion', 'reaccion_pais', 'reaccion_rol', 'reaccion_social', 'reaccion_reglas', 'general_mensaje']):
-                    recompensa = self.task_config['rewards']['inicial']
-                    self.db.modify_points(user_id, recompensa)
-                    self.db.modify_blisters(user_id, "trampa", 3)
-                    self.db.claim_reward(user_id, "inicial")
-                    mensajes_exito.append(f"**Inicial:** {recompensa} Puntos + 3 Blisters 🃏")
-                    reclamado_algo = True
-                else:
-                    if tipo: mensajes_error.append("Inicial: Tareas incompletas.")
+        reclamado_algo, mensajes_exito, mensajes_error = reclaim_rewards(
+            self.db, self.task_config, user_id, tipo
+        )
 
-            # 2. DIARIA
-            elif objetivo == "diaria":
-                prog = self.db.get_progress_diaria(user_id)
-                if prog['completado'] == 1:
-                    if tipo: mensajes_error.append("Diaria: Ya reclamado hoy.")
-                    continue
-                
-                msg_n = int(prog.get("mensajes_servidor") or 0)
-                rx_n = int(prog.get("reacciones_servidor") or 0)
-                tr = int(prog.get("trampa_enviada") or 0)
-                ts = int(prog.get("trampa_sin_objetivo") or 0)
-                tr_ok = tr >= 1 or ts >= 2
-                if msg_n >= 10 and rx_n >= 3 and tr_ok:
-                    recompensa = self.task_config['rewards']['diaria']
-                    self.db.modify_points(user_id, recompensa)
-                    self.db.modify_blisters(user_id, "trampa", 1)
-                    self.db.claim_reward(user_id, "diaria")
-                    mensajes_exito.append(f"**Diaria:** {recompensa} Puntos + 1 Blister 🃏")
-                    reclamado_algo = True
-                else:
-                    if tipo: mensajes_error.append("Diaria: Tareas incompletas.")
-
-            # 3. SEMANAL
-            elif objetivo == "semanal":
-                prog = self.db.get_progress_semanal(user_id)
-                if prog['completado'] == 1:
-                    if tipo: mensajes_error.append("Semanal: Ya reclamado esta semana.")
-                    continue
-                
-                if (prog['debate_post'] >= 1 and prog['videos_reaccion'] >= 1 and prog['media_escrito'] >= 1):
-                    recompensa = self.task_config['rewards']['semanal']
-                    self.db.modify_points(user_id, recompensa)
-                    self.db.modify_blisters(user_id, "trampa", 1)
-                    self.db.claim_reward(user_id, "semanal")
-                    mensajes_exito.append(f"**Semanal:** {recompensa} Puntos + 1 Blister 🃏")
-                    reclamado_algo = True
-                else:
-                    if tipo: mensajes_error.append("Semanal: Tareas incompletas.")
-
-            elif objetivo == "semanal_especial":
-                prog = self.db.get_progress_semanal(user_id)
-                if int(prog.get("completado_especial") or 0) == 1:
-                    if tipo:
-                        mensajes_error.append("Especial semanal: Ya reclamado.")
-                    continue
-                ip = int(prog.get("impostor_partidas") or 0)
-                iv = int(prog.get("impostor_victorias") or 0)
-                if ip >= 3 and iv >= 1:
-                    rw = self.task_config["rewards"]
-                    pts = int(rw.get("especial_semanal", 400))
-                    bl = int(rw.get("especial_semanal_blisters", 2))
-                    self.db.modify_points(user_id, pts)
-                    self.db.modify_blisters(user_id, "trampa", bl)
-                    self.db.claim_reward(user_id, "semanal_especial")
-                    mensajes_exito.append(f"**Especial semanal:** {pts} Puntos + {bl} Blisters 🃏")
-                    reclamado_algo = True
-                else:
-                    if tipo:
-                        mensajes_error.append("Especial semanal: Necesitás 3 partidas Impostor y 1 victoria como impostor.")
-
-            elif objetivo == "semanal_minijuegos":
-                prog = self.db.get_progress_semanal(user_id)
-                if int(prog.get("completado_minijuegos") or 0) == 1:
-                    if tipo:
-                        mensajes_error.append("Minijuegos semanal: Ya reclamado.")
-                    continue
-                if (
-                    int(prog.get("mg_ret_roll_apuesta") or 0) >= 1
-                    and int(prog.get("mg_roll_casual") or 0) >= 1
-                    and int(prog.get("mg_duelo") or 0) >= 1
-                    and int(prog.get("mg_voto_dom") or 0) >= 1
-                ):
-                    rw = self.task_config["rewards"]
-                    pts = int(rw.get("minijuegos_semanal", 150))
-                    bl = int(rw.get("minijuegos_semanal_blisters", 1))
-                    self.db.modify_points(user_id, pts)
-                    self.db.modify_blisters(user_id, "trampa", bl)
-                    self.db.claim_reward(user_id, "semanal_minijuegos")
-                    mensajes_exito.append(f"**Minijuegos semanal:** {pts} Puntos + {bl} Blister(s) 🃏")
-                    reclamado_algo = True
-                else:
-                    if tipo:
-                        mensajes_error.append("Minijuegos: faltan reto con apuesta, roll casual, duelo y voto.")
-
-        # --- ENVIAR RESPUESTA ---
-        
         if reclamado_algo:
             embed = discord.Embed(title="🎉 ¡Recompensas Reclamadas!", color=discord.Color.green())
             embed.description = "\n".join(mensajes_exito)

@@ -164,10 +164,17 @@ class EconomiaDBManagerV2:
                         granted_by INTEGER NOT NULL,
                         label TEXT,
                         created_ts REAL NOT NULL,
-                        expires_ts REAL NOT NULL
+                        expires_ts REAL NOT NULL,
+                        kind TEXT DEFAULT 'shop'
                     )
                     """
                 )
+
+                cursor.execute("PRAGMA table_info(temp_roles_shop)")
+                tr_cols = [c[1] for c in cursor.fetchall()]
+                if "kind" not in tr_cols:
+                    cursor.execute("ALTER TABLE temp_roles_shop ADD COLUMN kind TEXT DEFAULT 'shop'")
+                    print("DATABASE MIGRATED: Added 'kind' to temp_roles_shop.")
 
                 cursor.execute(
                     """
@@ -560,15 +567,16 @@ class EconomiaDBManagerV2:
         label: str,
         created_ts: float,
         expires_ts: float,
+        kind: str = "shop",
     ) -> int:
         with self._get_connection() as conn:
             cur = conn.cursor()
             cur.execute(
                 """
-                INSERT INTO temp_roles_shop (guild_id, role_id, user_id, granted_by, label, created_ts, expires_ts)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO temp_roles_shop (guild_id, role_id, user_id, granted_by, label, created_ts, expires_ts, kind)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (guild_id, role_id, user_id, granted_by, label[:200], created_ts, expires_ts),
+                (guild_id, role_id, user_id, granted_by, label[:200], created_ts, expires_ts, (kind or "shop")[:16]),
             )
             conn.commit()
             return int(cur.lastrowid)

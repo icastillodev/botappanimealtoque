@@ -59,9 +59,10 @@ class EconomiaHelpView(discord.ui.View):
         embed.add_field(
             name="`/usar`",
             value=(
-                "Consume una carta. **Diaria (Trampa):** 1 uso **contra un miembro** **o** 2 usos **sin objetivo**. "
-                "Cartas **Rara/Legendaria** pueden tener efectos extra (mute breve, broma, etc.) según el campo del staff. "
-                "`!usar ID @usuario`."
+                "Consume una carta (solo **slash**). **Diaria (Trampa):** 1 uso **contra un miembro** **o** 2 usos **sin objetivo**. "
+                "Cartas **Rara/Legendaria** pueden tener efectos extra (mute breve, broma, etc.) según el campo `efecto` en la DB. "
+                "Efecto **`ROLE_TRAMPA_24H`**: asigna al objetivo el rol configurado en `TRAMPA_CARTA_ROL_24H_ROLE_ID` por "
+                "`TRAMPA_CARTA_ROL_24H_HOURS` horas (máx. 168); el bot lo quita solo al vencer."
             ),
             inline=False,
         )
@@ -92,7 +93,7 @@ class EconomiaHelpView(discord.ui.View):
         )
         embed.add_field(
             name="4 · Encuesta de pago",
-            value="`/aat_tienda_encuesta` — publica en el canal de votaciones (`VOTACION_CHANNEL_ID` + precio `SHOP_PRICE_POLL_TIENDA`).",
+            value="`/aat_tienda_encuesta` — publica en el canal de votaciones (`VOTACION_CHANNEL_ID` o `VOTING_CHANNEL_ID` + precio `SHOP_PRICE_POLL_TIENDA`).",
             inline=False,
         )
         embed.add_field(
