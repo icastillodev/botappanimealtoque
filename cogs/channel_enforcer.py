@@ -53,6 +53,7 @@ PUBLIC_GENERAL_PREFIX_COMMANDS = frozenset(
         "respuestapregunta",
         "triviaresp",
         "rtrivia",
+        "r",
         "triviatop",
         "toptrivia",
         "ranktrivia",

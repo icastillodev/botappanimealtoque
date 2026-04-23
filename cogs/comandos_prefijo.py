@@ -105,7 +105,7 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
                 "**Top anime:** `?animetop` · `?animetop @usuario` — editar: `?topset <1-33> <título>` · `?topquitar <n>` — slash: `/aat-anime-top_*`\n"
                 "**Perfil:** `/aat-wishlist_*` · `/aat-hated_*` · `/aat-chars_*` (wishlist 1–33, odiados 1–10, personajes 1–10).\n"
                 "**Trivia anime:** el bot publica en **#general** (varias al día, tiempo límite configurable); "
-                "`?respuestapregunta` + respuesta · `?triviatop` / `?triviami` ranking.\n"
+                "`?r` / `?respuestapregunta` + respuesta (a veces también sin `?` en #general, según bot) · `?triviatop` / `?triviami` ranking.\n"
                 "**Slash útiles:** `/aat-ayuda` · `/crearsimpostor` · `/entrar` · `/aat-tienda-ver`"
             ),
             color=discord.Color.blurple(),

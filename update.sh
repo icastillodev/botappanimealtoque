@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Actualiza desde Git, instala dependencias y reinicia el bot (PID en .run/bot.pid).
+# Actualiza desde Git, instala dependencias y reinicia el bot en ESTE entorno (PID en .run/bot.pid).
+# Pensado para el servidor o la copia desplegada del repo — no sustituye "python main.py" en localhost para dev.
 # Uso (Git Bash / WSL / Linux):  chmod +x update.sh && ./update.sh
 set -euo pipefail
 

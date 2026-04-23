@@ -1,5 +1,11 @@
-# Actualiza desde Git, pip y reinicia el bot.
-# Recomendado: Git for Windows → delega en update.sh (mismo comportamiento que Linux).
+# Actualiza desde Git, pip y reinicia el bot EN ESTA MÁQUINA (p. ej. carpeta clonada en un VPS
+# o la copia “oficial” del repo). No es el flujo de desarrollo en localhost.
+#
+# Desarrollo local: en otra carpeta o la misma, con venv activo →  python main.py
+# (Cursor/terminal). Si corrés dos bots, usá otro token o solo uno online para evitar
+# que Discord desconecte sesiones duplicadas.
+#
+# Recomendado con Git for Windows: delega en update.sh (mismo comportamiento que Linux).
 # Uso:  .\update.ps1
 
 $ErrorActionPreference = "Stop"

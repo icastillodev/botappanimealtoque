@@ -1,5 +1,5 @@
-# Trivia anime: N sorteos al día entre 12:00 y 22:00 (America/Montevideo), tiempo configurable (por defecto 2 min).
-# Primera respuesta correcta con ?respuestapregunta gana puntos (REWARD_TRIVIA_WIN_POINTS) y suma al ranking.
+# Trivia anime: N sorteos al día entre 12:00 y 22:00 (America/Montevideo), tiempo configurable (por defecto 5 min).
+# Primera respuesta correcta (?r, ?respuestapregunta o línea corta / responder …) gana puntos y suma al ranking.
 from __future__ import annotations
 
 import asyncio
@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import random
+import re
 import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
@@ -38,6 +39,80 @@ def _norm_answer(s: str) -> str:
     s = unicodedata.normalize("NFKD", (s or "").strip().lower())
     s = "".join(ch for ch in s if not unicodedata.combining(ch))
     return "".join(s.split())
+
+
+def _strip_trivia_answer_prefixes(text: str) -> str:
+    """Quita `responder …` / `respuesta …` al inicio (con o sin `?`)."""
+    s = (text or "").strip()
+    for rx in (
+        r"(?is)^responder[:\s,;.\-]+(.+)$",
+        r"(?is)^respondiendo[:\s,;.\-]+(.+)$",
+        r"(?is)^respuesta[:\s,;.\-]+(.+)$",
+    ):
+        m = re.match(rx, s)
+        if m:
+            return m.group(1).strip()
+    return s
+
+
+def _expand_accepted_norms_for_one(answer: str) -> Set[str]:
+    """
+    Acepta la frase completa sin espacios y también tokens sueltos (nombre, apellido,
+    primer+último pegado) para que cuente `?r Nombre` o solo el apellido.
+    """
+    out: Set[str] = set()
+    a = str(answer or "").strip()
+    if not a:
+        return out
+    for chunk in re.split(r"[,;|/]+", a):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        full = _norm_answer(chunk)
+        if full:
+            out.add(full)
+        words = re.findall(r"[\wáéíóúÁÉÍÓÚñÑ]+", chunk, flags=re.I)
+        meaningful: List[str] = []
+        for w in words:
+            nw = _norm_answer(w)
+            if len(nw) >= 2:
+                meaningful.append(w)
+                out.add(nw)
+        if len(meaningful) >= 2:
+            out.add(_norm_answer(meaningful[0]))
+            out.add(_norm_answer(meaningful[-1]))
+            # "Nombre Apellido" o "Apellido Nombre" pegado (mismo resultado que sin espacios)
+            out.add(_norm_answer(meaningful[0] + meaningful[-1]))
+            out.add(_norm_answer(meaningful[-1] + meaningful[0]))
+    return out
+
+
+def _expand_all_accepted_norms(answers: List[str]) -> Set[str]:
+    acc: Set[str] = set()
+    for a in answers:
+        acc.update(_expand_accepted_norms_for_one(a))
+    return {x for x in acc if x}
+
+
+def _plain_line_as_trivia_guess(content: str) -> Optional[str]:
+    """
+    Mensaje sin `?`: una línea corta o que empiece por `responder`/`respuesta`.
+    Evita enganchar charla larga de #general.
+    """
+    raw = (content or "").strip()
+    if not raw or raw.lstrip().startswith("?"):
+        return None
+    if "\n" in raw:
+        return None
+    low = raw.lower()
+    if low.startswith("responder") or low.startswith("respondiendo") or low.startswith("respuesta"):
+        return _strip_trivia_answer_prefixes(raw)
+    if len(raw) > 72:
+        return None
+    parts = raw.split()
+    if len(parts) > 8:
+        return None
+    return raw
 
 
 def _load_questions(path: Path) -> List[Dict[str, Any]]:
@@ -122,14 +197,22 @@ class AnimeTriviaCog(commands.Cog, name="Trivia anime"):
         return max(0, int(os.getenv("REWARD_TRIVIA_WIN_POINTS", "25") or 0))
 
     def _seconds(self) -> int:
-        """Tiempo para responder (por defecto 120 s = 2 min)."""
-        return max(30, min(600, int(os.getenv("TRIVIA_SECONDS", "120") or 120)))
+        """Tiempo para responder (por defecto 300 s = 5 min)."""
+        return max(30, min(600, int(os.getenv("TRIVIA_SECONDS", "300") or 300)))
 
     def _rounds_per_day(self) -> int:
         return max(1, min(8, int(os.getenv("TRIVIA_ROUNDS_PER_DAY", "3") or 3)))
 
     def _min_gap_seconds(self) -> int:
         return max(120, min(3600, int(os.getenv("TRIVIA_MIN_GAP_SECONDS", "300") or 300)))
+
+    def _plain_messages_allowed(self) -> bool:
+        """
+        Si es False (TRIVIA_PLAIN_MESSAGE=0), no se escanean mensajes sin `?` en #general:
+        menos trabajo en on_message; hay que usar `?r` / `?respuestapregunta`.
+        """
+        raw = (os.getenv("TRIVIA_PLAIN_MESSAGE") or "1").strip().lower()
+        return raw not in ("0", "false", "no", "off")
 
     async def cog_load(self) -> None:
         self._reload_questions_if_needed()
@@ -255,7 +338,7 @@ class AnimeTriviaCog(commands.Cog, name="Trivia anime"):
         pick = random.choice(self._questions)
         q = pick["q"]
         answers: List[str] = pick["answers"]
-        norm_set = {_norm_answer(a) for a in answers if _norm_answer(a)}
+        norm_set = _expand_all_accepted_norms(answers)
         if not norm_set:
             self._inc_done(day)
             return
@@ -267,18 +350,35 @@ class AnimeTriviaCog(commands.Cog, name="Trivia anime"):
         rday = self._rounds_per_day()
         hecho = self._done_count(day)
 
+        plain = self._plain_messages_allowed()
+        formas = (
+            f"**Formas válidas:**\n"
+            f"• `?r` + respuesta — *ejemplo:* `?r Kaneki`\n"
+            f"• `?respuestapregunta` / `?rtrivia` + respuesta\n"
+            f"• Podés poner **solo nombre, solo apellido, nombre+apellido** (en cualquier orden pegado) si alcanza.\n"
+        )
+        if plain:
+            formas += (
+                "• **Sin `?`:** una línea corta o `responder …` / `respuesta …` en el mismo canal.\n"
+            )
+        else:
+            formas += (
+                "• En este servidor las respuestas van **con `?`** (`?r …`) para no leer todo el chat.\n"
+            )
         emb = discord.Embed(
             title="Trivia anime",
             description=(
                 f"{q}\n\n"
-                f"⏱️ Tenés **{sec}** segundos para ser **el primero** en acertar con `?respuestapregunta` + respuesta.\n"
+                f"⏱️ **{sec}s** — el **primero** en acertar gana.\n"
+                f"{formas}\n"
                 f"📅 Hoy van **{rday}** preguntas programadas; esta es la **{hecho + 1}ª**.\n"
                 f"🏆 Ranking: `?triviatop` · tu puesto: `?triviami`"
                 + (f"\n🎁 El ganador suma **{pts}** Toque points." if pts > 0 else "")
             ),
             color=discord.Color.orange(),
         )
-        emb.set_footer(text=f"Tiempo límite: {sec}s · Primera respuesta correcta gana la ronda")
+        foot = f"{sec}s · ?r" + (" · línea sin `?`" if plain else " · solo comandos con `?`")
+        emb.set_footer(text=f"{foot} · primera respuesta correcta gana")
 
         try:
             await channel.send(embed=emb)
@@ -318,10 +418,11 @@ class AnimeTriviaCog(commands.Cog, name="Trivia anime"):
                 pass
         self._round = None
 
-    @commands.command(name="respuestapregunta", aliases=["triviaresp", "rtrivia"])
+    @commands.command(name="respuestapregunta", aliases=["triviaresp", "rtrivia", "r"])
     async def respuesta_pregunta(self, ctx: commands.Context, *, texto: Optional[str] = None):
         if ctx.author.bot or not ctx.guild:
             return
+
         async with self._answer_lock:
             rnd = self._round
             if not rnd:
@@ -335,13 +436,20 @@ class AnimeTriviaCog(commands.Cog, name="Trivia anime"):
             if _uy_now() > rnd.deadline:
                 await ctx.reply("Se acabó el tiempo para esta pregunta.", mention_author=False)
                 return
-            guess = (texto or "").strip()
-            if not guess:
-                await ctx.reply("Usá: `?respuestapregunta` seguido de tu respuesta.", mention_author=False)
+
+            guess_raw = _strip_trivia_answer_prefixes((texto or "").strip())
+            if not guess_raw:
+                await ctx.reply(
+                    "Usá **`?r`** + respuesta (ej. `?r Kaneki`) o `?respuestapregunta` + respuesta.",
+                    mention_author=False,
+                )
+                return
+            g_norm = _norm_answer(guess_raw)
+            if not g_norm:
+                await ctx.reply("Escribí una respuesta con letras o números.", mention_author=False)
                 return
 
-            g_norm = _norm_answer(guess)
-            if not g_norm or g_norm not in rnd.answers_norm:
+            if g_norm not in rnd.answers_norm:
                 await ctx.send(f"❌ **{ctx.author.display_name}** falló.")
                 return
 
@@ -359,6 +467,55 @@ class AnimeTriviaCog(commands.Cog, name="Trivia anime"):
         extra = f" 🏆 **#{rank}** en trivia del servidor (**{wins}** victorias)." if wins > 0 else ""
         pts_part = f" Sumás **{pts}** {self._tq_emoji()}." if pts > 0 else ""
         await ctx.send(f"✅ **{ctx.author.mention}** respondió bien primero.{pts_part}{extra}")
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        """En #general, durante la ronda: mensaje corto o `responder …` sin `?` (si TRIVIA_PLAIN_MESSAGE)."""
+        if message.author.bot or not message.guild:
+            return
+        if not self._plain_messages_allowed():
+            return
+        rnd = self._round
+        if not rnd or message.channel.id != rnd.channel_id:
+            return
+        raw = (message.content or "").strip()
+        if not raw or raw.lstrip().startswith("?"):
+            return
+        maybe = _plain_line_as_trivia_guess(raw)
+        if not maybe:
+            return
+        guess_raw = _strip_trivia_answer_prefixes(maybe.strip())
+        g_norm = _norm_answer(guess_raw)
+        if not g_norm:
+            return
+
+        async with self._answer_lock:
+            rnd = self._round
+            if not rnd or rnd.channel_id != message.channel.id or rnd.winner_id:
+                return
+            if _uy_now() > rnd.deadline:
+                return
+            if g_norm not in rnd.answers_norm:
+                return
+            rnd.winner_id = message.author.id
+            pts = self._win_points()
+            if pts > 0:
+                self.db.modify_points(message.author.id, pts)
+            self.db.trivia_wins_increment(message.author.id)
+            rank, wins = self.db.trivia_stats_rank_user(message.author.id)
+            if self._timeout_task:
+                self._timeout_task.cancel()
+                self._timeout_task = None
+            self._round = None
+
+        extra = f" 🏆 **#{rank}** en trivia del servidor (**{wins}** victorias)." if wins > 0 else ""
+        pts_part = f" Sumás **{pts}** {self._tq_emoji()}." if pts > 0 else ""
+        try:
+            await message.channel.send(
+                f"✅ **{message.author.mention}** respondió bien primero.{pts_part}{extra}"
+            )
+        except discord.HTTPException:
+            pass
 
     def _tq_emoji(self) -> str:
         try:
@@ -401,7 +558,7 @@ class AnimeTriviaCog(commands.Cog, name="Trivia anime"):
         if wins <= 0:
             await ctx.reply(
                 "No tenés victorias en trivia todavía: cuando el bot publique la pregunta en **#general**, "
-                "tenés que ser **el primero** en acertar con `?respuestapregunta` dentro del tiempo límite.",
+                "tenés que ser **el primero** en acertar a tiempo (`?r`, `?respuestapregunta`, o `responder …` / una línea corta en **#general**).",
                 mention_author=False,
             )
             return

@@ -12,6 +12,8 @@ from .reclamar_service import (
     PERFIL_HATED_CAP,
     PERFIL_TOP_CAP,
     PERFIL_WISHLIST_CAP,
+    _inicial_discord_done,
+    inicial_profile_ready,
 )
 from .toque_labels import fmt_toque_sentence
 
@@ -40,6 +42,16 @@ _CMD_PROGRESS_HINT = (
     "— o `/aat-progreso-iniciacion` · `/aat-progreso-diaria` (*daily*) · `/aat-progreso-semanal` (*weekly*)."
 )
 
+_CMD_RECLAMAR = (
+    "**Para cobrar premios:** `?reclamar inicial` · `?reclamar diaria` / `daily` · `?reclamar semanal` / `weekly` · "
+    "`?reclamar especial` · `?reclamar minijuegos` — o **`/aat-reclamar`** y elegís el tipo."
+)
+
+_LEY_DIARIA = (
+    "**Leyenda:** ✅ tarea del día lista · ☑ **todo el diario** listo para cobrar → **`?reclamar diaria`** · ☐ falta algo.\n"
+    "_Si ya cobraste hoy, esta tarjeta se muestra en **azul**._\n\n"
+)
+
 
 def _tmark(done: bool) -> str:
     return "✅" if done else "☐"
@@ -47,6 +59,19 @@ def _tmark(done: bool) -> str:
 
 def _tline(done: bool, label: str, detail: str = "") -> str:
     return f"{_tmark(done)} {label}" + (f" — {detail}" if detail else "")
+
+
+def _resumen_glyphe(claimed: bool, ready: bool) -> str:
+    """✅ ya cobrado · ☑ listo para cobrar · ☐ falta."""
+    if claimed:
+        return "✅"
+    if ready:
+        return "☑"
+    return "☐"
+
+
+def _resumen_line(glyph: str, label: str, detail: str = "") -> str:
+    return f"{glyph} {label}" + (f" — {detail}" if detail else "")
 
 
 def _diaria_trampa_section(tr: int, ts: int) -> str:
@@ -119,25 +144,82 @@ def build_progreso_resumen_pages(db: Any, task_config: Dict[str, Any], user_id: 
     ini = db.get_progress_inicial(user_id)
     dia = db.get_progress_diaria(user_id)
     sem = db.get_progress_semanal(user_id)
-    rw = task_config.get("rewards") or {}
     mg_marks = (
         int(sem.get("mg_ret_roll_apuesta") or 0) >= 1
         and int(sem.get("mg_roll_casual") or 0) >= 1
         and int(sem.get("mg_duelo") or 0) >= 1
         and int(sem.get("mg_voto_dom") or 0) >= 1
     )
+    ini_claimed = int(ini.get("completado") or 0) == 1
+    ini_ready = not ini_claimed and _inicial_discord_done(ini) and inicial_profile_ready(db, user_id)
+    g_ini = _resumen_glyphe(ini_claimed, ini_ready)
+    det_ini = (
+        "premio **ya cobrado** (`?reclamar inicial` no aplica)"
+        if ini_claimed
+        else ("**podés cobrar** → `?reclamar inicial`" if ini_ready else "incompleta — `?inicial`")
+    )
+
+    dia_claimed = int(dia.get("completado") or 0) == 1
+    di_ready = not dia_claimed and (
+        int(dia.get("mensajes_servidor") or 0) >= 10
+        and int(dia.get("reacciones_servidor") or 0) >= 3
+        and int(dia.get("oraculo_preguntas") or 0) >= 1
+        and (int(dia.get("trampa_enviada") or 0) >= 1 or int(dia.get("trampa_sin_objetivo") or 0) >= 1)
+    )
+    g_dia = _resumen_glyphe(dia_claimed, di_ready)
+    det_dia = (
+        f"hoy **ya cobraste** ({fecha}) — `?reclamar diaria` no aplica"
+        if dia_claimed
+        else ("**podés cobrar** → `?reclamar diaria` / `daily` o botón **Reclamar diario**" if di_ready else f"incompleta — `?diaria` (*{fecha}*)")
+    )
+
+    semb_claimed = int(sem.get("completado") or 0) == 1
+    semb_ready = not semb_claimed and (
+        int(sem.get("debate_post") or 0) >= 1
+        and int(sem.get("videos_reaccion") or 0) >= 1
+        and int(sem.get("media_escrito") or 0) >= 1
+    )
+    g_semb = _resumen_glyphe(semb_claimed, semb_ready)
+    det_semb = (
+        f"sem. **{sl}** — `?reclamar semanal` ya hecho"
+        if semb_claimed
+        else ("**podés cobrar** → `?reclamar semanal` / `weekly`" if semb_ready else "incompleta — `?semanal`")
+    )
+
+    sp_claimed = int(sem.get("completado_especial") or 0) == 1
+    sp_ready = not sp_claimed and int(sem.get("impostor_partidas") or 0) >= 3 and int(sem.get("impostor_victorias") or 0) >= 1
+    g_sp = _resumen_glyphe(sp_claimed, sp_ready)
+    det_sp = (
+        "`?reclamar especial` ya hecho"
+        if sp_claimed
+        else ("**podés cobrar** → `?reclamar especial` / `impostor`" if sp_ready else "incompleta — ver **Especial** en `?semanal`")
+    )
+
+    mg_claimed = int(sem.get("completado_minijuegos") or 0) == 1
+    g_mg = _resumen_glyphe(mg_claimed, mg_marks and not mg_claimed)
+    det_mg = (
+        "`?reclamar minijuegos` ya hecho"
+        if mg_claimed
+        else (
+            "**podés cobrar** → `?reclamar minijuegos` / `minigames`"
+            if mg_marks
+            else f"{_LBL_SEM_MG} — faltan marcas (ver `?semanal`)"
+        )
+    )
+
     lines = [
-        _tline(int(ini.get("completado") or 0) == 1, _LBL_INICIAL, "premio **ya reclamado**"),
-        _tline(int(dia.get("completado") or 0) == 1, _LBL_DIARIO, f"hoy **reclamada** ({fecha})"),
-        _tline(int(sem.get("completado") or 0) == 1, _LBL_SEM_BASE, f"sem. {sl} · reclamado"),
-        _tline(int(sem.get("completado_especial") or 0) == 1, _LBL_SEM_ESP, "reclamado · *special claimed*"),
-        _tline(mg_marks, f"{_LBL_SEM_MG} (4 marcas)", "todas listas para reclamar" if mg_marks else "falta alguna marca"),
-        _tline(int(sem.get("completado_minijuegos") or 0) == 1, _LBL_REC_MG, "ya reclamada"),
+        _resumen_line(g_ini, _LBL_INICIAL, det_ini),
+        _resumen_line(g_dia, _LBL_DIARIO, det_dia),
+        _resumen_line(g_semb, _LBL_SEM_BASE, det_semb),
+        _resumen_line(g_sp, _LBL_SEM_ESP, det_sp),
+        _resumen_line(g_mg, f"{_LBL_SEM_MG} (4 marcas)", det_mg),
     ]
     body = (
-        "**Leyenda:** ✅ listo / reclamado · ☐ todavía no.\n\n"
+        "**Leyenda:** ✅ ya cobraste ese premio · ☑ **listo para cobrar** (usá el comando o el botón verde) · ☐ falta tarea.\n\n"
         + "\n".join(lines)
-        + "\n\n**Siguiente ▶** mismo detalle que con `?inicial`, `?diaria` (*daily*) y `?semanal` (*weekly*) (una página por sección).\n\n"
+        + "\n\n**Siguiente ▶** detalle con marcas por ítem en `?inicial`, `?diaria` y `?semanal`.\n\n"
+        + _CMD_RECLAMAR
+        + "\n\n"
         + _CMD_PROGRESS_HINT
     )
     emb = discord.Embed(title="📊 Progreso — resumen", description=body, color=discord.Color.dark_green())
@@ -147,7 +229,7 @@ def build_progreso_resumen_pages(db: Any, task_config: Dict[str, Any], user_id: 
 def build_pages_inicial(db: Any, task_config: Dict[str, Any], user_id: int) -> List[List[discord.Embed]]:
     prog = db.get_progress_inicial(user_id)
     ini_pts = int((task_config.get("rewards") or {}).get("inicial") or 0)
-    pie = f"Premio: {fmt_toque_sentence(ini_pts)} + 3 blisters → `?reclamar` (Discord + perfil)."
+    pie = f"Premio: {fmt_toque_sentence(ini_pts)} + 3 blisters → **`?reclamar inicial`** (Discord + perfil)."
     discord_lines = "\n".join(
         _tline(int(prog.get(key) or 0) == 1, label) for key, label in _INICIAL_DISCORD_TASKS
     )
@@ -180,7 +262,7 @@ def build_pages_inicial(db: Any, task_config: Dict[str, Any], user_id: int) -> L
         done = discord.Embed(
             title=_title_es_en("Iniciación", "initial / onboarding"),
             description=(
-                "✅ **Ya reclamaste** la iniciación (premio cobrado con `?reclamar`).\n\n"
+                "✅ **Ya reclamaste** la iniciación (premio cobrado con **`?reclamar inicial`**).\n\n"
                 "**Último registro del bot (Discord):**\n"
                 f"{discord_lines}\n\n"
                 "**Perfil (mínimo, al momento de reclamar):**\n"
@@ -234,26 +316,29 @@ def build_pages_diaria(db: Any, task_config: Dict[str, Any], user_id: int) -> Li
     msg_ok = msg_n >= 10
     rx_ok = rx_n >= 3
     actividad_ok = msg_ok and rx_ok and or_ok
+    tr_ok = tr >= 1 or ts >= 1
+    diario_tareas_ok = actividad_ok and tr_ok
     rw_pts = int((task_config.get("rewards") or {}).get("diaria") or 0)
     premio_txt = (
-        f"Cuando estén listas **las dos partes** del diario (**actividad+oráculo** y **trampa** — "
-        f"esta última con **una** carta, **una** de las dos formas): {fmt_toque_sentence(rw_pts)} + 1 blister → `?reclamar`"
+        f"Premio del día: **{fmt_toque_sentence(rw_pts)}** + 1 blister — cobrá con **`?reclamar diaria`** / `daily` "
+        f"o el botón **Reclamar diario** (solo cuando **☑** abajo)."
     )
-    hint = f"\n\n{_CMD_PROGRESS_HINT}"
+    hint = f"\n\n{_CMD_RECLAMAR}\n\n{_CMD_PROGRESS_HINT}"
 
     if int(prog.get("completado") or 0) == 1:
         e_done = discord.Embed(
-            title=_title_es_en("Diario", "daily", f"· {fecha}"),
+            title=_title_es_en("Diario", "daily", f"· {fecha} · ya cobrado"),
             description=(
-                "✅ **Ya reclamaste** el **diario** de hoy (*daily*).\n\n"
-                "**Registro del día:**\n"
+                "**Estado:** ✅ **Ya reclamaste** el diario de hoy (*daily claimed*).\n\n"
+                "**Leyenda de abajo:** ✅ hecho hoy · ☑ sería listo para cobrar (ya no aplica) · ☐ no aplica.\n\n"
+                "**Checklist del día (histórico):**\n"
                 f"{_tline(msg_ok, '**10 mensajes** en el servidor', f'{msg_n}/10')}\n"
                 f"{_tline(rx_ok, '**3 reacciones** en el servidor', f'{rx_n}/3')}\n"
                 f"{_tline(or_ok, '**1× oráculo**', f'{or_n}/1')}\n"
                 f"{_diaria_trampa_resumen_line(tr, ts)}\n\n"
                 f"{hint.strip()}"
             ),
-            color=discord.Color.green(),
+            color=discord.Color.blue(),
         )
         return [[e_done]]
 
@@ -268,25 +353,28 @@ def build_pages_diaria(db: Any, task_config: Dict[str, Any], user_id: int) -> Li
             ),
         ]
     )
-    e_act = discord.Embed(
-        title=_title_es_en("Diario", "daily", f"— actividad y oráculo · {fecha}"),
-        description=(
-            f"{act_lines}\n\n"
-            f"{_tmark(actividad_ok)} **Bloque listo** cuando las tres líneas de arriba están en ✅.\n\n"
-            f"_{premio_txt}_{hint}"
-        ),
+    trap_lines = _diaria_trampa_section(tr, ts)
+    bloque_listo = (
+        f"{_tmark(actividad_ok)} **Bloque actividad + oráculo** — listo cuando las tres líneas están en ✅.\n"
+        f"{_tmark(tr_ok)} **Bloque trampa** — listo con **una** carta (**con @** y/o **sin objetivo**; alcanza una vía).\n"
+        f"{_tmark(diario_tareas_ok)} **Todo el diario** — cuando los dos bloques están en ✅ → **`?reclamar diaria`**."
+    )
+    desc = (
+        f"{_LEY_DIARIA}"
+        f"**Parte 1 — Actividad y oráculo**\n{act_lines}\n\n"
+        f"**Parte 2 — Trampa (una carta)**\n{trap_lines}\n\n"
+        f"{bloque_listo}\n\n"
+        f"_{premio_txt}_"
+        f"{hint}"
+    )
+    if len(desc) > 4000:
+        desc = desc[:3997] + "…"
+    e_full = discord.Embed(
+        title=_title_es_en("Diario", "daily", f"— checklist · {fecha}"),
+        description=desc,
         color=discord.Color.orange(),
     )
-    trap_lines = _diaria_trampa_section(tr, ts)
-    e_tr = discord.Embed(
-        title=_title_es_en("Diario", "daily", f"— trampa · {fecha}"),
-        description=(
-            f"{trap_lines}\n"
-            f"_{premio_txt}_{hint}"
-        ),
-        color=discord.Color.dark_orange(),
-    )
-    return [[e_act], [e_tr]]
+    return [[e_full]]
 
 
 def build_pages_semanal(db: Any, task_config: Dict[str, Any], user_id: int) -> List[List[discord.Embed]]:
@@ -308,9 +396,9 @@ def build_pages_semanal(db: Any, task_config: Dict[str, Any], user_id: int) -> L
     base_ok = media_ok and df_ok and dv_ok
     sem_done = int(prog.get("completado") or 0) == 1
     pie_sem = (
-        "✅ Premio **semanal base** (*weekly base*) ya reclamado."
+        "✅ Premio **semanal base** (*weekly base*) ya reclamado (`?reclamar semanal`)."
         if sem_done
-        else f"**Premio base (una vez)** — *weekly base*: {fmt_toque_sentence(int(rw.get('semanal') or 0))} + 1 blister — `?reclamar` cuando las tres tareas de abajo estén en ✅."
+        else f"**Premio base (una vez)** — *weekly base*: {fmt_toque_sentence(int(rw.get('semanal') or 0))} + 1 blister — **`?reclamar semanal`** cuando las tres tareas estén en ✅."
     )
     hint = f"\n\n{_CMD_PROGRESS_HINT}"
     e1 = discord.Embed(
@@ -321,6 +409,7 @@ def build_pages_semanal(db: Any, task_config: Dict[str, Any], user_id: int) -> L
         ),
         color=discord.Color.purple(),
     )
+    e1.set_footer(text="Cobrar premio base: ?reclamar semanal · /aat-reclamar → semanal")
     foro_vid = "\n".join(
         [
             _tline(df_ok, "**Foro:** hilo en debate (anime o manga)", f"{df}/1"),
@@ -340,11 +429,12 @@ def build_pages_semanal(db: Any, task_config: Dict[str, Any], user_id: int) -> L
         ),
         color=discord.Color.dark_purple(),
     )
+    e2.set_footer(text="Cobrar premio base: ?reclamar semanal · /aat-reclamar → semanal")
     imp_done = int(prog.get("completado_especial") or 0) == 1
     pie_imp = (
-        "✅ **Especial Impostor** (*weekly special*) ya reclamado."
+        "✅ **Especial Impostor** (*weekly special*) ya reclamado (`?reclamar especial`)."
         if imp_done
-        else f"**Premio aparte** — *special*: {fmt_toque_sentence(int(rw.get('especial_semanal', 400)))} — completá las dos líneas y `?reclamar` tipo **semanal_especial** (*weekly_special*)."
+        else f"**Premio aparte** — *special*: {fmt_toque_sentence(int(rw.get('especial_semanal', 400)))} — completá las dos líneas y **`?reclamar especial`** (alias `impostor`)."
     )
     ip_ok = ip >= 3
     iv_ok = iv >= 1
@@ -362,16 +452,17 @@ def build_pages_semanal(db: Any, task_config: Dict[str, Any], user_id: int) -> L
         ),
         color=discord.Color.dark_red(),
     )
+    e3.set_footer(text="Cobrar especial: ?reclamar especial · /aat-reclamar → semanal_especial")
     ra = int(prog.get("mg_ret_roll_apuesta") or 0)
     rc = int(prog.get("mg_roll_casual") or 0)
     du = int(prog.get("mg_duelo") or 0)
     vo = int(prog.get("mg_voto_dom") or 0)
     pie_mg = (
-        "✅ **Minijuegos** (*minigames*) ya reclamados."
+        "✅ **Minijuegos** (*minigames*) ya reclamados (`?reclamar minijuegos`)."
         if int(prog.get("completado_minijuegos") or 0) == 1
         else (
             f"**Premio aparte** — *minigames*: {fmt_toque_sentence(int(rw.get('minijuegos_semanal', 150)))} + {rw.get('minijuegos_semanal_blisters', 1)} blister(s) — "
-            "`?reclamar` → **semanal_minijuegos** (*weekly_minigames*; cuando las cuatro marcas estén en ✅)."
+            "**`?reclamar minijuegos`** cuando las cuatro marcas estén en ✅."
         )
     )
     mg_lines = "\n".join(
@@ -390,4 +481,5 @@ def build_pages_semanal(db: Any, task_config: Dict[str, Any], user_id: int) -> L
         ),
         color=discord.Color.teal(),
     )
+    e4.set_footer(text="Cobrar minijuegos: ?reclamar minijuegos · /aat-reclamar → semanal_minijuegos")
     return [[e1], [e2], [e3], [e4]]

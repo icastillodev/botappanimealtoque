@@ -249,7 +249,7 @@ def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
         title="📋 Comandos con prefijo ? (1/2)",
         description=(
             "**En #general** solo: `?roll` · `?rollp` / `?rollc` / `?rollpaceptar` · `?abrir` · `?usar` / `?usarcarta` · oráculo (`?pregunta`… o @bot) · "
-            "trivia (`?respuestapregunta`…) · `?impostor` · `?animetop` · `?comandos` (**lista corta**; distinto de la guía larga).\n"
+            "trivia (`?r` / `?respuestapregunta`; opcional línea/`responder …` sin `?` si el bot lo tiene activado) · `?impostor` · `?animetop` · `?comandos` (**lista corta**; distinto de la guía larga).\n"
             "**No en #general:** reclamar, progreso, diaria/semanal/inicial, puntos, inventario, tops, tienda, guía larga… "
             f"usalos en el canal del bot o con slash.\n\n"
             f"{canal_prefijo}"
@@ -286,7 +286,7 @@ def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
             "**Oráculo (cuenta para la diaria)**\n"
             "• `?pregunta` · `?consulta` · `?8ball` · `?bola` · `?oraculo` — pregunta sí/no (también @mención al bot)\n\n"
             "**Trivia anime (#general, varias al día)**\n"
-            "• `?respuestapregunta` · `?triviaresp` · `?rtrivia` + respuesta (primero en acertar dentro del tiempo)\n"
+            "• `?r` · `?respuestapregunta` · `?triviaresp` · `?rtrivia` + respuesta; en **#general** a veces también línea corta o `responder …` **sin** `?` (config del bot; si no, solo con `?`)\n"
             "• `?triviatop` · `?triviami` — ranking y tu puesto (solo cuentan aciertos ganadores)\n\n"
             "**Top anime**\n"
             "• `?animetop` · `?animetop @usuario`"
