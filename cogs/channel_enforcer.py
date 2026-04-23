@@ -38,6 +38,8 @@ PUBLIC_GENERAL_PREFIX_COMMANDS = frozenset(
         "abrir",
         "usar",
         "usarcarta",
+        "cartas",
+        "carta",
         "impostor",
         "buscoimpostor",
         "busco",

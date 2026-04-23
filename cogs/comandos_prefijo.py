@@ -29,6 +29,7 @@ from cogs.economia.guia_contenido import (
 )
 from cogs.economia.reclamar_help_ui import ReclamarHelpView, build_reclaim_result_embed
 from cogs.economia.reclamar_vistas import build_reclamar_help_pages
+from cogs.economia.cartas_help_vistas import build_cartas_help_pages
 from cogs.economia.progreso_reclaim_ui import ProgressEmbedsWithReclaimView
 from cogs.economia.progreso_vistas import (
     build_pages_diaria,
@@ -96,11 +97,11 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
             title="Comandos del bot (Anime al Toque)",
             description=(
                 "**Guía larga** (una **sección por página**, Anterior/Siguiente): **`?ayuda`** · **`?guia`** · **`/aat-guia`**.\n"
-                "**En #general** solo: `?roll` · `?rollp` / `?rollc` / `?rollpaceptar` · `?abrir` · `?usar` · oráculo · trivia · `?impostor` · `?animetop` · `?comandos`.\n"
+                "**En #general** solo: `?roll` · `?rollp` / `?rollc` / `?rollpaceptar` · `?abrir` · `?usar` · `?cartas` · oráculo · trivia · `?impostor` · `?animetop` · `?comandos`.\n"
                 "**Economía y tareas** (`?reclamar` = guía + botones; `?reclamar diaria`…; `?progreso`…):** en el **canal del bot** o con **slash** (no en #general).\n"
                 "**Con `/`** — versión completa (Discord te autocompleta).\n\n"
                 "**Economía (canal del bot o slash):** `?puntos` · `?inventario` · `?mi` · `?top` · `?tophist` · `?ranking` (tablas paginadas + botones) · `?reclamar` · `?progreso` · `?progresoayuda` · "
-                "`?diario` / `?diaria` (*daily*) · `?semanal` (*weekly*) · `?inicial` · `?abrir` · `?miscartas` · `?catalogo` · `?usar`\n"
+                "`?diario` / `?diaria` (*daily*) · `?semanal` (*weekly*) · `?inicial` · `?cartas` · `?abrir` · `?miscartas` · `?catalogo` · `?usar`\n"
                 "**Impostor:** `?impostor` — avisá que buscás gente / ver lobbies abiertos.\n"
                 "**Oráculo:** arrobá al bot + tu pregunta en el mismo mensaje · `?pregunta` + texto · `/aat-consulta` — sí / no / a veces %. Cuenta para el **diario** (*daily*) y puede dar **Toque points** extra.\n"
                 "**Top anime:** `?animetop` · `?animetop @usuario` — editar: `?topset <1-33> <título>` · `?topquitar <n>` — slash: `/aat-anime-top_*`\n"
@@ -382,11 +383,24 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
                     hint + "\n\nPara **diario** / **semanal**: `?diario` · `?semanal` · `?progreso` o `/aat-progreso-*`."
                 )
 
+    @commands.command(aliases=["carta"])
+    async def cartas(self, ctx: commands.Context, *, args: str = ""):
+        """Mini-guía paginada: blisters, abrir, colección y uso (`?cartas trampa` = foco trampas)."""
+        parts = (args or "").strip().split()
+        trampa_focus = bool(parts) and parts[0].lower() in ("trampa", "trap", "t", "trampas")
+        pages = build_cartas_help_pages(trampa_focus=trampa_focus)
+        label = "?cartas — ayuda rápida" + (" · trampa" if trampa_focus else "")
+        view = GuiaEmbedsPaginator(ctx.author.id, pages, label=label)
+        await ctx.send(content=view.header(), embeds=pages[0], view=view)
+
     @commands.command()
     async def miscartas(self, ctx: commands.Context):
         cartas = self.db.get_cards_in_inventory(ctx.author.id)
         if not cartas:
-            await ctx.send("No tenés cartas. Abrí blisters con `?abrir` o `/aat-abrirblister`.")
+            await ctx.send(
+                "No tenés cartas. Abrí blisters con `?abrir` o `/aat-abrirblister`. "
+                "Resumen del sistema: **`?cartas`**."
+            )
             return
         lines: List[str] = []
         for c in cartas:
