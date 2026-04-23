@@ -108,19 +108,13 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             await channel.send("Economía no disponible.", reference=reference, mention_author=False)
             return
         self.db.ensure_user_exists(author.id)
-        cat, body, dado = _roll_oracle()
-        g, n, mx, per = self._record_oracle_use(author.id)
+        _, body, _ = _roll_oracle()
+        self._record_oracle_use(author.id)
         embed = self._embed_respuesta(
             nombre_visible=nombre_visible,
             mencion=author.mention,
             pregunta=pregunta.strip(),
-            cat=cat,
             body=body,
-            dado=dado,
-            puntos_ganados=g,
-            n_despues=n,
-            max_bonus=mx,
-            pts_por=per,
         )
         await channel.send(embed=embed, reference=reference, mention_author=False)
 
@@ -151,13 +145,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
         nombre_visible: str,
         mencion: str,
         pregunta: str,
-        cat: str,
         body: str,
-        dado: int,
-        puntos_ganados: int,
-        n_despues: int,
-        max_bonus: int,
-        pts_por: int,
     ) -> discord.Embed:
         q = (pregunta or "").strip()[:900] or "*(silencio místico)*"
         desc = (
@@ -165,30 +153,11 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             f"> {q}\n\n"
             f"**La respuesta es:** {body}"
         )
-        embed = discord.Embed(
+        return discord.Embed(
             title="🔮 Consulta al oráculo",
             description=desc,
             color=discord.Color.dark_magenta(),
         )
-        if puntos_ganados > 0:
-            embed.add_field(
-                name="Recompensa",
-                value=f"+**{puntos_ganados}** puntos 🪙 · consultas con bonus hoy: **{n_despues}/{max_bonus}** (después siguen contando para la **diaria**).",
-                inline=False,
-            )
-        elif pts_por > 0 and max_bonus > 0 and n_despues > max_bonus:
-            embed.add_field(
-                name="Recompensa",
-                value=f"Ya usaste las **{max_bonus}** preguntas con puntos de hoy; seguí preguntando para la tarea **diaria**.",
-                inline=False,
-            )
-        embed.set_footer(
-            text=(
-                f"Tipo: {cat} · dado {dado}/100 · cuenta diaria · "
-                f"formas: @bot + pregunta · ?pregunta · /aat-consulta"
-            )
-        )
-        return embed
 
     @commands.command(name="pregunta", aliases=["consulta", "8ball", "bola", "oraculo"])
     async def pregunta_prefijo(self, ctx: commands.Context, *, texto: str = None):
@@ -229,21 +198,15 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             await interaction.response.send_message("Economía no disponible.", ephemeral=True)
             return
         self.db.ensure_user_exists(interaction.user.id)
-        cat, body, dado = _roll_oracle()
-        g, n, mx, per = self._record_oracle_use(interaction.user.id)
+        _, body, _ = _roll_oracle()
+        self._record_oracle_use(interaction.user.id)
         nombre = interaction.user.display_name
         mencion = interaction.user.mention
         embed = self._embed_respuesta(
             nombre_visible=nombre,
             mencion=mencion,
             pregunta=pregunta.strip(),
-            cat=cat,
             body=body,
-            dado=dado,
-            puntos_ganados=g,
-            n_despues=n,
-            max_bonus=mx,
-            pts_por=per,
         )
         await interaction.response.send_message(embed=embed)
         self._oracle_mark_use(interaction.user.id)

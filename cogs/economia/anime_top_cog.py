@@ -41,7 +41,10 @@ def _embed_top_for(
         desc = (
             "Todavía **no cargó** ninguna entrada en el top."
             if not viewer_is_target
-            else "Todavía **no cargaste** tu top. Usá `/aat-anime-top-set` o `/aat-anime-top-guia`."
+            else (
+                "Todavía **no cargaste** tu top. "
+                "Agregá con `/aat-anime-top-set` o `?topset <1-33> <título>`; guía: `/aat-anime-top-guia`."
+            )
         )
         return discord.Embed(title=title, description=desc, color=discord.Color.light_grey())
 
@@ -55,7 +58,15 @@ def _embed_top_for(
         description=body,
         color=discord.Color.dark_teal(),
     )
-    embed.set_footer(text=f"{n} entrada(s) guardada(s) · máx. 33 posiciones")
+    if viewer_is_target:
+        embed.set_footer(
+            text=(
+                f"{n} entrada(s) · máx. 33 · Para cambiar: misma posición, nuevo título "
+                "(`?topset` o `/aat-anime-top-set`) · Quitar: `?topquitar` o `/aat-anime-top-quitar`"
+            )
+        )
+    else:
+        embed.set_footer(text=f"{n} entrada(s) guardada(s) · máx. 33 posiciones")
     return embed
 
 
@@ -76,7 +87,10 @@ class AnimeTopCog(commands.Cog, name="Anime top"):
         emb = _embed_top_for(self.bot, target, rows, viewer_is_target=target.id == interaction.user.id)
         await interaction.response.send_message(embed=emb, ephemeral=(target.id == interaction.user.id))
 
-    @app_commands.command(name="aat-anime-top-set", description="Guardar o cambiar un título en una posición (1–33).")
+    @app_commands.command(
+        name="aat-anime-top-set",
+        description="Poner o reemplazar el título de una posición (1–33); repetís la misma posición para modificar.",
+    )
     @app_commands.describe(posicion="Del 1 al 33 (1 = favorito)", titulo="Nombre del anime o manga")
     async def anime_top_set(
         self,
@@ -100,7 +114,10 @@ class AnimeTopCog(commands.Cog, name="Anime top"):
         emb = _embed_top_for(self.bot, interaction.user, rows, viewer_is_target=True)
         extra = "\n".join(bonus_msgs) if bonus_msgs else ""
         await interaction.followup.send(
-            content=("Guardado." + ("\n" + extra if extra else "")),
+            content=(
+                "Listo: guardado (si ya había algo en esa posición, quedó **reemplazado**)."
+                + ("\n" + extra if extra else "")
+            ),
             embed=emb,
             ephemeral=True,
         )
@@ -109,7 +126,13 @@ class AnimeTopCog(commands.Cog, name="Anime top"):
     @app_commands.describe(posicion="Número de posición a vaciar (1–33)")
     async def anime_top_quitar(self, interaction: discord.Interaction, posicion: app_commands.Range[int, 1, 33]):
         self.db.anime_top_remove(interaction.user.id, int(posicion))
-        await interaction.response.send_message(f"Posición **{posicion}** vaciada.", ephemeral=True)
+        rows = self.db.anime_top_list(interaction.user.id)
+        emb = _embed_top_for(self.bot, interaction.user, rows, viewer_is_target=True)
+        await interaction.response.send_message(
+            content=f"Posición **{posicion}** vaciada.",
+            embed=emb,
+            ephemeral=True,
+        )
 
     @app_commands.command(name="aat-anime-top-guia", description="Mini guía para armar tu top.")
     async def anime_top_guia(self, interaction: discord.Interaction):
@@ -118,8 +141,9 @@ class AnimeTopCog(commands.Cog, name="Anime top"):
         emb.description = (
             "• Pensá **10** obras que más te gustaron (orden importa: **1** = la número uno).\n"
             "• Si querés, completá hasta **33** casillas con el resto de favoritos.\n"
-            "• Podés **cambiar** cualquier posición cuando quieras con `/aat-anime-top-set`.\n"
-            "• `/aat-anime-top-quitar` deja vacía una casilla.\n"
+            "• Podés **cambiar** cualquier posición cuando quieras: misma posición y nuevo título "
+            "(`/aat-anime-top-set` o `?topset`).\n"
+            "• `/aat-anime-top-quitar` o `?topquitar` dejan vacía una casilla.\n"
             f"• **Bonos únicos**: top 10 completo → {fmt_toque_line(b10)}; top 30 completo → {fmt_toque_line(b30)} extra.\n"
             "• Ver el de otro: `/aat-anime-top-ver` eligiendo usuario (mensaje público)."
         )

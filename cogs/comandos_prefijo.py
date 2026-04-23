@@ -37,6 +37,71 @@ from cogs.impostor.engine import PHASE_END
 log = logging.getLogger(__name__)
 
 
+class PrefijoEmbedsPaginator(discord.ui.View):
+    """Un mensaje con varias «páginas» (cada una = lista de embeds); solo quien ejecutó el comando puede paginar."""
+
+    def __init__(self, author_id: int, pages: List[List[discord.Embed]], *, label: str):
+        super().__init__(timeout=420)
+        self.author_id = author_id
+        self.pages = pages
+        self.label = label
+        self.idx = 0
+        self._sync_buttons()
+
+    def _sync_buttons(self) -> None:
+        prev_b = self.children[0]
+        next_b = self.children[1]
+        if isinstance(prev_b, discord.ui.Button):
+            prev_b.disabled = self.idx <= 0
+        if isinstance(next_b, discord.ui.Button):
+            next_b.disabled = self.idx >= len(self.pages) - 1
+
+    def header(self) -> Optional[str]:
+        if len(self.pages) <= 1:
+            return None
+        return f"{self.label} · **{self.idx + 1}/{len(self.pages)}** — usá **Anterior** / **Siguiente**"
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message(
+                "Solo quien usó el comando puede paginar. Ejecutá el mismo `?` vos o usá slash.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    @discord.ui.button(label="Anterior", style=discord.ButtonStyle.secondary, emoji="⬅️", row=0)
+    async def prev_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self.idx > 0:
+            self.idx -= 1
+        self._sync_buttons()
+        await interaction.response.edit_message(content=self.header(), embeds=self.pages[self.idx], view=self)
+
+    @discord.ui.button(label="Siguiente", style=discord.ButtonStyle.primary, emoji="➡️", row=0)
+    async def next_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self.idx < len(self.pages) - 1:
+            self.idx += 1
+        self._sync_buttons()
+        await interaction.response.edit_message(content=self.header(), embeds=self.pages[self.idx], view=self)
+
+
+async def _reply_paginated_embeds(
+    ctx: commands.Context,
+    pages: List[List[discord.Embed]],
+    *,
+    label: str,
+) -> None:
+    clean = [p for p in pages if p]
+    if not clean:
+        await ctx.send("Nada para mostrar.", delete_after=8)
+        return
+    if len(clean) == 1:
+        await ctx.send(embeds=clean[0])
+        return
+    view = PrefijoEmbedsPaginator(ctx.author.id, clean, label=label)
+    await ctx.send(content=view.header(), embeds=clean[0], view=view)
+
+
 class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
     """Atajos `?` públicos (economía, impostor)."""
 
@@ -46,19 +111,145 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         self.card_db: CardDBManager = bot.card_db
         self.task_config = bot.task_config
 
+    def _pages_inicial(self, ctx: commands.Context) -> List[List[discord.Embed]]:
+        uid = ctx.author.id
+        prog = self.db.get_progress_inicial(uid)
+        if prog["completado"] == 1:
+            done = discord.Embed(
+                title="Iniciación",
+                description="✅ Ya reclamada (ya cobraste con `?reclamar`).",
+                color=discord.Color.green(),
+            )
+            return [[done]]
+        wl = int(self.db.wishlist_total_filled(uid))
+        top10 = int(self.db.anime_top_count_filled(uid, INICIAL_TOP_MIN))
+        hat = int(self.db.hated_total_filled(uid))
+        pie = f"Premio: {fmt_toque_sentence(int(self.task_config['rewards']['inicial']))} + 3 blisters → `?reclamar` (Discord + perfil)."
+        e1 = discord.Embed(
+            title="Iniciación — Discord",
+            description=f"Presentación, autorol, redes, reglas y 1× #general.\n\n_{pie}_",
+            color=discord.Color.blue(),
+        )
+        top_cap = int(self.db.anime_top_count_filled(uid, PERFIL_TOP_CAP))
+        wl_show = min(wl, PERFIL_WISHLIST_CAP)
+        hat_show = min(hat, PERFIL_HATED_CAP)
+        e2 = discord.Embed(
+            title="Iniciación — perfil (mínimo para reclamar)",
+            description=(
+                f"• Wishlist: **{wl}/{INICIAL_WISHLIST_MIN}**\n"
+                f"• Top favoritos (pos. 1–{INICIAL_TOP_MIN}): **{top10}/{INICIAL_TOP_MIN}**\n"
+                f"• Odiados: **{hat}/{INICIAL_HATED_MIN}**\n\n"
+                f"_{pie}_"
+            ),
+            color=discord.Color.dark_blue(),
+        )
+        e3 = discord.Embed(
+            title="Perfil ampliado (opcional)",
+            description=(
+                f"Solo **progreso** hacia el tope del perfil; **no suma otra misión** aparte del mínimo de arriba.\n\n"
+                f"• Wishlist: **{wl_show}/{PERFIL_WISHLIST_CAP}**\n"
+                f"• Top anime: **{top_cap}/{PERFIL_TOP_CAP}**\n"
+                f"• Odiados: **{hat_show}/{PERFIL_HATED_CAP}**\n\n"
+                "_Bonos del top 10 / 30: `/aat-anime-top-guia`._"
+            ),
+            color=discord.Color.teal(),
+        )
+        return [[e1], [e2], [e3]]
+
+    def _pages_diaria(self, ctx: commands.Context) -> List[List[discord.Embed]]:
+        user_id = ctx.author.id
+        fecha, _ = self.db.get_current_date_keys()
+        prog = self.db.get_progress_diaria(user_id)
+        msg_n = int(prog.get("mensajes_servidor") or 0)
+        rx_n = int(prog.get("reacciones_servidor") or 0)
+        tr = int(prog.get("trampa_enviada") or 0)
+        ts = int(prog.get("trampa_sin_objetivo") or 0)
+        tr_ok = tr >= 1 or ts >= 1
+        or_n = int(prog.get("oraculo_preguntas") or 0)
+        or_ok = or_n >= 1
+        rw = self.task_config["rewards"]["diaria"]
+        premio_txt = f"Cuando **las dos partes** estén listas: {fmt_toque_sentence(int(rw))} + 1 blister → `?reclamar`"
+        e_act = discord.Embed(
+            title=f"Diaria — actividad y oráculo ({fecha})",
+            description=(
+                f"• Mensajes en el servidor: **{msg_n}/10**\n"
+                f"• Reacciones en el servidor: **{rx_n}/3**\n"
+                f"• Oráculo (1 pregunta): **{'OK' if or_ok else 'pendiente'}** — {or_n}/1 "
+                f"(@bot + pregunta · `?pregunta` · `/aat-consulta`)\n\n"
+                f"_{premio_txt}_"
+            ),
+            color=discord.Color.orange(),
+        )
+        e_tr = discord.Embed(
+            title=f"Diaria — trampa ({fecha})",
+            description=(
+                "**Trampa:** **una** carta — **dirigida** (`?usar` + mención) **o** **sin** objetivo (sola).\n"
+                f"• Con objetivo: **{tr}/1**\n"
+                f"• Sin objetivo: **{ts}/1**\n"
+                f"• Estado trampa: **{'OK' if tr_ok else 'pendiente'}**\n\n"
+                f"_{premio_txt}_"
+            ),
+            color=discord.Color.dark_orange(),
+        )
+        return [[e_act], [e_tr]]
+
+    def _pages_semanal(self, ctx: commands.Context) -> List[List[discord.Embed]]:
+        _, semana = self.db.get_current_date_keys()
+        prog = self.db.get_progress_semanal(ctx.author.id)
+        rw = self.task_config["rewards"]
+        sl = semana.split("-")[-1]
+        ip = int(prog.get("impostor_partidas") or 0)
+        iv = int(prog.get("impostor_victorias") or 0)
+        pie_sem = (
+            "✅ Premio **semanal base** ya reclamado."
+            if int(prog.get("completado") or 0) == 1
+            else f"**Premio base (una vez):** {fmt_toque_sentence(int(rw['semanal']))} + 1 blister — `?reclamar` cuando estén **media + foro + #videos**."
+        )
+        e1 = discord.Embed(
+            title=f"Semanal — memes / fanart (sem. {sl})",
+            description=(
+                f"**Media:** publicá algo con contenido en **memes**, **fanarts** u otro canal de creación que cuente el bot — "
+                f"**{int(prog.get('media_escrito') or 0)}/1**\n\n_{pie_sem}_"
+            ),
+            color=discord.Color.purple(),
+        )
+        df = int(prog.get("debate_post") or 0)
+        dv = int(prog.get("videos_reaccion") or 0)
+        e2 = discord.Embed(
+            title=f"Semanal — foro y #videos (sem. {sl})",
+            description=(
+                f"**Foro:** escribir en el foro — **abrí un hilo** en debate (anime o manga). **{df}/1**\n"
+                f"**#videos:** reaccionar a **un** mensaje en **#videos**. **{dv}/1**\n\n"
+                f"_{pie_sem}_"
+            ),
+            color=discord.Color.dark_purple(),
+        )
+        pie_imp = (
+            "✅ **Impostor** ya reclamado."
+            if int(prog.get("completado_especial") or 0) == 1
+            else f"**Premio aparte:** {fmt_toque_sentence(int(rw.get('especial_semanal', 400)))} — `/aat-progreso-semanal`."
+        )
+        e3 = discord.Embed(
+            title=f"Semanal — Impostor (sem. {sl})",
+            description=f"Partidas: **{ip}/3** · Victoria como impostor: **{iv}/1**\n\n_{pie_imp}_",
+            color=discord.Color.dark_red(),
+        )
+        return [[e1], [e2], [e3]]
+
     @commands.command(name="comandos", aliases=["aat", "cmds", "cmd", "ayudabot"])
     async def comandos(self, ctx: commands.Context):
         embed = discord.Embed(
             title="Comandos del bot (Anime al Toque)",
             description=(
-                "**Lista completa** (todos los `?` y `/`): **`?ayuda`** / **`?guia`** / **`/aat-guia`** (varios embeds).\n"
-                "**Con `?` en el canal** (todos lo ven) — atajos abajo.\n"
+                "**Lista completa** (todos los `?` y `/`): **`?ayuda`** / **`?guia`** / **`/aat-guia`** (paginado con **Anterior/Siguiente**).\n"
+                "**En #general** solo: `?roll` · `?rollp` / `?rollc` / `?rollpaceptar` · `?abrir` · `?usar` · oráculo · trivia · `?impostor` · `?animetop` · `?comandos`.\n"
+                "**Economía y tareas** (`?reclamar`, `?progreso`, `?diaria`…):** en el **canal del bot** o con **slash** (no en #general).\n"
                 "**Con `/`** — versión completa (Discord te autocompleta).\n\n"
-                "**Economía:** `?puntos` · `?inventario` · `?mi` · `?top` · `?tophist` · `?reclamar` · `?progreso` · "
+                "**Economía (canal del bot o slash):** `?puntos` · `?inventario` · `?mi` · `?top` · `?tophist` · `?reclamar` · `?progreso` · "
                 "`?diaria` · `?semanal` · `?inicial` · `?abrir` · `?miscartas` · `?catalogo` · `?usar`\n"
                 "**Impostor:** `?impostor` — avisá que buscás gente / ver lobbies abiertos.\n"
                 "**Oráculo:** arrobá al bot + tu pregunta en el mismo mensaje · `?pregunta` + texto · `/aat-consulta` — sí / no / a veces %. Cuenta para la **diaria** y puede dar **Toque points** extra.\n"
-                "**Top anime:** `?animetop` · `?animetop @usuario` — slash: `/aat-anime-top_*`\n"
+                "**Top anime:** `?animetop` · `?animetop @usuario` — editar: `?topset <1-33> <título>` · `?topquitar <n>` — slash: `/aat-anime-top_*`\n"
                 "**Perfil:** `/aat-wishlist_*` · `/aat-hated_*` · `/aat-chars_*` (wishlist 1–33, odiados 1–10, personajes 1–10).\n"
                 "**Trivia anime:** el bot publica en **#general** (varias al día, tiempo límite configurable); "
                 "`?respuestapregunta` + respuesta · `?triviatop` / `?triviami` ranking.\n"
@@ -84,16 +275,13 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
                 mention_author=False,
             )
             return
-        n = len(chunks)
         try:
-            for i, part in enumerate(chunks):
-                head = f"📚 **Guía ({i + 1}/{n})**" if n > 1 else None
-                await ctx.send(content=head, embeds=part)
+            await _reply_paginated_embeds(ctx, chunks, label="📚 **Guía del bot**")
         except discord.HTTPException as e:
             log.warning("Envío guía embeds en canal falló: %s", e)
             try:
                 for i, part in enumerate(chunks):
-                    head = f"📚 **Guía ({i + 1}/{n})**" if n > 1 else None
+                    head = f"📚 **Guía ({i + 1}/{len(chunks)})**" if len(chunks) > 1 else None
                     await ctx.author.send(content=head, embeds=part)
                 await ctx.send(
                     f"{ctx.author.mention} Te mandé la guía por **mensaje privado** (este canal no aceptó los embeds: "
@@ -152,6 +340,35 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         r = random.randint(minimo, maximo)
         await ctx.send(f"🎲 **{ctx.author.display_name}** sacó **{r}** ({minimo}–{maximo}).")
 
+    @commands.command(name="rollp")
+    async def rollp_cmd(self, ctx: commands.Context, oponente: discord.Member):
+        """Reto de roll 1–100 sin apuesta vs @usuario (`/aat-roll-retar` con apuesta 0)."""
+        cog = self.bot.get_cog("Economia Minijuegos")
+        if not cog:
+            return await ctx.send("Minijuegos no disponible.", delete_after=8)
+        await cog.roll_reto_desde_prefijo(ctx, oponente, 0)
+
+    @commands.command(name="rollc")
+    async def rollc_cmd(self, ctx: commands.Context, oponente: discord.Member, apuesta: int):
+        """Reto de roll 1–100 con apuesta en puntos: `?rollc @rival 100`."""
+        if apuesta < 1:
+            return await ctx.send(
+                "Con `?rollc` indicá los puntos (1–5000). Para **sin apuesta** usá `?rollp @usuario`.",
+                delete_after=12,
+            )
+        cog = self.bot.get_cog("Economia Minijuegos")
+        if not cog:
+            return await ctx.send("Minijuegos no disponible.", delete_after=8)
+        await cog.roll_reto_desde_prefijo(ctx, oponente, int(apuesta))
+
+    @commands.command(name="rollpaceptar", aliases=["rollp_aceptar"])
+    async def rollpaceptar_cmd(self, ctx: commands.Context):
+        """Aceptar reto de roll (con o sin apuesta) pendiente hacia vos."""
+        cog = self.bot.get_cog("Economia Minijuegos")
+        if not cog:
+            return await ctx.send("Minijuegos no disponible.", delete_after=8)
+        await cog.roll_aceptar_desde_prefijo(ctx)
+
     @commands.command()
     async def animetop(self, ctx: commands.Context, quien: Optional[discord.Member] = None):
         """Ver top anime propio o de otro miembro (mismo texto que el slash)."""
@@ -159,6 +376,38 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         rows = self.db.anime_top_list(target.id)
         emb = _embed_top_for(self.bot, target, rows, viewer_is_target=target.id == ctx.author.id)
         await ctx.send(embed=emb)
+
+    @commands.command(name="topset", aliases=["topanimeset", "animetopset"])
+    async def topset_cmd(self, ctx: commands.Context, posicion: int, *, titulo: str):
+        """Poner o cambiar una casilla del top anime (1–33); misma posición = reemplazar."""
+        t = (titulo or "").strip()
+        if len(t) > 200:
+            return await ctx.send("El título es demasiado largo (máx. 200 caracteres).", delete_after=10)
+        try:
+            self.db.anime_top_set(ctx.author.id, int(posicion), t)
+        except ValueError as e:
+            return await ctx.send(str(e), delete_after=10)
+        rw = (self.task_config or {}).get("rewards") or {}
+        b10 = int(rw.get("anime_top10_bonus") or 0)
+        b30 = int(rw.get("anime_top30_bonus") or 0)
+        bonus = self.db.apply_anime_milestones(ctx.author.id, b10, b30)
+        rows = self.db.anime_top_list(ctx.author.id)
+        emb = _embed_top_for(self.bot, ctx.author, rows, viewer_is_target=True)
+        extra = "\n".join(bonus) if bonus else ""
+        msg = "Listo: guardado (si ya había algo en esa posición, quedó **reemplazado**)."
+        if extra:
+            msg += "\n" + extra
+        await ctx.send(content=msg, embed=emb)
+
+    @commands.command(name="topquitar", aliases=["topanimequitar", "animetopquitar"])
+    async def topquitar_cmd(self, ctx: commands.Context, posicion: int):
+        """Vaciar una posición del top anime (1–33)."""
+        if posicion < 1 or posicion > 33:
+            return await ctx.send("La posición debe ser entre 1 y 33.", delete_after=8)
+        self.db.anime_top_remove(ctx.author.id, int(posicion))
+        rows = self.db.anime_top_list(ctx.author.id)
+        emb = _embed_top_for(self.bot, ctx.author, rows, viewer_is_target=True)
+        await ctx.send(content=f"Posición **{posicion}** vaciada.", embed=emb)
 
     @commands.command()
     async def mi(self, ctx: commands.Context):
@@ -197,133 +446,23 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
 
     @commands.command(aliases=["daily"])
     async def diaria(self, ctx: commands.Context):
-        user_id = ctx.author.id
-        fecha, _ = self.db.get_current_date_keys()
-        prog = self.db.get_progress_diaria(user_id)
-        msg_n = int(prog.get("mensajes_servidor") or 0)
-        rx_n = int(prog.get("reacciones_servidor") or 0)
-        tr = int(prog.get("trampa_enviada") or 0)
-        ts = int(prog.get("trampa_sin_objetivo") or 0)
-        tr_ok = tr >= 1 or ts >= 1
-        or_n = int(prog.get("oraculo_preguntas") or 0)
-        or_ok = or_n >= 1
-        rw = self.task_config["rewards"]["diaria"]
-        premio_txt = f"Cuando **las dos partes** estén listas: {fmt_toque_sentence(int(rw))} + 1 blister → `?reclamar`"
-        e_act = discord.Embed(
-            title=f"Diaria — actividad y oráculo ({fecha})",
-            description=(
-                f"• Mensajes en el servidor: **{msg_n}/10**\n"
-                f"• Reacciones en el servidor: **{rx_n}/3**\n"
-                f"• Oráculo (1 pregunta): **{'OK' if or_ok else 'pendiente'}** — {or_n}/1 "
-                f"(@bot + pregunta · `?pregunta` · `/aat-consulta`)\n\n"
-                f"_{premio_txt}_"
-            ),
-            color=discord.Color.orange(),
-        )
-        e_tr = discord.Embed(
-            title=f"Diaria — trampa ({fecha})",
-            description=(
-                "**Trampa:** **una** carta — **dirigida** (`?usar` + mención) **o** **sin** objetivo (sola).\n"
-                f"• Con objetivo: **{tr}/1**\n"
-                f"• Sin objetivo: **{ts}/1**\n"
-                f"• Estado trampa: **{'OK' if tr_ok else 'pendiente'}**\n\n"
-                f"_{premio_txt}_"
-            ),
-            color=discord.Color.dark_orange(),
-        )
-        await ctx.send(embeds=[e_act, e_tr])
+        await _reply_paginated_embeds(ctx, self._pages_diaria(ctx), label="?diaria / ?daily")
 
     @commands.command(aliases=["weekly", "semanal"])
     async def semanal_cmd(self, ctx: commands.Context):
-        _, semana = self.db.get_current_date_keys()
-        prog = self.db.get_progress_semanal(user_id := ctx.author.id)
-        rw = self.task_config["rewards"]
-        sl = semana.split("-")[-1]
-        ip = int(prog.get("impostor_partidas") or 0)
-        iv = int(prog.get("impostor_victorias") or 0)
-        pie_sem = (
-            "✅ Premio **semanal base** ya reclamado."
-            if int(prog.get("completado") or 0) == 1
-            else f"**Premio base (una vez):** {fmt_toque_sentence(int(rw['semanal']))} + 1 blister — `?reclamar` cuando estén **media + foro + #videos**."
-        )
-        e1 = discord.Embed(
-            title=f"Semanal — memes / fanart (sem. {sl})",
-            description=(
-                f"**Media:** publicá algo con contenido en **memes**, **fanarts** u otro canal de creación que cuente el bot — "
-                f"**{int(prog.get('media_escrito') or 0)}/1**\n\n_{pie_sem}_"
-            ),
-            color=discord.Color.purple(),
-        )
-        df = int(prog.get("debate_post") or 0)
-        dv = int(prog.get("videos_reaccion") or 0)
-        e2 = discord.Embed(
-            title=f"Semanal — foro y #videos (sem. {sl})",
-            description=(
-                f"**Foro:** escribir en el foro — **abrí un hilo** en debate (anime o manga). **{df}/1**\n"
-                f"**#videos:** reaccionar a **un** mensaje en **#videos**. **{dv}/1**\n\n"
-                f"_{pie_sem}_"
-            ),
-            color=discord.Color.dark_purple(),
-        )
-        pie_imp = (
-            "✅ **Impostor** ya reclamado."
-            if int(prog.get("completado_especial") or 0) == 1
-            else f"**Premio aparte:** {fmt_toque_sentence(int(rw.get('especial_semanal', 400)))} — `/aat-progreso-semanal`."
-        )
-        e3 = discord.Embed(
-            title=f"Semanal — Impostor (sem. {sl})",
-            description=f"Partidas: **{ip}/3** · Victoria como impostor: **{iv}/1**\n\n_{pie_imp}_",
-            color=discord.Color.dark_red(),
-        )
-        await ctx.send(embeds=[e1, e2, e3])
+        await _reply_paginated_embeds(ctx, self._pages_semanal(ctx), label="?semanal / ?weekly")
 
     @commands.command(aliases=["starter", "iniciacion"])
     async def inicial(self, ctx: commands.Context):
-        uid = ctx.author.id
-        prog = self.db.get_progress_inicial(uid)
-        if prog["completado"] == 1:
-            await ctx.send("✅ Iniciación ya reclamada.")
-            return
-        wl = int(self.db.wishlist_total_filled(uid))
-        top10 = int(self.db.anime_top_count_filled(uid, INICIAL_TOP_MIN))
-        hat = int(self.db.hated_total_filled(uid))
-        pie = f"Premio: {fmt_toque_sentence(int(self.task_config['rewards']['inicial']))} + 3 blisters → `?reclamar` (Discord + perfil)."
-        e1 = discord.Embed(
-            title="Iniciación — Discord",
-            description=f"Presentación, autorol, redes, reglas y 1× #general.\n\n_{pie}_",
-            color=discord.Color.blue(),
-        )
-        top_cap = int(self.db.anime_top_count_filled(uid, PERFIL_TOP_CAP))
-        wl_show = min(wl, PERFIL_WISHLIST_CAP)
-        hat_show = min(hat, PERFIL_HATED_CAP)
-        e2 = discord.Embed(
-            title="Iniciación — perfil (mínimo para reclamar)",
-            description=(
-                f"• Wishlist: **{wl}/{INICIAL_WISHLIST_MIN}**\n"
-                f"• Top favoritos (pos. 1–{INICIAL_TOP_MIN}): **{top10}/{INICIAL_TOP_MIN}**\n"
-                f"• Odiados: **{hat}/{INICIAL_HATED_MIN}**\n\n"
-                f"_{pie}_"
-            ),
-            color=discord.Color.dark_blue(),
-        )
-        e3 = discord.Embed(
-            title="Perfil ampliado (opcional)",
-            description=(
-                f"Solo **progreso** hacia el tope del perfil; **no suma otra misión** aparte del mínimo de arriba.\n\n"
-                f"• Wishlist: **{wl_show}/{PERFIL_WISHLIST_CAP}**\n"
-                f"• Top anime: **{top_cap}/{PERFIL_TOP_CAP}**\n"
-                f"• Odiados: **{hat_show}/{PERFIL_HATED_CAP}**\n\n"
-                "_Bonos del top 10 / 30: `/aat-anime-top-guia`._"
-            ),
-            color=discord.Color.teal(),
-        )
-        await ctx.send(embeds=[e1, e2, e3])
+        await _reply_paginated_embeds(ctx, self._pages_inicial(ctx), label="?inicial / ?starter")
 
     @commands.command()
     async def progreso(self, ctx: commands.Context):
-        await self.inicial(ctx)
-        await self.diaria(ctx)
-        await self.semanal_cmd(ctx)
+        pages: List[List[discord.Embed]] = []
+        pages.extend(self._pages_inicial(ctx))
+        pages.extend(self._pages_diaria(ctx))
+        pages.extend(self._pages_semanal(ctx))
+        await _reply_paginated_embeds(ctx, pages, label="?progreso (inicial + diaria + semanal)")
 
     @commands.command()
     async def reclamar(self, ctx: commands.Context):
@@ -518,7 +657,7 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
             "`inicial` / `diaria` / `semanal` / `semanal_especial` / `semanal_minijuegos`.\n"
             "Guía completa en embeds: `?ayuda` / `?guia` / `/aat-guia`. Interactiva (solo vos): `/aat-ayuda`."
         )
-        await ctx.send(embeds=[e0, extra])
+        await _reply_paginated_embeds(ctx, [[e0], [extra]], label="?ganarpuntos / ?comoganar")
 
     @commands.command(name="guia", aliases=["guía"])
     async def guia(self, ctx: commands.Context):

@@ -181,9 +181,12 @@ def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
     r0 = discord.Embed(
         title="📋 Comandos con prefijo ?",
         description=(
-            "En **#general** solo funcionan los `?` que el bot permite ahí (lista del staff). "
+            "**En #general** solo: `?roll` · `?rollp` / `?rollc` / `?rollpaceptar` · `?abrir` · `?usar` / `?usarcarta` · oráculo (`?pregunta`… o @bot) · "
+            "trivia (`?respuestapregunta`…) · `?impostor` · `?animetop` · `?comandos` (lista corta).\n"
+            "**No en #general:** reclamar, progreso, diaria/semanal/inicial, puntos, inventario, tops, tienda, guía larga… "
+            f"usalos en el canal del bot o con slash.\n\n"
             f"{canal_prefijo}"
-            "**Economía y cartas**\n"
+            "**Economía y cartas (canal del bot o donde el staff indique)**\n"
             "• `?puntos` — tus Toque points · `?inventario` — saldo, pins y blisters\n"
             "• `?mi` — saldo, posición en tops, cartas e histórico ganado\n"
             "• `?top` · `?rank` · `?ranking` — top 5 por **saldo actual**\n"
@@ -192,20 +195,21 @@ def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
             "• `?progreso` — resumen iniciación + diaria + semanal\n"
             "• `?diaria` · `?daily` — **dos bloques**: actividad + oráculo, y aparte **Trampa** (misma recompensa al completar todo)\n"
             "• `?semanal` · `?weekly` · `?inicial` · `?starter` · `?iniciacion` — ver qué falta\n"
-            "• `?abrir` — abrir blister (público en el canal)\n"
+            "• `?abrir` — abrir blister (en #general también va)\n"
             "• `?miscartas` — lista de cartas (**visible para todos** en ese canal)\n"
             "• `?catalogo` — todas las cartas del juego\n"
             "• `?usar` · `?usarcarta` — usar carta trampa (`?usar <id> [@alguien]`)\n\n"
-            "**Resúmenes y guía en el chat**\n"
+            "**Resúmenes y guía**\n"
             "• `?comandos` · `?aat` · `?cmds` · `?cmd` · `?ayudabot` — resumen corto\n"
             "• `?ayuda` · `?guia` — **esta guía completa** en varios embeds\n"
             "• `/aat-guia` — la misma guía completa con slash (todos la ven en el canal)\n"
             "• `?canjes` · `?tienda` · `?recompensas` — embed de tienda y canjes\n"
             "• `?ganarpuntos` · `?comoganar` — cómo ganar Toque points + reclamar\n"
-            "• `?roll` — dado casual entre dos números\n\n"
+            "• `?roll` — dado casual (rango)\n"
+            "• `?rollp @usuario` — reto roll 1–100 **sin** puntos · `?rollc @usuario <pts>` — **con** apuesta · `?rollpaceptar` — aceptar\n\n"
             "**Impostor**\n"
             "• `?impostor` · `?buscoimpostor` · `?busco` · `?lobbys` · `?cartelera` — aviso de busca / cartelera\n\n"
-            "**Oráculo (diaria)**\n"
+            "**Oráculo (cuenta para la diaria)**\n"
             "• `?pregunta` · `?consulta` · `?8ball` · `?bola` · `?oraculo` — pregunta sí/no (también @mención al bot)\n\n"
             "**Trivia anime (#general, varias al día)**\n"
             "• `?respuestapregunta` · `?triviaresp` · `?rtrivia` + respuesta (primero en acertar dentro del tiempo)\n"
@@ -228,7 +232,7 @@ def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
             "**Público en el canal:** `/aat-canjes` · `/aat-ganar-puntos` (cómo sumar Toque points)\n"
             "**Guía completa (todos la ven):** `/aat-guia`\n"
             "**Guía interactiva (solo vos):** `/aat-ayuda`\n"
-            "**Minijuegos y encuesta del servidor:** `/aat-roll` · `/aat-roll-retar` · `/aat-roll-aceptar` · "
+            "**Minijuegos y encuesta del servidor:** `/aat-roll` · `/aat-roll-retar` (apuesta **0** = sin puntos) · `/aat-roll-aceptar` · "
             "`/aat-voto-semanal`\n"
             "**Duelos con cartas** (si están habilitados): `/aat-duelo-retar` · `/aat-duelo-aceptar`"
         ),
@@ -238,7 +242,7 @@ def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
     r2 = discord.Embed(
         title="⚙️ Slash — perfil, top anime y oráculo",
         description=(
-            "**Top anime (hasta 33 casillas; bonos únicos en 10 y 30):** `/aat-anime-top-ver` · `/aat-anime-top-set` · `/aat-anime-top-quitar` · `/aat-anime-top-guia`\n"
+            "**Top anime (hasta 33 casillas; bonos únicos en 10 y 30):** `/aat-anime-top-ver` · `/aat-anime-top-set` (misma posición = **cambiar**) · `/aat-anime-top-quitar` · `/aat-anime-top-guia` — también `?topset` / `?topquitar` en el canal de comandos\n"
             "**Wishlist / odiados / personajes:** `/aat-wishlist-ver` · `/aat-wishlist-set` · `/aat-wishlist-quitar` · "
             "`/aat-hated-ver` · `/aat-hated-set` · `/aat-hated-quitar` · `/aat-chars-ver` · `/aat-chars-set` · `/aat-chars-quitar`\n"
             "**Oráculo:** `/aat-consulta`"
@@ -306,10 +310,10 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
     e0.add_field(
         name="Progreso y reclamar",
         value=(
-            "**Todos en el canal:** `?progreso` · `?diaria` · `?semanal` · `?inicial` "
-            "(donde el staff permita, p. ej. #general).\n"
+            "**Con `?` (canal del bot / donde indique el staff, no en #general):** "
+            "`?progreso` · `?diaria` · `?semanal` · `?inicial`.\n"
             "**Solo vos:** `/aat-progreso-iniciacion` · `/aat-progreso-diaria` · `/aat-progreso-semanal`\n\n"
-            "**Todos:** `?reclamar`\n"
+            "**Todos:** `?reclamar` (mismo criterio de canal que arriba)\n"
             "**Solo vos:** `/aat-reclamar` (sin tipo reclama todo lo listo, o elegí `inicial` / `diaria` / `semanal` / "
             "`semanal_especial` / `semanal_minijuegos`)."
         ),
@@ -364,7 +368,8 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
         "Armá **tu ranking** (posiciones **1 a 33**); los bonos automáticos siguen al completar **10** y **30** títulos.\n"
         f"Bonos únicos: **10** primeras → {_fmt_pts(b10)} · **30** → {_fmt_pts(b30)}.\n\n"
         "**Todos en el canal:** `?animetop` · `?animetop @usuario` (se ve el listado en el chat).\n"
-        "**Solo vos:** `/aat-anime-top-set` · `/aat-anime-top-quitar` · `/aat-anime-top-guia` · "
+        "**Solo vos (canal de comandos o slash):** `?topset <1-33> <título>` (repetís la posición para **modificar**) · "
+        "`?topquitar <n>` · `/aat-anime-top-set` · `/aat-anime-top-quitar` · `/aat-anime-top-guia` · "
         "`/aat-anime-top-ver` **sin** elegir a nadie (tu top en privado). "
         "Si en el slash elegís **otro usuario**, la respuesta puede ser **pública** en el canal."
     )

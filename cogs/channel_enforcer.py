@@ -20,7 +20,9 @@ def _general_prefix_command_token(message: discord.Message) -> str:
     ascii_fold = "".join(ch for ch in nk if not unicodedata.combining(ch))
     return ascii_fold.lower()
 
-# Comandos ? permitidos en #general (primer token tras "?")
+# Comandos ? permitidos en #general (primer token tras "?").
+# No: reclamar, progreso, diarias, tienda, guía larga, rankings, etc. (van al canal del bot o slash).
+# Sí: juego en vivo (roll, cartas), oráculo, trivia, impostor, resumen corto de comandos.
 PUBLIC_GENERAL_PREFIX_COMMANDS = frozenset(
     {
         "comandos",
@@ -28,28 +30,12 @@ PUBLIC_GENERAL_PREFIX_COMMANDS = frozenset(
         "cmds",
         "cmd",
         "ayudabot",
-        "ayuda",
-        "puntos",
-        "inventario",
-        "top",
-        "tophist",
-        "histtop",
-        "tophistorico",
-        "mi",
-        "rank",
-        "ranking",
-        "reclamar",
-        "progreso",
-        "diaria",
-        "daily",
-        "semanal",
-        "weekly",
-        "inicial",
-        "starter",
-        "iniciacion",
+        "roll",
+        "rollp",
+        "rollc",
+        "rollpaceptar",
+        "rollp_aceptar",
         "abrir",
-        "miscartas",
-        "catalogo",
         "usar",
         "usarcarta",
         "impostor",
@@ -73,14 +59,6 @@ PUBLIC_GENERAL_PREFIX_COMMANDS = frozenset(
         "triviami",
         "mitrivia",
         "posiciontrivia",
-        # Rolls + guías públicas
-        "roll",
-        "canjes",
-        "tienda",
-        "recompensas",
-        "ganarpuntos",
-        "comoganar",
-        "guia",
     }
 )
 
@@ -119,9 +97,9 @@ class ChannelEnforcerCog(commands.Cog, name="Limpieza de Chat"):
                 # 2. Enviar Embed al CANAL (no DM)
                 embed = discord.Embed(
                     description=(
-                        f"🚫 **{message.author.mention}, en #general no se usan comandos con `?` (salvo los permitidos).**\n"
-                        f"Guía completa: **`?guia`** o **`/aat-guia`**. Slash en <#{self.bot_channel_id}> "
-                        f"(economía: `/aat-ayuda`, cartas: `/usar`)."
+                        f"🚫 **{message.author.mention}, en #general solo algunos `?`** (roll, rollp/rollc, abrir/usar cartas, oráculo, trivia, impostor, `?comandos`).\n"
+                        f"**Reclamar, progreso, diaria, tienda, guía…** → canal de comandos <#{self.bot_channel_id}> "
+                        f"o slash (`/aat-reclamar`, `/aat-progreso-*`, `/aat-guia`, etc.)."
                     ),
                     color=discord.Color.red()
                 )

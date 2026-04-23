@@ -135,7 +135,8 @@ class EconomiaHelpView(discord.ui.View):
             name="Comandos",
             value=(
                 "`/aat-roll` — dado casual (rango acotado).\n"
-                "`/aat-roll-retar` + `/aat-roll-aceptar` — apuesta 1–100, gana el mayor.\n"
+                "`/aat-roll-retar` (apuesta **0** = sin puntos; 1–5000 = con apuesta) + `/aat-roll-aceptar` — roll 1–100 vs otro; gana el mayor.\n"
+                "En #general también: `?rollp @rival` · `?rollc @rival <pts>` · `?rollpaceptar`.\n"
                 "`/aat-duelo-retar` + `/aat-duelo-aceptar` — apuestan **Toque points** y **cartas**; total = **poder** + dado; el retador elige si gana **mayor** o **menor**.\n"
                 "`/aat-voto-semanal` — voto A/B (opciones por variables de entorno del bot)."
             ),
