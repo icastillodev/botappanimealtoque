@@ -4,6 +4,7 @@ from discord.ext import commands
 from discord import app_commands
 import logging
 from cogs.economia.db_manager import EconomiaDBManagerV2
+from cogs.economia.reclamar_service import inicial_all_claimed
 from typing import Dict, Any
 
 class CheckTareasCog(commands.Cog, name="Check Tareas Antiguas"):
@@ -76,7 +77,7 @@ class CheckTareasCog(commands.Cog, name="Check Tareas Antiguas"):
         user_id = interaction.user.id
 
         prog = self.db.get_progress_inicial(user_id)
-        if prog['completado'] == 1:
+        if inicial_all_claimed(prog):
             await interaction.followup.send("¡Ya has completado y reclamado tus tareas de iniciación!", ephemeral=True)
             return
 

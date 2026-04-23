@@ -16,6 +16,7 @@ from cogs.economia.progreso_vistas import (
 from cogs.economia.reclamar_service import (
     MSG_TIP_INICIACION_AL_RECLAMAR,
     build_reclaim_status_block,
+    inicial_all_claimed,
     reclaim_rewards,
 )
 
@@ -36,15 +37,15 @@ def build_reclaim_result_embed(
     if not ok_msgs and not err_msgs:
         parts.append(
             "_No se cobró nada en este paso (nada listo o ya reclamado)._\n"
-            "Podés cobrar **cada** ☑ por separado: `?reclamar diaria` · `?reclamar semanal`… "
-            "no hace falta tener todo completo para usar **Reclamar todo lo listo**."
+            "**Iniciación** tiene **3** cobros (`?reclamar inicial 1` · `2` · `3`); el **diario** tiene **2** (`diaria 1` · `diaria 2`); "
+            "los **semanales** siguen siendo **3** premios distintos. **Reclamar todo lo listo** intenta cada ☑ en orden."
         )
     parts.append("**Tu estado ahora:**\n" + snap)
     desc = "\n\n".join(parts)[:4000]
     color = discord.Color.green() if ok_msgs else (discord.Color.orange() if err_msgs else discord.Color.light_grey())
     emb = discord.Embed(title="Reclamar", description=desc, color=color)
     prog_ini = db.get_progress_inicial(user_id)
-    if int(prog_ini.get("completado") or 0) != 1:
+    if not inicial_all_claimed(prog_ini):
         emb.set_footer(text=MSG_TIP_INICIACION_AL_RECLAMAR[:2048])
     return emb
 

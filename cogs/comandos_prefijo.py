@@ -18,7 +18,7 @@ from cogs.economia.reclamar_service import (
     RECLAMO_TIPOS_AYUDA,
     build_inicial_reclaim_hint,
     is_reclamar_all_keyword,
-    map_reclamo_token_to_tipo,
+    parse_reclamo_prefijo_parts,
     reclaim_rewards,
 )
 from cogs.economia.anime_top_cog import _embed_top_for
@@ -358,13 +358,19 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         tipo = None
         w = parts[0]
         if is_reclamar_all_keyword(w):
+            if len(parts) > 1:
+                await ctx.send(
+                    "Con **`todo`** / **`all`** no pongas nada después. "
+                    "Para un tipo concreto: `?reclamar inicial 2` · `?reclamar diaria 1` · `?reclamar semanal 2`, etc."
+                )
+                return
             tipo = None
         else:
-            m = map_reclamo_token_to_tipo(w)
-            if m is None:
-                await ctx.send(f"No reconozco `{parts[0]}`. {RECLAMO_TIPOS_AYUDA}")
+            parsed, err = parse_reclamo_prefijo_parts(parts)
+            if err:
+                await ctx.send(err)
                 return
-            tipo = m  # type: ignore[assignment]
+            tipo = parsed  # type: ignore[assignment]
 
         ok, ok_msgs, err_msgs = reclaim_rewards(self.db, self.task_config, ctx.author.id, tipo)  # type: ignore[arg-type]
         embed = build_reclaim_result_embed(self.db, self.task_config or {}, ctx.author.id, ok_msgs, err_msgs)

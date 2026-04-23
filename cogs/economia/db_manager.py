@@ -154,6 +154,68 @@ class EconomiaDBManagerV2:
                         cursor.execute(sql)
                         print(f"DATABASE MIGRATED: Added '{col}' to tareas_semanales.")
 
+                cursor.execute("PRAGMA table_info(tareas_inicial)")
+                icols = [c[1] for c in cursor.fetchall()]
+                for col, sql in [
+                    (
+                        "completado_inicial_comunidad",
+                        "ALTER TABLE tareas_inicial ADD COLUMN completado_inicial_comunidad INTEGER DEFAULT 0",
+                    ),
+                    (
+                        "completado_inicial_perfil_min",
+                        "ALTER TABLE tareas_inicial ADD COLUMN completado_inicial_perfil_min INTEGER DEFAULT 0",
+                    ),
+                    (
+                        "completado_inicial_perfil_max",
+                        "ALTER TABLE tareas_inicial ADD COLUMN completado_inicial_perfil_max INTEGER DEFAULT 0",
+                    ),
+                ]:
+                    if col not in icols:
+                        cursor.execute(sql)
+                        print(f"DATABASE MIGRATED: Added '{col}' to tareas_inicial.")
+                cursor.execute(
+                    """
+                    UPDATE tareas_inicial SET
+                        completado_inicial_comunidad = 1,
+                        completado_inicial_perfil_min = 1,
+                        completado_inicial_perfil_max = 1
+                    WHERE completado = 1
+                      AND (
+                        IFNULL(completado_inicial_comunidad, 0) = 0
+                        OR IFNULL(completado_inicial_perfil_min, 0) = 0
+                        OR IFNULL(completado_inicial_perfil_max, 0) = 0
+                      )
+                    """
+                )
+
+                cursor.execute("PRAGMA table_info(tareas_diarias)")
+                dcols_sub = [c[1] for c in cursor.fetchall()]
+                for col, sql in [
+                    (
+                        "completado_diaria_actividad",
+                        "ALTER TABLE tareas_diarias ADD COLUMN completado_diaria_actividad INTEGER DEFAULT 0",
+                    ),
+                    (
+                        "completado_diaria_trampa",
+                        "ALTER TABLE tareas_diarias ADD COLUMN completado_diaria_trampa INTEGER DEFAULT 0",
+                    ),
+                ]:
+                    if col not in dcols_sub:
+                        cursor.execute(sql)
+                        print(f"DATABASE MIGRATED: Added '{col}' to tareas_diarias.")
+                cursor.execute(
+                    """
+                    UPDATE tareas_diarias SET
+                        completado_diaria_actividad = 1,
+                        completado_diaria_trampa = 1
+                    WHERE completado = 1
+                      AND (
+                        IFNULL(completado_diaria_actividad, 0) = 0
+                        OR IFNULL(completado_diaria_trampa, 0) = 0
+                      )
+                    """
+                )
+
                 cursor.execute(
                     """
                     CREATE TABLE IF NOT EXISTS trampa_audit (
@@ -427,7 +489,17 @@ class EconomiaDBManagerV2:
         self.ensure_user_exists(user_id)
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(f"UPDATE tareas_inicial SET {task_name} = 1 WHERE user_id = ? AND completado = 0", (user_id,))
+            cursor.execute(
+                f"""
+                UPDATE tareas_inicial SET {task_name} = 1
+                WHERE user_id = ? AND NOT (
+                    IFNULL(completado_inicial_comunidad, 0) = 1
+                    AND IFNULL(completado_inicial_perfil_min, 0) = 1
+                    AND IFNULL(completado_inicial_perfil_max, 0) = 1
+                )
+                """,
+                (user_id,),
+            )
             conn.commit()
     
     def update_task_diaria(self, user_id: int, task_name: str, fecha: str, amount: int = 1):
@@ -435,7 +507,16 @@ class EconomiaDBManagerV2:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("INSERT OR IGNORE INTO tareas_diarias (user_id, fecha) VALUES (?, ?)", (user_id, fecha))
-            cursor.execute(f"UPDATE tareas_diarias SET {task_name} = {task_name} + ? WHERE user_id = ? AND fecha = ? AND completado = 0", (amount, user_id, fecha))
+            cursor.execute(
+                f"""
+                UPDATE tareas_diarias SET {task_name} = {task_name} + ?
+                WHERE user_id = ? AND fecha = ? AND NOT (
+                    IFNULL(completado_diaria_actividad, 0) = 1
+                    AND IFNULL(completado_diaria_trampa, 0) = 1
+                )
+                """,
+                (amount, user_id, fecha),
+            )
             conn.commit()
             
     def update_task_semanal(self, user_id: int, task_name: str, semana: str, amount: int = 1):
@@ -451,24 +532,98 @@ class EconomiaDBManagerV2:
         fecha, semana = self.get_current_date_keys()
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            affected = 0
             if task_type == "inicial":
                 cursor.execute("UPDATE tareas_inicial SET completado = 1 WHERE user_id = ?", (user_id,))
+                affected = cursor.rowcount
+            elif task_type == "inicial_comunidad":
+                cursor.execute(
+                    """
+                    UPDATE tareas_inicial SET completado_inicial_comunidad = 1
+                    WHERE user_id = ? AND IFNULL(completado_inicial_comunidad, 0) = 0
+                    """,
+                    (user_id,),
+                )
+                affected = cursor.rowcount
+            elif task_type == "inicial_perfil_min":
+                cursor.execute(
+                    """
+                    UPDATE tareas_inicial SET completado_inicial_perfil_min = 1
+                    WHERE user_id = ? AND IFNULL(completado_inicial_perfil_min, 0) = 0
+                    """,
+                    (user_id,),
+                )
+                affected = cursor.rowcount
+            elif task_type == "inicial_perfil_max":
+                cursor.execute(
+                    """
+                    UPDATE tareas_inicial SET completado_inicial_perfil_max = 1
+                    WHERE user_id = ? AND IFNULL(completado_inicial_perfil_max, 0) = 0
+                    """,
+                    (user_id,),
+                )
+                affected = cursor.rowcount
             elif task_type == "diaria":
                 cursor.execute("UPDATE tareas_diarias SET completado = 1 WHERE user_id = ? AND fecha = ?", (user_id, fecha))
+                affected = cursor.rowcount
+            elif task_type == "diaria_actividad":
+                cursor.execute(
+                    """
+                    UPDATE tareas_diarias SET completado_diaria_actividad = 1
+                    WHERE user_id = ? AND fecha = ? AND IFNULL(completado_diaria_actividad, 0) = 0
+                    """,
+                    (user_id, fecha),
+                )
+                affected = cursor.rowcount
+            elif task_type == "diaria_trampa":
+                cursor.execute(
+                    """
+                    UPDATE tareas_diarias SET completado_diaria_trampa = 1
+                    WHERE user_id = ? AND fecha = ? AND IFNULL(completado_diaria_trampa, 0) = 0
+                    """,
+                    (user_id, fecha),
+                )
+                affected = cursor.rowcount
             elif task_type == "semanal":
                 cursor.execute("UPDATE tareas_semanales SET completado = 1 WHERE user_id = ? AND semana = ?", (user_id, semana))
+                affected = cursor.rowcount
             elif task_type == "semanal_especial":
                 cursor.execute(
                     "UPDATE tareas_semanales SET completado_especial = 1 WHERE user_id = ? AND semana = ?",
                     (user_id, semana),
                 )
+                affected = cursor.rowcount
             elif task_type == "semanal_minijuegos":
                 cursor.execute(
                     "UPDATE tareas_semanales SET completado_minijuegos = 1 WHERE user_id = ? AND semana = ?",
                     (user_id, semana),
                 )
+                affected = cursor.rowcount
+            if task_type in (
+                "inicial_comunidad",
+                "inicial_perfil_min",
+                "inicial_perfil_max",
+            ):
+                cursor.execute(
+                    """
+                    UPDATE tareas_inicial SET completado = 1
+                    WHERE user_id = ? AND IFNULL(completado_inicial_comunidad, 0) = 1
+                      AND IFNULL(completado_inicial_perfil_min, 0) = 1
+                      AND IFNULL(completado_inicial_perfil_max, 0) = 1
+                    """,
+                    (user_id,),
+                )
+            if task_type in ("diaria_actividad", "diaria_trampa"):
+                cursor.execute(
+                    """
+                    UPDATE tareas_diarias SET completado = 1
+                    WHERE user_id = ? AND fecha = ? AND IFNULL(completado_diaria_actividad, 0) = 1
+                      AND IFNULL(completado_diaria_trampa, 0) = 1
+                    """,
+                    (user_id, fecha),
+                )
             conn.commit()
-            return cursor.rowcount > 0
+            return affected > 0
 
     def record_impostor_game_end(self, lobby: Any, winner_role: str) -> None:
         """Cuenta partida jugada para cada humano y victoria del impostor si corresponde."""
@@ -496,7 +651,13 @@ class EconomiaDBManagerV2:
             cursor = conn.cursor()
             cursor.execute("INSERT OR IGNORE INTO tareas_diarias (user_id, fecha) VALUES (?, ?)", (user_id, fecha))
             cursor.execute(
-                "UPDATE tareas_diarias SET trampa_enviada = 1 WHERE user_id = ? AND fecha = ? AND completado = 0",
+                """
+                UPDATE tareas_diarias SET trampa_enviada = 1
+                WHERE user_id = ? AND fecha = ? AND NOT (
+                    IFNULL(completado_diaria_actividad, 0) = 1
+                    AND IFNULL(completado_diaria_trampa, 0) = 1
+                )
+                """,
                 (user_id, fecha),
             )
             conn.commit()

@@ -261,7 +261,7 @@ def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
             "• `?tophist` · `?histtop` — top 5 por **total ganado** (histórico)\n"
             "• `?reclamar` — cobrar recompensas listas\n"
             "• `?progreso` — resumen iniciación + diaria + semanal\n"
-            "• `?diaria` · `?daily` — **dos bloques**: actividad + oráculo, y aparte **Trampa** (misma recompensa al completar todo)\n"
+            "• `?diaria` · `?daily` — **dos bloques** con **dos premios** distintos: `?reclamar diaria 1` y `diaria 2`\n"
             "• `?semanal` · `?weekly` · `?inicial` · `?starter` · `?iniciacion` — ver qué falta\n"
             "• `?abrir` — abrir blister (en #general también va)\n"
             "• `?miscartas` — lista de cartas (**visible para todos** en ese canal)\n"
@@ -363,9 +363,9 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
     e0.add_field(
         name="Cómo ganar Toque points",
         value=(
-            f"• **Iniciación** (una vez): {_fmt_pts(int(rw.get('inicial') or 0))} + blisters — Discord + perfil "
-            f"(wishlist **{10}**, top **{10}**, odiados **{5}**; máx. **{33}**/**{33}**/**{10}**) — `/aat-progreso-iniciacion`.\n"
-            f"• **Diaria** (una recompensa, **dos partes**): {_fmt_pts(int(rw.get('diaria') or 0))} + blister cuando completes **las dos**.\n"
+            f"• **Iniciación** (una vez, **3 cobros**): suma ~{_fmt_pts(int(rw.get('inicial') or 0))} Toque + blisters — "
+            f"**1** Discord · **2** perfil mín. (wishlist **{10}**, top **{10}**, odiados **{5}**) · **3** perfil completo (máx. **{33}**/**{33}**/**{10}**) — `/aat-progreso-iniciacion`.\n"
+            f"• **Diaria** (**2 premios**/día): actividad+oráculo y trampa por separado (~{_fmt_pts(int(rw.get('diaria') or 0))} Toque en total según `.env`).\n"
             f"  · **Parte 1 — actividad y oráculo:** 10 mensajes en el servidor, 3 reacciones, 1 consulta al oráculo "
             f"(@bot + pregunta · `?pregunta` · `/aat-consulta`).\n"
             f"  · **Parte 2 — Trampa:** **una** carta trampa **con** mención (a alguien) **o** **sin** objetivo (sola). "
@@ -387,9 +387,8 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
             "**Con `?` (canal del bot / donde indique el staff, no en #general):** "
             "`?progreso` · `?diaria` · `?semanal` · `?inicial`.\n"
             "**Solo vos:** `/aat-progreso-iniciacion` · `/aat-progreso-diaria` · `/aat-progreso-semanal`\n\n"
-            "**Todos:** `?reclamar` (mismo criterio de canal que arriba)\n"
-            "**Solo vos:** `/aat-reclamar` (sin tipo reclama todo lo listo, o elegí `inicial` / `diaria` / `semanal` / "
-            "`semanal_especial` / `semanal_minijuegos`)."
+            "**Todos:** `?reclamar` — **inicial** `1|2|3`, **diaria** `1|2`, **semanal** `1|2|3`, o códigos **`?reclamar 1`** … **`5`** (ver guía `?reclamar`).\n"
+            "**Solo vos:** `/aat-reclamar` (vacío = todo; o tipo + referencia según tipo)."
         ),
         inline=False,
     )

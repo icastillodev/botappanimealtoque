@@ -37,6 +37,13 @@ def load_task_and_shop_config(log: logging.Logger) -> Tuple[Optional[Dict[str, A
         price_inicial = _int("REWARD_INICIAL_POINTS", 1000)
         price_diaria = _int("REWARD_DIARIA_POINTS", 50)
         price_semanal = _int("REWARD_SEMANAL_POINTS", 300)
+        # Iniciación: 3 reclamos (comunidad Discord · perfil mínimo · perfil completo). Por omisión reparte el total en 3 partes.
+        ini_a = _int("REWARD_INICIAL_COMUNIDAD_POINTS", max(1, price_inicial // 3))
+        ini_b = _int("REWARD_INICIAL_PERFIL_MIN_POINTS", max(1, price_inicial // 3))
+        ini_c = max(0, price_inicial - ini_a - ini_b)
+        half_d = max(1, price_diaria // 2)
+        dia_act_pts = _int("REWARD_DIARIA_ACTIVIDAD_POINTS", half_d)
+        dia_tr_pts = _int("REWARD_DIARIA_TRAMPA_POINTS", max(1, price_diaria - dia_act_pts))
 
         task_config: Dict[str, Any] = {
             "channels": {
@@ -61,7 +68,17 @@ def load_task_and_shop_config(log: logging.Logger) -> Tuple[Optional[Dict[str, A
             },
             "rewards": {
                 "inicial": price_inicial,
+                "inicial_comunidad": ini_a,
+                "inicial_perfil_min": ini_b,
+                "inicial_perfil_max": ini_c,
+                "inicial_comunidad_blisters": _int("REWARD_INICIAL_COMUNIDAD_BLISTERS", 1),
+                "inicial_perfil_min_blisters": _int("REWARD_INICIAL_PERFIL_MIN_BLISTERS", 1),
+                "inicial_perfil_max_blisters": _int("REWARD_INICIAL_PERFIL_MAX_BLISTERS", 1),
                 "diaria": price_diaria,
+                "diaria_actividad": dia_act_pts,
+                "diaria_trampa": dia_tr_pts,
+                "diaria_actividad_blisters": _int("REWARD_DIARIA_ACTIVIDAD_BLISTERS", 1),
+                "diaria_trampa_blisters": _int("REWARD_DIARIA_TRAMPA_BLISTERS", 0),
                 "semanal": price_semanal,
                 "especial_semanal": _int("REWARD_ESPECIAL_SEMANAL_POINTS", 400),
                 "especial_semanal_blisters": _int("REWARD_ESPECIAL_SEMANAL_BLISTERS", 2),

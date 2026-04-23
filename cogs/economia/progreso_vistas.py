@@ -12,10 +12,34 @@ from .reclamar_service import (
     PERFIL_HATED_CAP,
     PERFIL_TOP_CAP,
     PERFIL_WISHLIST_CAP,
+    _diaria_sub_claimed,
     _inicial_discord_done,
+    _inicial_sub_claimed,
+    diaria_actividad_ready,
+    diaria_all_claimed,
+    diaria_trampa_ready,
+    inicial_all_claimed,
+    inicial_perfil_max_ready,
     inicial_profile_ready,
 )
 from .toque_labels import fmt_toque_sentence
+
+
+def _blister_phrase(n: int) -> str:
+    if n <= 0:
+        return ""
+    return f"**{n}** blister{'es' if n != 1 else ''} 🃏"
+
+
+def _reward_field_value(pts: int, blisters: int, cmd: str) -> str:
+    bits: List[str] = []
+    if pts > 0:
+        bits.append(fmt_toque_sentence(pts))
+    bp = _blister_phrase(blisters)
+    if bp:
+        bits.append(bp)
+    body = " · ".join(bits) if bits else "*(revisá `.env` — puntos en 0)*"
+    return f"{body}\n**Cobrar:** `{cmd}`"
 
 
 def _biling(es: str, en: str) -> str:
@@ -44,13 +68,15 @@ _CMD_PROGRESS_HINT = (
 )
 
 _CMD_RECLAMAR = (
-    "**Para cobrar premios:** `?reclamar inicial` · `?reclamar diaria` / `daily` · `?reclamar semanal` / `weekly` · "
-    "`?reclamar especial` · `?reclamar minijuegos` — o **`/aat-reclamar`** y elegís el tipo."
+    "**Para cobrar premios:** `?reclamar inicial 1` (Discord) · `inicial 2` (perfil mín.) · `inicial 3` (perfil completo) · "
+    "`?reclamar diaria 1` (actividad+oráculo) · `diaria 2` (trampa) · "
+    "`?reclamar semanal 1` (base) / `2` (especial) / `3` (minijuegos) · `especial 1` · `minijuegos 1` · "
+    "códigos **`?reclamar 1`**…**`5`** — o **`/aat-reclamar`** (tipo + referencia)."
 )
 
 _LEY_DIARIA = (
-    "**Leyenda:** ✅ tarea del día lista · ☑ **todo el diario** listo para cobrar → **`?reclamar diaria`** · ☐ falta algo.\n"
-    "_Si ya cobraste hoy, esta tarjeta se muestra en **azul**._\n\n"
+    "**Leyenda:** ✅ tarea del día lista · ☑ **ese premio del diario** listo para cobrar (`?reclamar diaria 1` o `2`) · ☐ falta algo.\n"
+    "_Son **dos premios** distintos por día; podés cobrar cada uno aparte._\n\n"
 )
 
 
@@ -82,11 +108,11 @@ def build_progreso_ayuda_pages() -> List[List[discord.Embed]]:
     """Texto largo que antes iba en el primer embed de `?progreso` (leyenda, reclamar, slash)."""
     desc = (
         "**Colores en las tarjetas de `?progreso`:**\n"
-        "• **Azul** — ya cobraste ese premio (hoy / esta semana / iniciación de una vez).\n"
-        "• **Verde** — bloque completo; **`?reclamar …`** o el botón **Reclamar** del paginador.\n"
-        "• **Gris** — falta algo; leé la tarjeta o pasá con **Siguiente ▶** al detalle.\n\n"
+        "• **Azul** — ya cobraste ese bloque (iniciación tiene **hasta 3** cobros; el diario **2** por día).\n"
+        "• **Verde** — hay algo listo para **`?reclamar`** o el botón **Reclamar** del paginador.\n"
+        "• **Gris** — falta algo; leé la tarjeta o **Siguiente ▶**.\n\n"
         "**En `?inicial` / `?diaria` / `?semanal` (marcas por ítem):**\n"
-        "✅ ítem hecho · ☑ bloque listo para cobrar · ☐ falta.\n\n"
+        "✅ ítem hecho · ☑ listo para cobrar esa parte · ☐ falta.\n\n"
         + _LEY_DIARIA.strip()
         + "\n\n"
         + _CMD_RECLAMAR
@@ -181,25 +207,35 @@ def build_progreso_resumen_pages(db: Any, task_config: Dict[str, Any], user_id: 
         and int(sem.get("mg_duelo") or 0) >= 1
         and int(sem.get("mg_voto_dom") or 0) >= 1
     )
-    ini_claimed = int(ini.get("completado") or 0) == 1
-    ini_ready = not ini_claimed and _inicial_discord_done(ini) and inicial_profile_ready(db, user_id)
+    ini_claimed = inicial_all_claimed(ini)
+    ini_ready = not ini_claimed and (
+        (_inicial_discord_done(ini) and not _inicial_sub_claimed(ini, "completado_inicial_comunidad"))
+        or (inicial_profile_ready(db, user_id) and not _inicial_sub_claimed(ini, "completado_inicial_perfil_min"))
+        or (inicial_perfil_max_ready(db, user_id) and not _inicial_sub_claimed(ini, "completado_inicial_perfil_max"))
+    )
     det_ini = (
-        "premio **ya cobrado** (`?reclamar inicial` no aplica)"
+        "los **3 premios** de iniciación ya cobrados"
         if ini_claimed
-        else ("**podés cobrar** → `?reclamar inicial`" if ini_ready else "incompleta — `?inicial`")
+        else (
+            "**podés cobrar** alguna parte → `?reclamar inicial 1` · `2` · `3` (o botón **Reclamar iniciación**)"
+            if ini_ready
+            else "incompleta — `?inicial`"
+        )
     )
 
-    dia_claimed = int(dia.get("completado") or 0) == 1
+    dia_claimed = diaria_all_claimed(dia)
     di_ready = not dia_claimed and (
-        int(dia.get("mensajes_servidor") or 0) >= 10
-        and int(dia.get("reacciones_servidor") or 0) >= 3
-        and int(dia.get("oraculo_preguntas") or 0) >= 1
-        and (int(dia.get("trampa_enviada") or 0) >= 1 or int(dia.get("trampa_sin_objetivo") or 0) >= 1)
+        (diaria_actividad_ready(dia) and not _diaria_sub_claimed(dia, "completado_diaria_actividad"))
+        or (diaria_trampa_ready(dia) and not _diaria_sub_claimed(dia, "completado_diaria_trampa"))
     )
     det_dia = (
-        f"hoy **ya cobraste** ({fecha}) — `?reclamar diaria` no aplica"
+        f"hoy **ya cobraste** ambas partes ({fecha})"
         if dia_claimed
-        else ("**podés cobrar** → `?reclamar diaria` / `daily` o botón **Reclamar diario**" if di_ready else f"incompleta — `?diaria` (*{fecha}*)")
+        else (
+            "**podés cobrar** `?reclamar diaria 1` y/o `diaria 2` (o botón **Reclamar diario**)"
+            if di_ready
+            else f"incompleta — `?diaria` (*{fecha}*)"
+        )
     )
 
     semb_claimed = int(sem.get("completado") or 0) == 1
@@ -259,8 +295,12 @@ def build_progreso_resumen_pages(db: Any, task_config: Dict[str, Any], user_id: 
 
 def build_pages_inicial(db: Any, task_config: Dict[str, Any], user_id: int) -> List[List[discord.Embed]]:
     prog = db.get_progress_inicial(user_id)
-    ini_pts = int((task_config.get("rewards") or {}).get("inicial") or 0)
-    pie = f"Premio: {fmt_toque_sentence(ini_pts)} + 3 blisters → **`?reclamar inicial`** (Discord + perfil)."
+    rw = task_config.get("rewards") or {}
+    b1 = int(rw.get("inicial_comunidad_blisters") or 1)
+    b2 = int(rw.get("inicial_perfil_min_blisters") or 1)
+    b3 = int(rw.get("inicial_perfil_max_blisters") or 1)
+    p1, p2, p3 = int(rw.get("inicial_comunidad") or 0), int(rw.get("inicial_perfil_min") or 0), int(rw.get("inicial_perfil_max") or 0)
+    total_pts = int(rw.get("inicial") or (p1 + p2 + p3))
     discord_lines = "\n".join(
         _tline(int(prog.get(key) or 0) == 1, label) for key, label in _INICIAL_DISCORD_TASKS
     )
@@ -289,49 +329,75 @@ def build_pages_inicial(db: Any, task_config: Dict[str, Any], user_id: int) -> L
     )
     hint = f"\n\n{_CMD_PROGRESS_HINT}"
 
-    if int(prog.get("completado") or 0) == 1:
+    if inicial_all_claimed(prog):
         done = discord.Embed(
-            title=_title_es_en("Iniciación", "initial / onboarding"),
+            title=_title_es_en("Iniciación", "initial / onboarding", "— completada"),
             description=(
-                "✅ **Ya reclamaste** la iniciación (premio cobrado con **`?reclamar inicial`**).\n\n"
-                "**Último registro del bot (Discord):**\n"
+                "Todo listo: **comunidad Discord**, **perfil mínimo** y **perfil al tope** ya tienen su premio cobrado.\n\n"
+                "**Discord (registro del bot)**\n"
                 f"{discord_lines}\n\n"
-                "**Perfil (mínimo, al momento de reclamar):**\n"
+                "**Perfil mínimo**\n"
                 f"{perfil_lines}\n\n"
+                "**Perfil al tope (opcional)**\n"
+                f"{perfil_amp_lines}\n\n"
                 f"{_CMD_PROGRESS_HINT}"
             ),
-            color=discord.Color.green(),
+            color=discord.Color.dark_green(),
         )
+        done.set_footer(text="Iniciación · 3/3 partes cobradas · Gracias por completar el onboarding")
         return [[done]]
 
     e1 = discord.Embed(
-        title=_title_es_en("Iniciación", "initial / onboarding", "— Discord"),
+        title=_title_es_en("Iniciación", "initial / onboarding", "1/3 — Comunidad"),
         description=(
-            "**Marcá con reacciones / mensajes** lo que pida el staff en cada canal (presentación, autorol, redes, reglas, #general).\n\n"
-            f"{discord_lines}\n\n"
-            f"_{pie}_{hint}"
+            "Cuando tengas **todas** las marcas de abajo en ✅, cobrá con el comando del recuadro **Recompensa**.\n\n"
+            "**Checklist — Discord**\n"
+            f"{discord_lines}"
+            f"{hint}"
         ),
         color=discord.Color.blue(),
     )
+    e1.add_field(
+        name="Recompensa · parte 1",
+        value=_reward_field_value(p1, b1, "?reclamar inicial 1"),
+        inline=False,
+    )
+    e1.set_footer(text=f"Iniciación 1/3 · Toque total guía: ~{fmt_toque_sentence(total_pts)} (3 cobros)")
+
     e2 = discord.Embed(
-        title=_title_es_en("Iniciación", "initial / onboarding", "— perfil (mínimo para reclamar)"),
+        title=_title_es_en("Iniciación", "initial / onboarding", "2/3 — Perfil mínimo"),
         description=(
-            "**Completá en el perfil** (slash o `?topset` / listas) antes de reclamar:\n\n"
-            f"{perfil_lines}\n\n"
-            f"_{pie}_{hint}"
+            "**Wishlist, top favoritos y odiados** al mínimo que pide el servidor (no hace falta el tope todavía).\n\n"
+            "**Checklist — perfil mínimo**\n"
+            f"{perfil_lines}"
+            f"{hint}"
         ),
         color=discord.Color.dark_blue(),
     )
+    e2.add_field(
+        name="Recompensa · parte 2",
+        value=_reward_field_value(p2, b2, "?reclamar inicial 2"),
+        inline=False,
+    )
+    e2.set_footer(text="Iniciación 2/3 · Podés cobrar 1 y 2 en cualquier orden cuando cumplan")
+
     e3 = discord.Embed(
-        title="Perfil ampliado (opcional)",
+        title=_title_es_en("Iniciación", "initial / onboarding", "3/3 — Perfil completo"),
         description=(
-            "Solo **progreso** hacia el tope del perfil; **no suma otra misión** aparte del mínimo de arriba.\n\n"
+            "Opcional pero con premio: llevá las tres listas hasta el **tope** (wishlist / top / odiados).\n\n"
+            "**Progreso hacia el tope**\n"
             f"{perfil_amp_lines}\n\n"
-            "_Bonos del top 10 / 30: `/aat-anime-top-guia`._\n"
+            "_Bonos aparte por top 10 / 30: `/aat-anime-top-guia`._"
             f"{hint}"
         ),
         color=discord.Color.teal(),
     )
+    e3.add_field(
+        name="Recompensa · parte 3",
+        value=_reward_field_value(p3, b3, "?reclamar inicial 3"),
+        inline=False,
+    )
+    e3.set_footer(text="Iniciación 3/3 · Cada parte se cobra cuando cumple su checklist (orden libre salvo Discord = parte 1)")
     return [[e1], [e2], [e3]]
 
 
@@ -349,28 +415,29 @@ def build_pages_diaria(db: Any, task_config: Dict[str, Any], user_id: int) -> Li
     actividad_ok = msg_ok and rx_ok and or_ok
     tr_ok = tr >= 1 or ts >= 1
     diario_tareas_ok = actividad_ok and tr_ok
-    rw_pts = int((task_config.get("rewards") or {}).get("diaria") or 0)
-    premio_txt = (
-        f"Premio del día: **{fmt_toque_sentence(rw_pts)}** + 1 blister — cobrá con **`?reclamar diaria`** / `daily` "
-        f"o el botón **Reclamar diario** (solo cuando **☑** abajo)."
-    )
+    rw = task_config.get("rewards") or {}
+    rw_act = int(rw.get("diaria_actividad") or rw.get("diaria") or 0)
+    rw_tr = int(rw.get("diaria_trampa") or 0)
+    bl_act = int(rw.get("diaria_actividad_blisters") or 0)
+    bl_tr = int(rw.get("diaria_trampa_blisters") or 0)
     hint = f"\n\n{_CMD_RECLAMAR}\n\n{_CMD_PROGRESS_HINT}"
+    total_dia = int(rw.get("diaria") or (rw_act + rw_tr))
 
-    if int(prog.get("completado") or 0) == 1:
+    if diaria_all_claimed(prog):
         e_done = discord.Embed(
-            title=_title_es_en("Diario", "daily", f"· {fecha} · ya cobrado"),
+            title=_title_es_en("Diario", "daily", f"{fecha} · listo"),
             description=(
-                "**Estado:** ✅ **Ya reclamaste** el diario de hoy (*daily claimed*).\n\n"
-                "**Leyenda de abajo:** ✅ hecho hoy · ☑ sería listo para cobrar (ya no aplica) · ☐ no aplica.\n\n"
-                "**Checklist del día (histórico):**\n"
-                f"{_tline(msg_ok, '**10 mensajes** en el servidor', f'{msg_n}/10')}\n"
-                f"{_tline(rx_ok, '**3 reacciones** en el servidor', f'{rx_n}/3')}\n"
-                f"{_tline(or_ok, '**1× oráculo**', f'{or_n}/1')}\n"
+                "Hoy ya cobraste **los dos premios**: actividad + oráculo, y trampa.\n\n"
+                "**Resumen del día**\n"
+                f"{_tline(msg_ok, 'Mensajes en el servidor', f'{msg_n}/10')}\n"
+                f"{_tline(rx_ok, 'Reacciones en el servidor', f'{rx_n}/3')}\n"
+                f"{_tline(or_ok, 'Oráculo', f'{or_n}/1')}\n"
                 f"{_diaria_trampa_resumen_line(tr, ts)}\n\n"
                 f"{hint.strip()}"
             ),
             color=discord.Color.blue(),
         )
+        e_done.set_footer(text=f"Diario · {fecha} · ~{fmt_toque_sentence(total_dia)} Toque en total (2 cobros) — ya aplicados")
         return [[e_done]]
 
     act_lines = "\n".join(
@@ -386,25 +453,37 @@ def build_pages_diaria(db: Any, task_config: Dict[str, Any], user_id: int) -> Li
     )
     trap_lines = _diaria_trampa_section(tr, ts)
     bloque_listo = (
-        f"{_tmark(actividad_ok)} **Bloque actividad + oráculo** — listo cuando las tres líneas están en ✅.\n"
-        f"{_tmark(tr_ok)} **Bloque trampa** — listo con **una** carta (**con @** y/o **sin objetivo**; alcanza una vía).\n"
-        f"{_tmark(diario_tareas_ok)} **Todo el diario** — cuando los dos bloques están en ✅ → **`?reclamar diaria`**."
+        f"{_tmark(actividad_ok)} **Actividad + oráculo** → listo: **`?reclamar diaria 1`**\n"
+        f"{_tmark(tr_ok)} **Trampa** (una carta, con @ o sin objetivo) → **`?reclamar diaria 2`**\n"
+        f"{_tmark(diario_tareas_ok)} **Tip:** `?reclamar diaria` sin número cobra **ambas** partes si ya podés."
     )
     desc = (
         f"{_LEY_DIARIA}"
-        f"**Parte 1 — Actividad y oráculo**\n{act_lines}\n\n"
-        f"**Parte 2 — Trampa (una carta)**\n{trap_lines}\n\n"
-        f"{bloque_listo}\n\n"
-        f"_{premio_txt}_"
+        "**Actividad + oráculo**\n"
+        f"{act_lines}\n\n"
+        "**Trampa**\n"
+        f"{trap_lines}\n\n"
+        f"{bloque_listo}"
         f"{hint}"
     )
     if len(desc) > 4000:
         desc = desc[:3997] + "…"
     e_full = discord.Embed(
-        title=_title_es_en("Diario", "daily", f"— checklist · {fecha}"),
+        title=_title_es_en("Diario", "daily", f"checklist · {fecha}"),
         description=desc,
         color=discord.Color.orange(),
     )
+    e_full.add_field(
+        name="Premio 1 · Actividad + oráculo",
+        value=_reward_field_value(rw_act, bl_act, "?reclamar diaria 1"),
+        inline=True,
+    )
+    e_full.add_field(
+        name="Premio 2 · Trampa",
+        value=_reward_field_value(rw_tr, bl_tr, "?reclamar diaria 2"),
+        inline=True,
+    )
+    e_full.set_footer(text=f"Diario · ~{fmt_toque_sentence(total_dia)} Toque en total (2 cobros) · Ver `.env` REWARD_DIARIA_*")
     return [[e_full]]
 
 

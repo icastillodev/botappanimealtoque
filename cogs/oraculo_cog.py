@@ -26,6 +26,27 @@ from cogs.oracle_llm import oracle_local_reply, oracle_local_reply_followup
 log = logging.getLogger(__name__)
 
 
+def _oracle_env_show_errors() -> bool:
+    """Si es true, en Discord se muestra tipo + mensaje del error (solo en entornos de confianza)."""
+    return (os.getenv("ORACLE_SHOW_ERRORS") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _oracle_user_visible_internal_error(exc: BaseException) -> str:
+    """Texto para reply/embed cuando el oráculo falla por código o datos."""
+    if _oracle_env_show_errors():
+        name = type(exc).__name__
+        detail = str(exc).replace("\n", " ").strip()
+        if len(detail) > 400:
+            detail = detail[:397] + "…"
+        esc = discord.utils.escape_markdown(detail)
+        return f"**Oráculo — error interno** (`{name}`): {esc}"
+    return (
+        "**Oráculo:** falló algo interno. Mirá la **consola / archivo de log** del bot "
+        "(línea con `Oráculo _send_oracle_embed` o `Oráculo hilo`). "
+        "Para ver el detalle **en Discord**, poné **`ORACLE_SHOW_ERRORS=1`** en el `.env` y reiniciá."
+    )
+
+
 def _message_pings_bot(message: discord.Message, me: discord.abc.User) -> bool:
     """Algunos clientes no rellenan `mentions` igual; `raw_mentions` sale del texto `<@…>`."""
     if me in message.mentions:
@@ -692,6 +713,32 @@ class OraculoCog(commands.Cog, name="Oráculo"):
         s = re.sub(r"<#\d+>", " ", s)
         return " ".join(s.split()).strip()
 
+    async def _oracle_reply_failure(
+        self,
+        reference: Optional[discord.Message],
+        *,
+        text: str,
+        delete_after: float = 35.0,
+    ) -> None:
+        """Aviso corto al usuario cuando el embed principal no se pudo mandar."""
+        if not reference or not (text or "").strip():
+            return
+        try:
+            await reference.reply(
+                (text or "")[:1950],
+                mention_author=False,
+                delete_after=delete_after,
+            )
+        except discord.HTTPException as re:
+            log.warning("Oráculo: no se pudo enviar el aviso de fallo (reply): %s", re)
+
+    async def cog_load(self) -> None:
+        if _oracle_env_show_errors():
+            log.warning(
+                "ORACLE_SHOW_ERRORS está activo: los fallos del oráculo mostrarán detalle en el canal "
+                "(usar solo en servidores de confianza)."
+            )
+
     async def _build_oracle_embed(
         self,
         *,
@@ -763,23 +810,69 @@ class OraculoCog(commands.Cog, name="Oráculo"):
         if not self.db:
             await channel.send("Economía no disponible.", reference=reference, mention_author=False)
             return None
+        gid = getattr(getattr(channel, "guild", None), "id", None)
+        cid = getattr(channel, "id", None)
         typing_fn = getattr(channel, "typing", None)
-        if callable(typing_fn):
-            async with typing_fn():
-                embed, body, response_kind = await self._build_oracle_embed(
-                    nombre_visible=nombre_visible,
-                    mencion=author.mention,
-                    pregunta=pregunta.strip(),
-                    author_id=author.id,
-                )
-        else:
-            embed, body, response_kind = await self._build_oracle_embed(
+
+        async def _build() -> Tuple[discord.Embed, str, _OracleResponseKind]:
+            return await self._build_oracle_embed(
                 nombre_visible=nombre_visible,
                 mencion=author.mention,
                 pregunta=pregunta.strip(),
                 author_id=author.id,
             )
-        sent = await channel.send(embed=embed, reference=reference, mention_author=False)
+
+        try:
+            if callable(typing_fn):
+                async with typing_fn():
+                    embed, body, response_kind = await _build()
+            else:
+                embed, body, response_kind = await _build()
+            sent = await channel.send(embed=embed, reference=reference, mention_author=False)
+        except discord.Forbidden as e:
+            log.warning(
+                "Oráculo _send_oracle_embed: Forbidden guild=%s channel=%s author=%s err=%s",
+                gid,
+                cid,
+                author.id,
+                e,
+            )
+            await self._oracle_reply_failure(
+                reference,
+                text=(
+                    "**Oráculo:** no tengo permiso para enviar (o embedear) en este canal. "
+                    "Revisá permisos del rol del bot."
+                ),
+            )
+            return None
+        except discord.HTTPException as e:
+            log.warning(
+                "Oráculo _send_oracle_embed: HTTP %s guild=%s channel=%s author=%s status=%s",
+                type(e).__name__,
+                gid,
+                cid,
+                author.id,
+                getattr(e, "status", None),
+            )
+            await self._oracle_reply_failure(
+                reference,
+                text=(
+                    "**Oráculo:** Discord rechazó el envío del embed. "
+                    "Reintentá en unos segundos o usá `?pregunta …`."
+                ),
+            )
+            return None
+        except Exception as e:
+            log.exception(
+                "Oráculo _send_oracle_embed: error interno guild=%s channel=%s author=%s pregunta=%r",
+                gid,
+                cid,
+                author.id,
+                (pregunta or "")[:200],
+            )
+            await self._oracle_reply_failure(reference, text=_oracle_user_visible_internal_error(e))
+            return None
+
         if isinstance(sent, discord.Message) and sent.guild:
             self._register_oracle_pending(
                 sent,
@@ -830,22 +923,62 @@ class OraculoCog(commands.Cog, name="Oráculo"):
         persist_pending: bool = True,
     ) -> None:
         """Respuesta a quien citó el último embed del oráculo (sin sumar otra diaria)."""
-        body, rk = await self._resolve_oracle_followup_body(pending, user_line)
-        body_show = discord.utils.escape_markdown(body) if rk == "llm" else body
-        desc = (
-            f"{author.mention} **({nombre_visible})** sigue el hilo:\n"
-            f"> {discord.utils.escape_markdown(user_line)[:500]}\n\n"
-            f"**Oráculo:** {body_show}"
-        )
-        if len(desc) > 4090:
-            desc = desc[:4087] + "…"
-        emb = discord.Embed(
-            title="🔮 Oráculo · seguimiento",
-            description=desc,
-            color=discord.Color.dark_magenta(),
-        )
+        gid = getattr(getattr(channel, "guild", None), "id", None)
+        cid = getattr(channel, "id", None)
+        try:
+            body, rk = await self._resolve_oracle_followup_body(pending, user_line)
+            body_show = discord.utils.escape_markdown(body) if rk == "llm" else body
+            desc = (
+                f"{author.mention} **({nombre_visible})** sigue el hilo:\n"
+                f"> {discord.utils.escape_markdown(user_line)[:500]}\n\n"
+                f"**Oráculo:** {body_show}"
+            )
+            if len(desc) > 4090:
+                desc = desc[:4087] + "…"
+            emb = discord.Embed(
+                title="🔮 Oráculo · seguimiento",
+                description=desc,
+                color=discord.Color.dark_magenta(),
+            )
+            sent = await channel.send(embed=emb, reference=reference, mention_author=False)
+        except discord.Forbidden as e:
+            log.warning(
+                "Oráculo followup: Forbidden guild=%s channel=%s author=%s err=%s",
+                gid,
+                cid,
+                author.id,
+                e,
+            )
+            await self._oracle_reply_failure(
+                reference,
+                text="**Oráculo (seguimiento):** sin permiso para enviar el embed acá.",
+            )
+            return
+        except discord.HTTPException as e:
+            log.warning(
+                "Oráculo followup: HTTP %s guild=%s channel=%s author=%s status=%s",
+                type(e).__name__,
+                gid,
+                cid,
+                author.id,
+                getattr(e, "status", None),
+            )
+            await self._oracle_reply_failure(
+                reference,
+                text="**Oráculo (seguimiento):** Discord rechazó el envío. Probá de nuevo.",
+            )
+            return
+        except Exception as e:
+            log.exception(
+                "Oráculo followup: error interno guild=%s channel=%s author=%s user_line=%r",
+                gid,
+                cid,
+                author.id,
+                (user_line or "")[:200],
+            )
+            await self._oracle_reply_failure(reference, text=_oracle_user_visible_internal_error(e))
+            return
 
-        sent = await channel.send(embed=emb, reference=reference, mention_author=False)
         if persist_pending and isinstance(sent, discord.Message) and sent.guild:
             self._refresh_oracle_pending(
                 pending_key,
@@ -935,14 +1068,15 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             await ctx.send(f"Esperá **{wait:.1f}s** entre consultas al oráculo.", delete_after=6)
             return
         nombre = ctx.author.display_name if isinstance(ctx.author, discord.Member) else str(ctx.author)
-        await self._send_oracle_embed(
+        sent = await self._send_oracle_embed(
             ctx.channel,
             author=ctx.author,
             nombre_visible=nombre,
             pregunta=texto.strip(),
             reference=None,
         )
-        self._oracle_mark_use(ctx.author.id)
+        if sent:
+            self._oracle_mark_use(ctx.author.id)
 
     @app_commands.command(
         name="aat-consulta",
@@ -965,13 +1099,51 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             return
         nombre = interaction.user.display_name
         mencion = interaction.user.mention
-        embed, body, response_kind = await self._build_oracle_embed(
-            nombre_visible=nombre,
-            mencion=mencion,
-            pregunta=pregunta.strip(),
-            author_id=interaction.user.id,
-        )
-        await interaction.response.send_message(embed=embed)
+        try:
+            embed, body, response_kind = await self._build_oracle_embed(
+                nombre_visible=nombre,
+                mencion=mencion,
+                pregunta=pregunta.strip(),
+                author_id=interaction.user.id,
+            )
+            await interaction.response.send_message(embed=embed)
+        except discord.HTTPException as e:
+            log.warning(
+                "Oráculo slash aat-consulta: HTTP %s user=%s status=%s",
+                type(e).__name__,
+                interaction.user.id,
+                getattr(e, "status", None),
+            )
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "Discord rechazó el envío de la consulta. Reintentá.",
+                    ephemeral=True,
+                )
+            else:
+                try:
+                    await interaction.followup.send(
+                        "Discord rechazó el envío de la consulta. Reintentá.",
+                        ephemeral=True,
+                    )
+                except discord.HTTPException:
+                    pass
+            return
+        except Exception as e:
+            log.exception(
+                "Oráculo slash aat-consulta: error interno user=%s pregunta=%r",
+                interaction.user.id,
+                (pregunta or "")[:200],
+            )
+            msg_err = _oracle_user_visible_internal_error(e)
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(msg_err[:2000], ephemeral=True)
+                else:
+                    await interaction.followup.send(msg_err[:2000], ephemeral=True)
+            except discord.HTTPException:
+                pass
+            return
+
         self._oracle_mark_use(interaction.user.id)
         try:
             msg = await interaction.original_response()
@@ -1156,14 +1328,15 @@ class OraculoCog(commands.Cog, name="Oráculo"):
                     if isinstance(message.author, discord.Member)
                     else str(message.author)
                 )
-                await self._send_oracle_embed(
+                sent = await self._send_oracle_embed(
                     message.channel,
                     author=message.author,
                     nombre_visible=nombre,
                     pregunta=user_text,
                     reference=message,
                 )
-                self._oracle_mark_use(message.author.id)
+                if sent:
+                    self._oracle_mark_use(message.author.id)
                 return True
 
             await message.reply(random.choice(_ORACLE_QUIP_NOT_ORACLE), mention_author=False)
@@ -1175,6 +1348,22 @@ class OraculoCog(commands.Cog, name="Oráculo"):
                     "No pude enviar la respuesta del oráculo (Discord rechazó el envío). Probá de nuevo en unos segundos.",
                     mention_author=False,
                     delete_after=14,
+                )
+            except discord.HTTPException:
+                pass
+            return True
+        except Exception as e:
+            log.exception(
+                "Oráculo hilo/reply: error interno guild=%s channel=%s author=%s",
+                message.guild.id if message.guild else None,
+                message.channel.id,
+                message.author.id,
+            )
+            try:
+                await message.reply(
+                    _oracle_user_visible_internal_error(e),
+                    mention_author=False,
+                    delete_after=35,
                 )
             except discord.HTTPException:
                 pass
@@ -1225,27 +1414,15 @@ class OraculoCog(commands.Cog, name="Oráculo"):
 
         ch = message.channel
         nombre = message.author.display_name if isinstance(message.author, discord.Member) else str(message.author)
-        try:
-            await self._send_oracle_embed(
-                ch,
-                author=message.author,
-                nombre_visible=nombre,
-                pregunta=pregunta,
-                reference=message,
-            )
+        sent = await self._send_oracle_embed(
+            ch,
+            author=message.author,
+            nombre_visible=nombre,
+            pregunta=pregunta,
+            reference=message,
+        )
+        if sent:
             self._oracle_mark_use(message.author.id)
-        except discord.Forbidden:
-            pass
-        except discord.HTTPException as e:
-            log.warning("Oráculo @mención: Discord HTTP (%s): %s", type(e).__name__, e)
-            try:
-                await message.reply(
-                    "No pude publicar la consulta al oráculo (Discord). Reintentá en unos segundos o usá `?pregunta …`.",
-                    mention_author=False,
-                    delete_after=16,
-                )
-            except discord.HTTPException:
-                pass
 
 
 async def setup(bot: commands.Bot):
