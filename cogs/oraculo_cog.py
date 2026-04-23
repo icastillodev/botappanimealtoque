@@ -1,4 +1,5 @@
 # Preguntas sí / no (40% sí, 40% no, 20% respuesta con % al azar).
+# Cuentas tipo «2+2?» no usan el dado (respuesta fija “no soy calculadora”).
 # La IA local (Ollama) solo entra en preguntas “abiertas”; el resto siempre va al dado (más divertido).
 # Cuenta para la diaria + puntos extra (config .env).
 from __future__ import annotations
@@ -19,6 +20,38 @@ from cogs.oracle_llm import oracle_local_reply, oracle_local_reply_followup
 
 
 # Preguntas que no son un sí/no claro: mejor “charla” que un porcentaje místico.
+# Solo números y operadores (p. ej. "2+2?", "12 * 3") — no va al dado sí/no.
+_ARITH_EXPRESSION_ONLY_RE = re.compile(r"^[\d\s\+\-\*\/x×÷.,\(\)=]+$", re.IGNORECASE)
+
+
+def _is_simple_arithmetic_question(q: str) -> bool:
+    """Pregunta que es básicamente una cuenta: el oráculo no debe tirar sí/no al azar."""
+    s = (q or "").strip()
+    s = re.sub(r"^[¿?]+", "", s)
+    s = re.sub(r"[?.!…]+$", "", s)
+    s = "".join(s.split())
+    if len(s) < 3 or len(s) > 36:
+        return False
+    if not _ARITH_EXPRESSION_ONLY_RE.match(s):
+        return False
+    if not re.search(r"\d", s):
+        return False
+    if not re.search(r"[\+\-\*\/x×÷=]", s):
+        return False
+    return True
+
+
+def _oracle_math_refusal() -> str:
+    return random.choice(
+        [
+            "Eso es **calculadora**, no profecía: acá no tiro **sí/no** con cuentas del cole.",
+            "Para **mate pura** ya inventaron la app del teléfono; el oráculo vende **humo**, no parciales.",
+            "Si la pregunta tiene **solo números y signos**, no entra en el dado místico — buscá resultado en serio en otro lado.",
+            "Mi especialidad es el **drama** y el **azar filosófico**, no el álgebra; re-preguntá con palabras si querés onda.",
+        ]
+    )
+
+
 _OPEN_QUESTION_RE = re.compile(
     r"(?isx)"
     r"(\b(cuánt|cuant)\w*|"
@@ -81,26 +114,6 @@ def _oracle_open_answer(pregunta: str) -> str:
     )
 
 
-def _oracle_echo_flavor(pregunta: str) -> str:
-    """
-    «Mini personalidad» sin API externa: devuelve una línea que nombra un recorte de la pregunta (o vacío).
-    No interpreta de verdad; solo flavor para roleplay.
-    """
-    q = re.sub(r"\s+", " ", (pregunta or "").strip())
-    if len(q) < 4:
-        return ""
-    clip = q[:100] + ("…" if len(q) > 100 else "")
-    return random.choice(
-        [
-            f"_El eco de «{clip}» vibra un instante y se disuelve._",
-            f"_Los astros archivan «{clip}» en un cajón sin etiqueta._",
-            f"_Sobre «{clip}», el oráculo no firma cheques: solo tira el dado._",
-            f"_Tu «{clip}» quedó registrada en el libro de las preguntas ruidosas._",
-            f"_Ni el bot entiende del todo «{clip}», pero hace como que sí._",
-        ]
-    )
-
-
 def _roll_oracle() -> Tuple[str, str, int]:
     """
     Devuelve (categoría, texto_respuesta, dado 1-100 usado).
@@ -157,6 +170,8 @@ def _roll_oracle_for_question(pregunta: str) -> Tuple[str, str, int]:
     Si la pregunta parece abierta (cuántas, cuándo, temporadas…), contesta en modo ‘opinión’.
     Si no, mantiene sí / no / % como antes.
     """
+    if _is_simple_arithmetic_question(pregunta):
+        return "open", _oracle_math_refusal(), random.randint(1, 100)
     if _is_open_ended_question(pregunta):
         return "open", _oracle_open_answer(pregunta), random.randint(1, 100)
     cat, body, dado = _roll_oracle()
@@ -443,13 +458,9 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             description=desc,
             color=discord.Color.dark_magenta(),
         )
-        mod = (os.getenv("ORACLE_MODEL") or "local").strip()
-        sec = self._conversation_ttl_seconds()
-        tail = f"Seguimiento: respondé a **este** mensaje (~{max(1, sec // 60)} min)." if sec >= 120 else f"Seguimiento: ~{sec}s."
         if rk == "llm":
-            emb.set_footer(text=f"IA local · {mod} · {tail}")
-        else:
-            emb.set_footer(text=f"Modo plantilla (sin IA) · {tail}")
+            mod = (os.getenv("ORACLE_MODEL") or "local").strip()
+            emb.set_footer(text=f"IA local (Ollama) · {mod}")
 
         sent = await channel.send(embed=emb, reference=reference, mention_author=False)
         if isinstance(sent, discord.Message) and sent.guild:
@@ -490,7 +501,6 @@ class OraculoCog(commands.Cog, name="Oráculo"):
         response_kind: Literal["yesno", "open", "llm"] = "yesno",
     ) -> discord.Embed:
         q = (pregunta or "").strip()[:900] or "*(silencio místico)*"
-        flavor = "" if response_kind == "llm" else _oracle_echo_flavor(pregunta)
         body_show = discord.utils.escape_markdown(body) if response_kind == "llm" else body
         if response_kind == "llm":
             bloque = (
@@ -511,7 +521,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
                 f"> {q}\n\n"
                 f"**La respuesta es:** {body_show}"
             )
-        desc = f"{bloque}\n\n{flavor}" if flavor else bloque
+        desc = bloque
         if len(desc) > 4090:
             desc = desc[:4087] + "…"
         emb = discord.Embed(
@@ -519,20 +529,9 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             description=desc,
             color=discord.Color.dark_magenta(),
         )
-        foot_bits: list[str] = []
         if response_kind == "llm":
             mod = (os.getenv("ORACLE_MODEL") or "local").strip()
-            foot_bits.append(f"IA local (Ollama) · {mod} · puede inventar; no es fuente oficial.")
-        elif response_kind == "open":
-            foot_bits.append("Respuesta inventada por reglas del bot · no sustituye buscar info oficial.")
-        else:
-            foot_bits.append("Sí / no / probabilidad a la uruguaya · no es verdad revelada.")
-        sec = self._conversation_ttl_seconds()
-        if sec >= 120:
-            foot_bits.append(f"Seguimiento: respondé a este mensaje (~{max(1, sec // 60)} min).")
-        else:
-            foot_bits.append(f"Seguimiento: respondé a este mensaje (~{sec}s).")
-        emb.set_footer(text=" · ".join(foot_bits))
+            emb.set_footer(text=f"IA local (Ollama) · {mod}")
         return emb
 
     @commands.command(name="pregunta", aliases=["consulta", "8ball", "bola", "oraculo"])
