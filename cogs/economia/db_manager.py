@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 import datetime
 
+from .toque_labels import fmt_toque_sentence
+
 DB_FILE = Path(__file__).parent / "economia.db"
 
 # --- RENOMBRADA CLASE ---
@@ -353,12 +355,10 @@ class EconomiaDBManagerV2:
             )
             if cur.rowcount:
                 msgs.append(
-                    f"📦 **¡Colección de blisters completa!** +**{points}** puntos "
+                    f"📦 **¡Colección de blisters completa!** +{fmt_toque_sentence(int(points))} "
                     f"(meta versión **{version}**; subí `REWARD_BLISTER_COLLECTION_VERSION` cuando agregues tipos nuevos)."
                 )
-                conn.commit()
-            else:
-                conn.commit()
+            conn.commit()
         return msgs
 
     def set_credits(self, user_id: int, cantidad: int) -> int:
@@ -642,13 +642,48 @@ class EconomiaDBManagerV2:
             
     def get_top_users(self, ranking_type: str, limit: int = 10) -> List[Dict[str, Any]]:
         column_map = {"actual": "puntos_actuales", "conseguidos": "puntos_conseguidos", "gastados": "puntos_gastados"}
-        column_name = column_map.get(ranking_type, "actual")
+        column_name = column_map.get(ranking_type, "puntos_actuales")
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             query = f"SELECT user_id, {column_name} FROM economia_usuarios WHERE {column_name} > 0 ORDER BY {column_name} DESC LIMIT ?"
             cursor.execute(query, (limit,))
             return [dict(row) for row in cursor.fetchall()]
+
+    def get_user_rank_info(self, user_id: int, ranking_type: str) -> Dict[str, Any]:
+        """Posición (1 = mejor) según columna de ranking; `value` es el puntaje del usuario."""
+        column_map = {"actual": "puntos_actuales", "conseguidos": "puntos_conseguidos", "gastados": "puntos_gastados"}
+        col = column_map.get(ranking_type, "puntos_actuales")
+        self.ensure_user_exists(user_id)
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(f"SELECT {col} FROM economia_usuarios WHERE user_id = ?", (user_id,))
+            row = cur.fetchone()
+            val = int(row[0] or 0) if row else 0
+            cur.execute(f"SELECT COUNT(*) FROM economia_usuarios WHERE {col} > ?", (val,))
+            strictly_above = int(cur.fetchone()[0] or 0)
+            rank = strictly_above + 1
+            cur.execute(f"SELECT COUNT(*) FROM economia_usuarios WHERE {col} > 0")
+            with_positive = int(cur.fetchone()[0] or 0)
+        return {"value": val, "rank": rank, "with_positive": with_positive}
+
+    def inventory_cards_totals(self, user_id: int) -> Tuple[int, int]:
+        """(copias totales de cartas, cantidad de tipos distintos con stock > 0)."""
+        self.ensure_user_exists(user_id)
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT COALESCE(SUM(cantidad), 0), COUNT(*)
+                FROM inventario_cartas
+                WHERE user_id = ? AND cantidad > 0
+                """,
+                (user_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return 0, 0
+            return int(row[0] or 0), int(row[1] or 0)
 
     def get_rol_creador_status(self, user_id: int) -> int:
         self.ensure_user_exists(user_id)
@@ -750,8 +785,8 @@ class EconomiaDBManagerV2:
         t = (title or "").strip()[:200]
         if not t:
             raise ValueError("El título no puede estar vacío.")
-        if pos < 1 or pos > 30:
-            raise ValueError("La posición debe ser entre 1 y 30.")
+        if pos < 1 or pos > 33:
+            raise ValueError("La posición debe ser entre 1 y 33.")
 
         ts = int(time.time())
         with self._get_connection() as conn:
@@ -809,7 +844,7 @@ class EconomiaDBManagerV2:
                     (bonus_top10, bonus_top10, user_id),
                 )
                 if cur.rowcount:
-                    msgs.append(f"🎌 **¡Top 10 completo!** +**{bonus_top10}** puntos (bono único).")
+                    msgs.append(f"🎌 **¡Top 10 completo!** +{fmt_toque_sentence(int(bonus_top10))} (bono único).")
             if c30 >= 30 and bonus_top30 > 0:
                 cur.execute(
                     """
@@ -822,7 +857,7 @@ class EconomiaDBManagerV2:
                     (bonus_top30, bonus_top30, user_id),
                 )
                 if cur.rowcount:
-                    msgs.append(f"🏆 **¡Top 30 completo!** +**{bonus_top30}** puntos (bono único).")
+                    msgs.append(f"🏆 **¡Top 30 completo!** +{fmt_toque_sentence(int(bonus_top30))} (bono único).")
             if msgs:
                 conn.commit()
         return msgs
@@ -856,13 +891,28 @@ class EconomiaDBManagerV2:
             )
             return [dict(r) for r in cur.fetchall()]
 
+    def wishlist_total_filled(self, user_id: int) -> int:
+        """Cantidad de casillas de wishlist con título (cualquier posición 1–33)."""
+        self.ensure_user_exists(user_id)
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT COUNT(*) FROM user_wishlist_entries
+                WHERE user_id = ? AND TRIM(title) != ''
+                """,
+                (user_id,),
+            )
+            row = cur.fetchone()
+            return int(row[0] or 0)
+
     def wishlist_set(self, user_id: int, pos: int, title: str) -> None:
         self.ensure_user_exists(user_id)
         t = (title or "").strip()[:200]
         if not t:
             raise ValueError("El título no puede estar vacío.")
-        if pos < 1 or pos > 30:
-            raise ValueError("La posición debe ser entre 1 y 30.")
+        if pos < 1 or pos > 33:
+            raise ValueError("La posición debe ser entre 1 y 33.")
         ts = int(time.time())
         with self._get_connection() as conn:
             cur = conn.cursor()
@@ -896,6 +946,21 @@ class EconomiaDBManagerV2:
                 (user_id,),
             )
             return [dict(r) for r in cur.fetchall()]
+
+    def hated_total_filled(self, user_id: int) -> int:
+        """Cantidad de animes odiados cargados (hasta 10 posiciones)."""
+        self.ensure_user_exists(user_id)
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT COUNT(*) FROM user_anime_hated_entries
+                WHERE user_id = ? AND TRIM(title) != ''
+                """,
+                (user_id,),
+            )
+            row = cur.fetchone()
+            return int(row[0] or 0)
 
     def hated_set(self, user_id: int, pos: int, title: str) -> None:
         self.ensure_user_exists(user_id)
