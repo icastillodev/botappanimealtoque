@@ -1,0 +1,2 @@
+# Scripts de shell: siempre LF (evita "invalid option name" en Linux con CRLF de Windows)
+*.sh text eol=lf
