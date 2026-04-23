@@ -1,12 +1,16 @@
 # cogs/impostor/feed.py
 
-import os
-import discord
-from discord.ext import commands
-from discord import app_commands
+import asyncio
+import hashlib
+import json
 import logging
-from typing import Optional, List, Set
-import asyncio 
+import os
+from pathlib import Path
+from typing import List, Optional, Set
+
+import discord
+from discord import app_commands
+from discord.ext import commands
 
 from . import core
 from .engine import GameState, PHASE_END # <-- 1. MODIFICADO
@@ -31,8 +35,57 @@ def get_admin_role_ids() -> Set[int]:
 
 # ID del mensaje del feed que estamos editando
 _LAST_FEED_MESSAGE_ID: Optional[int] = None
+_LAST_FEED_EMBED_HASH: Optional[str] = None
 # Evita dos update_feed a la vez (p. ej. on_ready del feed + limpieza de arranque de impostor).
 _feed_update_lock = asyncio.Lock()
+
+
+def _feed_state_path() -> Path:
+    return Path(__file__).resolve().parent.parent.parent / ".run" / "impostor_feed_state.json"
+
+
+def _embed_signature(embed: discord.Embed) -> str:
+    raw = json.dumps(embed.to_dict(), sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _load_persisted_feed_state() -> None:
+    """Restaura message_id + hash tras reinicio (evita PATCH si el embed ya coincide)."""
+    global _LAST_FEED_MESSAGE_ID, _LAST_FEED_EMBED_HASH
+    path = _feed_state_path()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return
+    mid = data.get("message_id")
+    h = (data.get("embed_hash") or "").strip()
+    if isinstance(mid, int) and mid > 0 and len(h) == 64:
+        _LAST_FEED_MESSAGE_ID = mid
+        _LAST_FEED_EMBED_HASH = h
+
+
+def _persist_feed_state(message_id: int, embed_hash: str) -> None:
+    global _LAST_FEED_EMBED_HASH
+    _LAST_FEED_EMBED_HASH = embed_hash
+    path = _feed_state_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"message_id": message_id, "embed_hash": embed_hash}, separators=(",", ":")),
+            encoding="utf-8",
+        )
+    except OSError as e:
+        log.debug("No se pudo guardar estado del feed en %s: %s", path, e)
+
+
+def _clear_persisted_feed_state() -> None:
+    global _LAST_FEED_EMBED_HASH
+    _LAST_FEED_EMBED_HASH = None
+    path = _feed_state_path()
+    try:
+        path.unlink(missing_ok=True)  # type: ignore[arg-type]
+    except OSError:
+        pass
 
 
 # --- Lógica del Embed ---
@@ -124,18 +177,19 @@ async def _generate_feed_embed(bot: commands.Bot) -> discord.Embed:
 
 # --- Función Pública de Actualización ---
 
-async def update_feed(bot: commands.Bot):
+async def update_feed(bot: commands.Bot, *, force: bool = False):
     """
     Función principal para publicar o editar la cartelera de lobbys.
     Esta función es llamada por otros cogs.
+    Si el embed generado es idéntico al último publicado, no hace PATCH (salvo ``force=True``, p. ej. /feed-refresh).
     """
     global _LAST_FEED_MESSAGE_ID
 
     async with _feed_update_lock:
-        await _update_feed_unlocked(bot)
+        await _update_feed_unlocked(bot, force=force)
 
 
-async def _update_feed_unlocked(bot: commands.Bot) -> None:
+async def _update_feed_unlocked(bot: commands.Bot, *, force: bool) -> None:
     global _LAST_FEED_MESSAGE_ID
 
     channel_id = get_feed_channel_id()
@@ -148,44 +202,74 @@ async def _update_feed_unlocked(bot: commands.Bot) -> None:
         log.error(f"No se pudo encontrar el canal de feed (ID: {channel_id}) o no es un canal de texto.")
         return
 
+    if _LAST_FEED_MESSAGE_ID is None:
+        _load_persisted_feed_state()
+
     try:
         embed = await _generate_feed_embed(bot)
-        
+        new_h = _embed_signature(embed)
+
+        if (
+            not force
+            and _LAST_FEED_MESSAGE_ID
+            and _LAST_FEED_EMBED_HASH
+            and _LAST_FEED_EMBED_HASH == new_h
+            and bot.user
+        ):
+            try:
+                msg = await channel.fetch_message(_LAST_FEED_MESSAGE_ID)
+            except discord.NotFound:
+                _LAST_FEED_MESSAGE_ID = None
+                _clear_persisted_feed_state()
+            else:
+                if (
+                    msg.author.id == bot.user.id
+                    and msg.embeds
+                    and _embed_signature(msg.embeds[0]) == new_h
+                ):
+                    log.debug("Feed Impostor sin cambios de cartelera, omitiendo actualización.")
+                    return
+
+        view = ImpostorNotifyView(subscribed=False)
+
         # --- Estrategia 1: Editar mensaje existente si conocemos su ID ---
         if _LAST_FEED_MESSAGE_ID:
             try:
                 msg = await channel.fetch_message(_LAST_FEED_MESSAGE_ID)
-                await msg.edit(embed=embed, view=ImpostorNotifyView(subscribed=False))
-                # log.debug(f"Feed actualizado (Editado por ID): {msg.id}")
+                await msg.edit(embed=embed, view=view)
+                _persist_feed_state(msg.id, new_h)
                 return
             except discord.NotFound:
                 log.warning(f"El mensaje del feed (ID: {_LAST_FEED_MESSAGE_ID}) no fue encontrado. Buscando...")
                 _LAST_FEED_MESSAGE_ID = None
+                _clear_persisted_feed_state()
             except discord.Forbidden:
                 log.error(f"No tengo permisos para editar el mensaje del feed en {channel.name}")
                 return
             except Exception as e:
                 log.exception(f"Error inesperado al editar el feed: {e}")
-                _LAST_FEED_MESSAGE_ID = None # Forzar re-búsqueda
+                _LAST_FEED_MESSAGE_ID = None
+                _clear_persisted_feed_state()
 
         # --- Estrategia 2: Buscar último mensaje del bot en el canal ---
         try:
             async for msg in channel.history(limit=50):
-                if msg.author.id == bot.user.id:
+                if bot.user and msg.author.id == bot.user.id:
                     _LAST_FEED_MESSAGE_ID = msg.id
-                    await msg.edit(embed=embed, view=ImpostorNotifyView(subscribed=False))
-                    # log.debug(f"Feed actualizado (Editado por Búsqueda): {msg.id}")
+                    await msg.edit(embed=embed, view=view)
+                    _persist_feed_state(msg.id, new_h)
                     return
         except discord.Forbidden:
             log.error(f"No tengo permisos para leer el historial de {channel.name}")
             return
         except Exception as e:
             log.exception(f"Error inesperado al buscar en el historial del feed: {e}")
-            
+
         # --- Estrategia 3: Enviar mensaje nuevo ---
         try:
-            new_msg = await channel.send(embed=embed, view=ImpostorNotifyView(subscribed=False))
+            new_msg = await channel.send(embed=embed, view=view)
             _LAST_FEED_MESSAGE_ID = new_msg.id
+            _persist_feed_state(new_msg.id, new_h)
             log.info(f"Nuevo feed publicado en {channel.name} (ID: {new_msg.id})")
         except discord.Forbidden:
             log.error(f"No tengo permisos para enviar mensajes en {channel.name}")
@@ -218,7 +302,7 @@ class ImpostorFeedCog(commands.Cog, name="ImpostorFeed"):
         """Comando admin para forzar la actualización del feed."""
         await interaction.response.defer(ephemeral=True)
         log.info(f"Actualización de feed forzada por {interaction.user.name}")
-        await update_feed(self.bot)
+        await update_feed(self.bot, force=True)
         await interaction.followup.send("✅ Cartelera actualizada.", ephemeral=True)
 
     @feed_refresh_command.error

@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 import os
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 
 import discord
 from discord.ext import commands
@@ -16,10 +18,21 @@ from .guia_contenido import chunk_guia_embeds_for_send
 
 META_KEY = "guia_bot_message_id"
 META_FORUM_THREAD = "guia_bot_forum_thread_id"
+META_HASH = "guia_bot_sync_sha256"
 # Discord limita PATCH seguidos al mismo canal; la guía son muchas páginas.
 _GUIA_CHANNEL_EDIT_DELAY_SEC = 1.15
 
 log = logging.getLogger(__name__)
+
+
+def _guia_chunks_signature(chunks: List[List[discord.Embed]]) -> str:
+    """Firma estable del contenido a publicar (si coincide con la guardada, no tocar Discord)."""
+    payload: List[Any] = []
+    for part in chunks:
+        for emb in part:
+            payload.append(emb.to_dict())
+    raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def _parse_guia_message_ids(raw: Optional[str]) -> List[int]:
@@ -178,7 +191,22 @@ class GuiaCanalCog(commands.Cog, name="Guía canal fijo"):
 
         chunks = chunk_guia_embeds_for_send(self.bot)
         n = len(chunks)
+        if n == 0:
+            log.debug("Guía: sin chunks, no se publica nada.")
+            return
+
+        content_sig = _guia_chunks_signature(chunks)
         old_ids = _parse_guia_message_ids(self.db.bot_meta_get(META_KEY))
+        stored_sig = (self.db.bot_meta_get(META_HASH) or "").strip()
+        if stored_sig == content_sig and len(old_ids) == n and n > 0:
+            try:
+                probe = await write_ch.fetch_message(old_ids[0])
+            except (discord.NotFound, discord.HTTPException):
+                probe = None
+            if probe is not None and probe.author.id == self.bot.user.id:
+                log.info("Guía sin cambios de contenido (%s), omitiendo sync en canal %s.", reason, write_ch.id)
+                return
+
         old_msgs: List[Optional[discord.Message]] = []
         for mid in old_ids:
             try:
@@ -229,6 +257,7 @@ class GuiaCanalCog(commands.Cog, name="Guía canal fijo"):
                 log.debug("No se pudo borrar mensaje guía sobrante %s: %s", m.id, e)
 
         self.db.bot_meta_set(META_KEY, "|".join(str(x) for x in new_ids))
+        self.db.bot_meta_set(META_HASH, content_sig)
         log.info("Guía sincronizada (%s) en destino %s — %s mensaje(s).", reason, write_ch.id, len(new_ids))
 
 

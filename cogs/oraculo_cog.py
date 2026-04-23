@@ -788,7 +788,6 @@ class OraculoCog(commands.Cog, name="Oráculo"):
         else:
             kind, body, _ = _roll_oracle_for_question(pq)
             response_kind = "open" if kind == "open" else "yesno"
-        self._record_oracle_use(author_id)
         emb = self._embed_respuesta(
             nombre_visible=nombre_visible,
             mencion=mencion,
@@ -829,6 +828,14 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             else:
                 embed, body, response_kind = await _build()
             sent = await channel.send(embed=embed, reference=reference, mention_author=False)
+            self._record_oracle_use(author.id)
+            log.info(
+                "Oráculo: consulta publicada guild=%s channel=%s user=%s kind=%s",
+                gid,
+                cid,
+                author.id,
+                response_kind,
+            )
         except discord.Forbidden as e:
             log.warning(
                 "Oráculo _send_oracle_embed: Forbidden guild=%s channel=%s author=%s err=%s",
@@ -986,26 +993,43 @@ class OraculoCog(commands.Cog, name="Oráculo"):
                 new_last_answer=body,
             )
 
+    @staticmethod
+    def _safe_int(val: object, default: int = 0) -> int:
+        try:
+            if val is None:
+                return default
+            return int(val)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return default
+
     def _record_oracle_use(self, user_id: int) -> Tuple[int, int, int, int]:
         """
         Suma contador diario y opcionalmente puntos.
         Devuelve (puntos_otorgados, preguntas_hoy_tras_esta, max_con_puntos, pts_por_pregunta).
+        Nunca relanza: un fallo de BD no debe dejar al usuario sin respuesta del oráculo.
         """
         if not self.db:
             return 0, 0, 0, 0
-        fecha, _ = self.db.get_current_date_keys()
-        prog = self.db.get_progress_diaria(user_id)
-        n_before = int(prog.get("oraculo_preguntas") or 0)
-        rw = (self.task_config.get("rewards") or {})
-        per = int(rw.get("oracle_pregunta_points", 3))
-        mx = int(rw.get("oracle_max_preguntas_con_puntos", 5))
-        gained = 0
-        if per > 0 and n_before < mx:
-            self.db.modify_points(user_id, per, gastar=False)
-            gained = per
-        self.db.update_task_diaria(user_id, "oraculo_preguntas", fecha, 1)
-        n_after = n_before + 1
-        return gained, n_after, mx, per
+        try:
+            fecha, _ = self.db.get_current_date_keys()
+            prog = self.db.get_progress_diaria(user_id)
+            n_before = self._safe_int(prog.get("oraculo_preguntas"), 0)
+            rw = (self.task_config.get("rewards") or {})
+            per = self._safe_int(rw.get("oracle_pregunta_points", 3), 3)
+            mx = self._safe_int(rw.get("oracle_max_preguntas_con_puntos", 5), 5)
+            gained = 0
+            if per > 0 and n_before < mx:
+                self.db.modify_points(user_id, per, gastar=False)
+                gained = per
+            self.db.update_task_diaria(user_id, "oraculo_preguntas", fecha, 1)
+            n_after = n_before + 1
+            return gained, n_after, mx, per
+        except Exception:
+            log.exception(
+                "Oráculo: fallo al registrar uso en BD (user_id=%s). La consulta igual puede haberse mostrado.",
+                user_id,
+            )
+            return 0, 0, 0, 0
 
     def _embed_respuesta(
         self,
@@ -1107,6 +1131,12 @@ class OraculoCog(commands.Cog, name="Oráculo"):
                 author_id=interaction.user.id,
             )
             await interaction.response.send_message(embed=embed)
+            self._record_oracle_use(interaction.user.id)
+            log.info(
+                "Oráculo: slash /aat-consulta publicada user=%s kind=%s",
+                interaction.user.id,
+                response_kind,
+            )
         except discord.HTTPException as e:
             log.warning(
                 "Oráculo slash aat-consulta: HTTP %s user=%s status=%s",
