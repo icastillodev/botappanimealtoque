@@ -64,7 +64,12 @@ def create_poll_embed(
         if winners_count > 1:
             is_tie = True
 
-    display_format = poll_data.get('formato_votos', 'ambos') 
+    display_format = poll_data.get('formato_votos', 'ambos')
+
+    # Regla del servidor: mientras esté activa, que TODOS vean quién va ganando y %,
+    # pero sin mostrar cantidad de votos.
+    public_hide_counts = bool(is_active)
+
     # Mostrar quién va ganando (si no está oculto)
     if is_active and display_format != 'oculto' and total_votes > 0 and max_votes_count > 0:
         winners_list = [opt.get('label', 'N/A') for opt in options if opt.get('vote_count', 0) == max_votes_count]
@@ -93,14 +98,18 @@ def create_poll_embed(
                 percentage = (vote_count / total_votes) * 100
             
             value_str = ""
-            if display_format == 'ambos':
-                value_str = f"**{vote_count}** votos ({percentage:.1f}%)"
-            elif display_format == 'numeros':
-                value_str = f"**{vote_count}** votos"
-            elif display_format == 'porcentaje':
+            if public_hide_counts:
+                # Activa: solo porcentaje visible para todos
                 value_str = f"{percentage:.1f}%"
-            elif display_format == 'oculto' and not is_active:
-                value_str = f"**{vote_count}** votos ({percentage:.1f}%)"
+            else:
+                if display_format == 'ambos':
+                    value_str = f"**{vote_count}** votos ({percentage:.1f}%)"
+                elif display_format == 'numeros':
+                    value_str = f"**{vote_count}** votos"
+                elif display_format == 'porcentaje':
+                    value_str = f"{percentage:.1f}%"
+                elif display_format == 'oculto' and not is_active:
+                    value_str = f"**{vote_count}** votos ({percentage:.1f}%)"
             
             embed.add_field(
                 name=f"{icon} {label}".strip(),
@@ -202,10 +211,7 @@ class PollButton(discord.ui.Button):
         # --- Respuesta privada de confirmación ---
         user_votes_final: List[int] = db.get_user_votes_for_poll(message_id, user_id)
         
-        private_embed = discord.Embed(
-            title="🗳️ Votación Actualizada",
-            color=discord.Color.green()
-        )
+        private_embed = discord.Embed(title="🗳️ Votación Actualizada", color=discord.Color.green())
         private_embed.description = f"Tus votos para \"{poll_data['title']}\":\n\n"
         
         voted_options_labels = []
@@ -220,6 +226,22 @@ class PollButton(discord.ui.Button):
             
         votos_restantes = limite_votos - len(voted_options_labels)
         private_embed.set_footer(text=f"Te quedan {votos_restantes} voto(s) disponible(s).")
+
+        # Extra privado: mostrar marcador con números + % y quién va ganando
+        try:
+            opts2 = (updated_poll_data or {}).get("options", []) or []
+            total2 = sum(int(o.get("vote_count", 0) or 0) for o in opts2)
+            if total2 > 0:
+                max2 = max(int(o.get("vote_count", 0) or 0) for o in opts2) if opts2 else 0
+                winners2 = [str(o.get("label", "N/A")) for o in opts2 if int(o.get("vote_count", 0) or 0) == max2 and max2 > 0]
+                if winners2:
+                    pct2 = (max2 / total2) * 100
+                    if len(winners2) > 1:
+                        private_embed.add_field(name="Marcador (privado)", value=f"Empate: {', '.join(winners2)} ({pct2:.1f}% c/u) · Total votos: {total2}", inline=False)
+                    else:
+                        private_embed.add_field(name="Marcador (privado)", value=f"Va ganando: {winners2[0]} ({pct2:.1f}%) · Total votos: {total2}", inline=False)
+        except Exception:
+            pass
 
         await interaction.response.send_message(embed=private_embed, ephemeral=True)
 
