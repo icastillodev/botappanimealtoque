@@ -230,6 +230,11 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
 
     # --- MODIFICADO: Nombre cambiado a 'usar' (sin aat_) ---
     @app_commands.command(name="usar", description="Usa una carta trampa consumible de tu inventario.")
+    @app_commands.rename(
+        carta_id="carta-id",
+        usuario_objetivo="usuario-objetivo",
+        mensaje_objetivo_id="mensaje-objetivo-id",
+    )
     @app_commands.autocomplete(carta_id=card_inventory_autocomplete)
     @app_commands.describe(
         carta_id="La carta que quieres usar (escribe nombre o ID).", 
@@ -323,6 +328,7 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
 
     # --- MODIFICADO: Nombre cambiado a 'vercarta' (sin aat_) ---
     @app_commands.command(name="vercarta", description="Muestra el detalle de una carta que posees.")
+    @app_commands.rename(carta_id="carta-id")
     @app_commands.autocomplete(carta_id=card_inventory_autocomplete)
     @app_commands.describe(carta_id="La carta de tu inventario que quieres ver (usa el ID o el nombre).")
     async def ver_carta(self, interaction: discord.Interaction, carta_id: str):

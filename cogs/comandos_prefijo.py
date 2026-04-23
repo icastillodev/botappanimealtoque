@@ -2,6 +2,7 @@
 # Los slash / siguen existiendo; esto es atajo y descubribilidad.
 from __future__ import annotations
 
+import logging
 import os
 import random
 from typing import List, Optional
@@ -33,6 +34,8 @@ from cogs.impostor import feed as impostor_feed
 from cogs.impostor import notify as impostor_notify
 from cogs.impostor.engine import PHASE_END
 
+log = logging.getLogger(__name__)
+
 
 class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
     """Atajos `?` públicos (economía, impostor)."""
@@ -57,7 +60,8 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
                 "**Oráculo:** arrobá al bot + tu pregunta en el mismo mensaje · `?pregunta` + texto · `/aat-consulta` — sí / no / a veces %. Cuenta para la **diaria** y puede dar **Toque points** extra.\n"
                 "**Top anime:** `?animetop` · `?animetop @usuario` — slash: `/aat-anime-top_*`\n"
                 "**Perfil:** `/aat-wishlist_*` · `/aat-hated_*` · `/aat-chars_*` (wishlist 1–33, odiados 1–10, personajes 1–10).\n"
-                "**Trivia anime:** el bot publica en **#general**; respondé ahí con `?respuestapregunta` + respuesta.\n"
+                "**Trivia anime:** el bot publica en **#general** (varias al día, tiempo límite configurable); "
+                "`?respuestapregunta` + respuesta · `?triviatop` / `?triviami` ranking.\n"
                 "**Slash útiles:** `/aat-ayuda` · `/crearsimpostor` · `/entrar` · `/aat-tienda-ver`"
             ),
             color=discord.Color.blurple(),
@@ -65,11 +69,33 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         await ctx.send(embed=embed)
 
     async def _send_full_guia_embeds(self, ctx: commands.Context) -> None:
-        chunks = chunk_guia_embeds_for_send(self.bot)
+        try:
+            chunks = chunk_guia_embeds_for_send(self.bot)
+        except Exception:
+            log.exception("build_guia_embeds / chunk falló")
+            await ctx.send(
+                "No pude armar la guía ahora (error interno). Probá `/aat-guia` o avisá al staff.",
+                mention_author=False,
+            )
+            return
+        if not chunks or any(len(part) == 0 for part in chunks):
+            await ctx.send(
+                "La guía salió vacía (revisá configuración del bot). Mientras tanto: `/aat-guia`.",
+                mention_author=False,
+            )
+            return
         n = len(chunks)
-        for i, part in enumerate(chunks):
-            head = f"📚 **Guía ({i + 1}/{n})**" if n > 1 else None
-            await ctx.send(content=head, embeds=part)
+        try:
+            for i, part in enumerate(chunks):
+                head = f"📚 **Guía ({i + 1}/{n})**" if n > 1 else None
+                await ctx.send(content=head, embeds=part)
+        except discord.HTTPException as e:
+            log.warning("Envío guía embeds falló: %s", e)
+            await ctx.send(
+                "Discord rechazó el envío (muchas imágenes/embeds o sin permiso **insertar enlaces** en este canal). "
+                "Probá en otro canal o `/aat-guia`.",
+                mention_author=False,
+            )
 
     @commands.command(name="ayuda")
     async def ayuda(self, ctx: commands.Context):
@@ -483,7 +509,7 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         )
         await ctx.send(embeds=[e0, extra])
 
-    @commands.command(name="guia")
+    @commands.command(name="guia", aliases=["guía"])
     async def guia(self, ctx: commands.Context):
         """Guía larga (embeds): puntos, recompensas, tienda, cartas, comandos. También: `/aat-guia`; con botones: `/aat-ayuda`."""
         await self._send_full_guia_embeds(ctx)

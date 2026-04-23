@@ -132,6 +132,7 @@ class AdminCog(commands.Cog, name="Economia Admin"):
         except discord.Forbidden: pass
 
     @app_commands.command(name="aat-admin-darblister", description="[ADMIN] Da blisters (sobres) a un usuario.")
+    @app_commands.rename(tipo_blister="tipo-blister")
     @app_commands.describe(usuario="El usuario", tipo_blister="El tipo de blister (ej: 'trampa')", cantidad="Cuántos blisters dar")
     async def dar_blister(self, interaction: discord.Interaction, usuario: discord.Member, tipo_blister: str, cantidad: int):
         if cantidad <= 0:
@@ -158,6 +159,7 @@ class AdminCog(commands.Cog, name="Economia Admin"):
         await interaction.response.send_message(f"📌 Se establecieron los créditos de {usuario.mention} a {cantidad}.", ephemeral=True)
 
     @app_commands.command(name="aat-admin-crear-carta", description="[ADMIN] Añade una nueva carta al stock global.")
+    @app_commands.rename(tipo_carta="tipo-carta", url_imagen="url-imagen")
     @app_commands.describe(
         nombre="Nombre exacto",
         rareza="Rareza",
@@ -195,6 +197,7 @@ class AdminCog(commands.Cog, name="Economia Admin"):
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="aat-admin-modificar-carta", description="[ADMIN] Modifica una carta existente en el stock.")
+    @app_commands.rename(carta_id="carta-id")
     @app_commands.autocomplete(carta_id=card_stock_autocomplete)
     @app_commands.describe(carta_id="Elige la carta a modificar (usa el autocompletado).")
     async def modificar_carta(self, interaction: discord.Interaction, carta_id: str):
@@ -209,6 +212,7 @@ class AdminCog(commands.Cog, name="Economia Admin"):
         await interaction.response.send_modal(modal)
 
     @app_commands.command(name="aat-admin-borrar-carta", description="[ADMIN] BORRA una carta del stock (¡PELIGRO!).")
+    @app_commands.rename(carta_id="carta-id")
     @app_commands.autocomplete(carta_id=card_stock_autocomplete)
     @app_commands.describe(carta_id="Elige la carta a borrar (usa el autocompletado).")
     async def borrar_carta(self, interaction: discord.Interaction, carta_id: str):

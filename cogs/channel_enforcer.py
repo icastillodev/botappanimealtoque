@@ -1,8 +1,24 @@
 # cogs/channel_enforcer.py
+import asyncio
+import os
+import unicodedata
+
 import discord
 from discord.ext import commands
-import os
-import asyncio
+
+
+def _general_prefix_command_token(message: discord.Message) -> str:
+    """Primer token tras '?' (sin acentos, minúsculas). Ej.: guía → guia."""
+    raw = (message.content or "").strip()
+    if not raw.startswith("?") or len(raw) <= 1:
+        return ""
+    rest = raw[1:].strip()
+    if not rest:
+        return ""
+    first = rest.split()[0]
+    nk = unicodedata.normalize("NFKD", first)
+    ascii_fold = "".join(ch for ch in nk if not unicodedata.combining(ch))
+    return ascii_fold.lower()
 
 # Comandos ? permitidos en #general (primer token tras "?")
 PUBLIC_GENERAL_PREFIX_COMMANDS = frozenset(
@@ -51,6 +67,12 @@ PUBLIC_GENERAL_PREFIX_COMMANDS = frozenset(
         "respuestapregunta",
         "triviaresp",
         "rtrivia",
+        "triviatop",
+        "toptrivia",
+        "ranktrivia",
+        "triviami",
+        "mitrivia",
+        "posiciontrivia",
         # Rolls + guías públicas
         "roll",
         "canjes",
@@ -85,7 +107,7 @@ class ChannelEnforcerCog(commands.Cog, name="Limpieza de Chat"):
         if message.channel.id == self.general_id:
             # Verificar si es un comando de prefijo
             if message.content.startswith("?") and len(message.content) > 1 and not message.content.startswith("? "):
-                first = message.content[1:].split()[0].lower()
+                first = _general_prefix_command_token(message)
                 if first in PUBLIC_GENERAL_PREFIX_COMMANDS:
                     return
                 # 1. Borrar el mensaje del usuario

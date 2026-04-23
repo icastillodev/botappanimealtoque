@@ -210,6 +210,14 @@ class EconomiaDBManagerV2:
                     )
                     """
                 )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS trivia_stats (
+                        user_id INTEGER PRIMARY KEY,
+                        wins INTEGER NOT NULL DEFAULT 0
+                    )
+                    """
+                )
 
                 cursor.execute(
                     """
@@ -861,6 +869,46 @@ class EconomiaDBManagerV2:
             if msgs:
                 conn.commit()
         return msgs
+
+    # --- Trivia anime: victorias (primera respuesta correcta por ronda) ---
+    def trivia_wins_increment(self, user_id: int) -> int:
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO trivia_stats (user_id, wins) VALUES (?, 1) "
+                "ON CONFLICT(user_id) DO UPDATE SET wins = wins + 1",
+                (user_id,),
+            )
+            cur.execute("SELECT wins FROM trivia_stats WHERE user_id = ?", (user_id,))
+            row = cur.fetchone()
+            conn.commit()
+            return int(row[0]) if row else 1
+
+    def trivia_stats_top(self, limit: int = 10) -> List[Tuple[int, int]]:
+        lim = max(1, min(25, int(limit)))
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT user_id, wins FROM trivia_stats ORDER BY wins DESC, user_id ASC LIMIT ?",
+                (lim,),
+            )
+            return [(int(r[0]), int(r[1])) for r in cur.fetchall()]
+
+    def trivia_stats_rank_user(self, user_id: int) -> Tuple[int, int]:
+        """(rank_1based, wins). rank 0 si no tiene victorias."""
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT wins FROM trivia_stats WHERE user_id = ?", (user_id,))
+            row = cur.fetchone()
+            wins = int(row[0]) if row else 0
+            if wins <= 0:
+                return (0, 0)
+            cur.execute(
+                "SELECT COUNT(*) + 1 FROM trivia_stats WHERE wins > ? OR (wins = ? AND user_id < ?)",
+                (wins, wins, user_id),
+            )
+            rank = int(cur.fetchone()[0])
+            return (rank, wins)
 
     # --- Mensaje fijo guía del bot (canal BOT_GUIA_CHANNEL_ID) ---
     def bot_meta_get(self, key: str) -> Optional[str]:

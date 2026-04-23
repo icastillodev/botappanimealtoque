@@ -87,8 +87,9 @@ def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
             "• `?impostor` · `?buscoimpostor` · `?busco` · `?lobbys` · `?cartelera` — aviso de busca / cartelera\n\n"
             "**Oráculo (diaria)**\n"
             "• `?pregunta` · `?consulta` · `?8ball` · `?bola` · `?oraculo` — pregunta sí/no (también @mención al bot)\n\n"
-            "**Trivia (pregunta en #general)**\n"
-            "• `?respuestapregunta` · `?triviaresp` · `?rtrivia` + tu respuesta\n\n"
+            "**Trivia anime (#general, varias al día)**\n"
+            "• `?respuestapregunta` · `?triviaresp` · `?rtrivia` + respuesta (primero en acertar dentro del tiempo)\n"
+            "• `?triviatop` · `?triviami` — ranking y tu puesto (solo cuentan aciertos ganadores)\n\n"
             "**Top anime**\n"
             "• `?animetop` · `?animetop @usuario`"
         ),

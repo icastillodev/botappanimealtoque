@@ -123,6 +123,7 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
         await interaction.response.send_message(embed=self._build_tienda_embed(eco), ephemeral=True)
 
     @app_commands.command(name="aat-tienda-canjear", description="Comprá un ítem de la tienda con puntos.")
+    @app_commands.rename(item_id="item-id")
     @app_commands.describe(
         item_id="akatsuki | jonin | pin | blister_trampa",
     )
@@ -207,6 +208,7 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
         name="aat-tienda-fijar",
         description="Gastás 1 crédito de pin para fijar un mensaje en el canal donde ejecutás el comando.",
     )
+    @app_commands.rename(id_mensaje="mensaje-id")
     @app_commands.describe(id_mensaje="ID numérica del mensaje (clic derecho → Copiar ID).")
     async def fijar_mensaje(self, interaction: discord.Interaction, id_mensaje: str):
         await interaction.response.defer(ephemeral=True)
@@ -252,6 +254,7 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
         name="aat-tienda-pin-general",
         description="Pagás con puntos y fijás un mensaje en #general (sin usar crédito de pin).",
     )
+    @app_commands.rename(id_mensaje="mensaje-id")
     @app_commands.describe(id_mensaje="ID del mensaje en #general.")
     async def pin_general(self, interaction: discord.Interaction, id_mensaje: str):
         await interaction.response.defer(ephemeral=True)
@@ -308,6 +311,7 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
         name="aat-tienda-encuesta",
         description="Pagás puntos y publicás una votación en el canal de votaciones del servidor.",
     )
+    @app_commands.rename(url_imagen="url-imagen")
     @app_commands.describe(
         titulo="Título de la encuesta",
         opcion1="Primera opción",
@@ -391,6 +395,7 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
         name="aat-tienda-rol-temporal",
         description="Creás un rol con nombre personal y se lo das a alguien (o a vos) por 30 días.",
     )
+    @app_commands.rename(nombre_rol="nombre-rol")
     @app_commands.describe(
         nombre_rol="Nombre visible del rol (máx. 80 caracteres).",
         usuario="A quién se lo damos (podés elegirte).",

@@ -345,6 +345,7 @@ class VotacionCog(commands.Cog):
         return True, "", poll_message
 
     @app_commands.command(name="crear-votacion", description="Crea una votación de usuario simple (max 4 opciones).")
+    @app_commands.rename(url_imagen="url-imagen")
     @app_commands.describe(
         titulo="El título de la votación",
         opcion1="Opción 1",
@@ -425,6 +426,17 @@ class VotacionCog(commands.Cog):
         await interaction.followup.send(f"¡Votación creada! Terminará automáticamente {discord.utils.format_dt(datetime.datetime.fromtimestamp(end_timestamp), style='R')}.", ephemeral=True)
 
     @app_commands.command(name="crear-votacionadmin", description="[ADMIN] Crea una votación avanzada.")
+    @app_commands.rename(
+        duracion_minutos="duracion-minutos",
+        fecha_limite="fecha-limite",
+        limite_votos="limite-votos",
+        formato_votos="formato-votos",
+        url_imagen="url-imagen",
+        link_referencia="link-referencia",
+        rol_1="rol-1",
+        rol_2="rol-2",
+        rol_3="rol-3",
+    )
     @app_commands.describe(
         titulo="El título de la votación",
         opcion1="Opción de votación 1",
@@ -554,6 +566,7 @@ class VotacionCog(commands.Cog):
 
     
     @app_commands.command(name="modificarvotacion", description="[ADMIN] Modifica el título o descripción de una votación activa.")
+    @app_commands.rename(votacion_id="votacion-id")
     @app_commands.autocomplete(votacion_id=votacion_autocomplete)
     @app_commands.describe(votacion_id="Elige la votación que quieres modificar.")
     @is_hokage()
@@ -573,6 +586,7 @@ class VotacionCog(commands.Cog):
         await interaction.response.send_modal(modal)
 
     @app_commands.command(name="finalizarvotacion", description="[ADMIN] Finaliza una votación manualmente.")
+    @app_commands.rename(votacion_id="votacion-id")
     @app_commands.autocomplete(votacion_id=votacion_autocomplete)
     @app_commands.describe(votacion_id="Elige la votación que quieres finalizar.")
     @is_hokage()
@@ -598,6 +612,7 @@ class VotacionCog(commands.Cog):
             await interaction.followup.send("Votación cerrada en la DB, pero no se pudo editar el mensaje.", ephemeral=True)
 
     @app_commands.command(name="borrarvotacion", description="[ADMIN] Borra una votación permanentemente.")
+    @app_commands.rename(votacion_id="votacion-id")
     @app_commands.autocomplete(votacion_id=votacion_autocomplete)
     @app_commands.describe(votacion_id="Elige la votación que quieres borrar.")
     @is_hokage()
@@ -624,6 +639,7 @@ class VotacionCog(commands.Cog):
         await interaction.followup.send("Votación borrada con éxito.", ephemeral=True)
 
     @app_commands.command(name="agregaropcion", description="[ADMIN] Añade una nueva opción a una votación activa.")
+    @app_commands.rename(votacion_id="votacion-id", nombre_opcion="nombre-opcion")
     @app_commands.autocomplete(votacion_id=votacion_autocomplete)
     @app_commands.describe(votacion_id="Elige la votación.", nombre_opcion="El texto de la nueva opción")
     @is_hokage()
@@ -653,6 +669,7 @@ class VotacionCog(commands.Cog):
             await interaction.followup.send(f"Opción añadida, pero no se pudo editar el mensaje: {error_msg}", ephemeral=True)
 
     @app_commands.command(name="quitaropcion", description="[ADMIN] Quita una opción de una votación (si no tiene votos).")
+    @app_commands.rename(votacion_id="votacion-id", nombre_opcion="nombre-opcion")
     @app_commands.autocomplete(votacion_id=votacion_autocomplete, nombre_opcion=option_autocomplete)
     @app_commands.describe(votacion_id="Elige la votación.", nombre_opcion="Elige la opción que quieres borrar.")
     @is_hokage()
@@ -685,6 +702,7 @@ class VotacionCog(commands.Cog):
             await interaction.followup.send(f"Opción quitada, pero no se pudo editar el mensaje: {error_msg}", ephemeral=True)
 
     @app_commands.command(name="resultados", description="[ADMIN] Muestra quién votó por qué opción.")
+    @app_commands.rename(votacion_id="votacion-id")
     @app_commands.autocomplete(votacion_id=votacion_autocomplete)
     @app_commands.describe(votacion_id="Elige la votación de la que quieres ver los resultados.")
     @is_hokage()
@@ -726,6 +744,7 @@ class VotacionCog(commands.Cog):
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="mis-resultados", description="Muestra los resultados de una votación que tú creaste.")
+    @app_commands.rename(votacion_id="votacion-id")
     @app_commands.autocomplete(votacion_id=my_votacion_autocomplete)
     @app_commands.describe(votacion_id="Elige una de tus votaciones activas.")
     async def mis_resultados(self, interaction: discord.Interaction, votacion_id: str):

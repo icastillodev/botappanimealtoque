@@ -136,6 +136,7 @@ class MinijuegosCog(commands.Cog, name="Economia Minijuegos"):
         name="aat-duelo-retar",
         description="Duelo: apostás puntos y elegís carta + si tu total (poder+dado) será mayor o menor que el del rival.",
     )
+    @app_commands.rename(carta_id="carta-id")
     @app_commands.describe(
         oponente="Rival",
         apuesta="Puntos c/u",
@@ -186,6 +187,7 @@ class MinijuegosCog(commands.Cog, name="Economia Minijuegos"):
         )
 
     @app_commands.command(name="aat-duelo-aceptar", description="Aceptás un duelo pendiente con tu carta.")
+    @app_commands.rename(carta_id="carta-id")
     @app_commands.describe(carta_id="ID de tu carta en inventario")
     async def aat_duelo_aceptar(self, interaction: discord.Interaction, carta_id: str):
         if not self._duelos_enabled():

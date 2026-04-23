@@ -1,5 +1,5 @@
-# Trivia anime: 2 sorteos al día entre 12:00 y 22:00 (America/Montevideo), 30 s para responder.
-# Primera respuesta correcta con ?respuestapregunta gana puntos (REWARD_TRIVIA_WIN_POINTS).
+# Trivia anime: N sorteos al día entre 12:00 y 22:00 (America/Montevideo), tiempo configurable (por defecto 2 min).
+# Primera respuesta correcta con ?respuestapregunta gana puntos (REWARD_TRIVIA_WIN_POINTS) y suma al ranking.
 from __future__ import annotations
 
 import asyncio
@@ -122,7 +122,14 @@ class AnimeTriviaCog(commands.Cog, name="Trivia anime"):
         return max(0, int(os.getenv("REWARD_TRIVIA_WIN_POINTS", "25") or 0))
 
     def _seconds(self) -> int:
-        return max(5, min(120, int(os.getenv("TRIVIA_SECONDS", "30") or 30)))
+        """Tiempo para responder (por defecto 120 s = 2 min)."""
+        return max(30, min(600, int(os.getenv("TRIVIA_SECONDS", "120") or 120)))
+
+    def _rounds_per_day(self) -> int:
+        return max(1, min(8, int(os.getenv("TRIVIA_ROUNDS_PER_DAY", "3") or 3)))
+
+    def _min_gap_seconds(self) -> int:
+        return max(120, min(3600, int(os.getenv("TRIVIA_MIN_GAP_SECONDS", "300") or 300)))
 
     async def cog_load(self) -> None:
         self._reload_questions_if_needed()
@@ -143,12 +150,13 @@ class AnimeTriviaCog(commands.Cog, name="Trivia anime"):
                 pass
 
     def _ensure_daily_schedule(self, day: date) -> List[datetime]:
+        r = self._rounds_per_day()
         k_fire = f"trivia_uy_fires_{day.isoformat()}"
         raw = self.db.bot_meta_get(k_fire)
         if raw and UY:
             try:
                 ts_list = json.loads(raw)
-                if isinstance(ts_list, list) and len(ts_list) == 2:
+                if isinstance(ts_list, list) and len(ts_list) == r:
                     out: List[datetime] = []
                     for x in ts_list:
                         ts = float(x)
@@ -162,17 +170,18 @@ class AnimeTriviaCog(commands.Cog, name="Trivia anime"):
         noon = datetime.combine(day, time(12, 0), tzinfo=UY)
         end = datetime.combine(day, time(22, 0), tzinfo=UY)
         span = int((end - noon).total_seconds())
-        if span < 600:
+        gap = self._min_gap_seconds()
+        if span < gap * (r - 1) + 60:
             return []
-        a = random.randint(0, span)
-        b = random.randint(0, span)
-        for _ in range(80):
-            if abs(a - b) >= 300:
+        pts: Optional[List[int]] = None
+        for _ in range(500):
+            cand = sorted(random.randint(0, span) for _ in range(r))
+            if all(cand[i + 1] - cand[i] >= gap for i in range(r - 1)):
+                pts = cand
                 break
-            b = random.randint(0, span)
-        t1 = noon + timedelta(seconds=min(a, b))
-        t2 = noon + timedelta(seconds=max(a, b))
-        fires = sorted([t1, t2])
+        if not pts:
+            return []
+        fires = [noon + timedelta(seconds=p) for p in pts]
         self.db.bot_meta_set(
             k_fire,
             json.dumps([t.astimezone(timezone.utc).timestamp() for t in fires]),
@@ -180,14 +189,16 @@ class AnimeTriviaCog(commands.Cog, name="Trivia anime"):
         return fires
 
     def _done_count(self, day: date) -> int:
+        r = self._rounds_per_day()
         raw = self.db.bot_meta_get(f"trivia_uy_done_{day.isoformat()}")
         try:
-            return max(0, min(2, int(raw or "0")))
+            return max(0, min(r, int(raw or "0")))
         except ValueError:
             return 0
 
     def _inc_done(self, day: date) -> None:
-        n = self._done_count(day) + 1
+        r = self._rounds_per_day()
+        n = min(r, self._done_count(day) + 1)
         self.db.bot_meta_set(f"trivia_uy_done_{day.isoformat()}", str(n))
 
     async def _scheduler_loop(self) -> None:
@@ -201,11 +212,12 @@ class AnimeTriviaCog(commands.Cog, name="Trivia anime"):
                 day = now.date()
                 if self._round:
                     continue
+                r = self._rounds_per_day()
                 done = self._done_count(day)
-                if done >= 2:
+                if done >= r:
                     continue
                 fires = self._ensure_daily_schedule(day)
-                if len(fires) < 2:
+                if len(fires) < r:
                     continue
                 next_fire = fires[done]
                 if now >= next_fire:
@@ -252,13 +264,21 @@ class AnimeTriviaCog(commands.Cog, name="Trivia anime"):
         now = _uy_now()
         deadline = now + timedelta(seconds=sec)
         pts = self._win_points()
+        rday = self._rounds_per_day()
+        hecho = self._done_count(day)
 
         emb = discord.Embed(
             title="Trivia anime",
-            description=f"{q}",
+            description=(
+                f"{q}\n\n"
+                f"⏱️ Tenés **{sec}** segundos para ser **el primero** en acertar con `?respuestapregunta` + respuesta.\n"
+                f"📅 Hoy van **{rday}** preguntas programadas; esta es la **{hecho + 1}ª**.\n"
+                f"🏆 Ranking: `?triviatop` · tu puesto: `?triviami`"
+                + (f"\n🎁 El ganador suma **{pts}** Toque points." if pts > 0 else "")
+            ),
             color=discord.Color.orange(),
         )
-        emb.set_footer(text="Respondé con `?respuestapregunta` + tu respuesta")
+        emb.set_footer(text=f"Tiempo límite: {sec}s · Primera respuesta correcta gana la ronda")
 
         try:
             await channel.send(embed=emb)
@@ -329,12 +349,67 @@ class AnimeTriviaCog(commands.Cog, name="Trivia anime"):
             pts = self._win_points()
             if pts > 0:
                 self.db.modify_points(ctx.author.id, pts)
+            self.db.trivia_wins_increment(ctx.author.id)
+            rank, wins = self.db.trivia_stats_rank_user(ctx.author.id)
             if self._timeout_task:
                 self._timeout_task.cancel()
                 self._timeout_task = None
             self._round = None
 
-        await ctx.send(f"✅ **{ctx.author.mention}** respondió bien primero.")
+        extra = f" 🏆 **#{rank}** en trivia del servidor (**{wins}** victorias)." if wins > 0 else ""
+        pts_part = f" Sumás **{pts}** {self._tq_emoji()}." if pts > 0 else ""
+        await ctx.send(f"✅ **{ctx.author.mention}** respondió bien primero.{pts_part}{extra}")
+
+    def _tq_emoji(self) -> str:
+        try:
+            from .toque_labels import toque_emote
+
+            return str(toque_emote())
+        except Exception:
+            return "Toque points"
+
+    @commands.command(name="triviatop", aliases=["toptrivia", "ranktrivia"])
+    async def trivia_top(self, ctx: commands.Context, lim: Optional[int] = None):
+        if not ctx.guild:
+            return
+        rows = self.db.trivia_stats_top(lim or 10)
+        if not rows:
+            await ctx.reply(
+                "Todavía no hay victorias en trivia anime (hay que ser el **primero** en acertar cuando sale la pregunta).",
+                mention_author=False,
+            )
+            return
+        lines: List[str] = []
+        for i, (uid, w) in enumerate(rows, start=1):
+            m = ctx.guild.get_member(uid)
+            name = m.display_name if m else f"ID {uid}"
+            suf = "victoria" if w == 1 else "victorias"
+            lines.append(f"`{i}.` **{discord.utils.escape_markdown(name)}** — {w} {suf}")
+        emb = discord.Embed(
+            title="🏆 Top trivia anime (primer acierto por ronda)",
+            description="\n".join(lines),
+            color=discord.Color.orange(),
+        )
+        emb.set_footer(text="Solo cuenta ser el primero en acertar a tiempo · `?triviami`")
+        await ctx.reply(embed=emb, mention_author=False)
+
+    @commands.command(name="triviami", aliases=["mitrivia", "posiciontrivia"])
+    async def trivia_me(self, ctx: commands.Context):
+        if ctx.author.bot or not ctx.guild:
+            return
+        rank, wins = self.db.trivia_stats_rank_user(ctx.author.id)
+        if wins <= 0:
+            await ctx.reply(
+                "No tenés victorias en trivia todavía: cuando el bot publique la pregunta en **#general**, "
+                "tenés que ser **el primero** en acertar con `?respuestapregunta` dentro del tiempo límite.",
+                mention_author=False,
+            )
+            return
+        await ctx.reply(
+            f"🎯 Tenés **{wins}** victorias en trivia anime → puesto **#{rank}** en el servidor. "
+            f"Usá `?triviatop` para ver el ranking completo.",
+            mention_author=False,
+        )
 
 
 async def setup(bot: commands.Bot) -> None:
