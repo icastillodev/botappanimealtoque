@@ -4,65 +4,98 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from typing import Any, Dict, Optional
 
 import aiohttp
 
 log = logging.getLogger(__name__)
 
-# Respuesta muy corta (pedido del staff): ~8 palabras máximo.
-_MAX_WORDS = 8
-_MAX_CHARS = 100
+# Defaults (sobreescribibles con env: ORACLE_MAX_WORDS, ORACLE_MAX_CHARS, ORACLE_FOLLOWUP_*).
+_DEF_MAX_WORDS = 20
+_DEF_MAX_CHARS = 340
+_DEF_FOLLOWUP_MAX_WORDS = 26
+_DEF_FOLLOWUP_MAX_CHARS = 440
 
-# Seguimiento (respondiendo al mensaje del oráculo): un poco más de aire que la primera tirada.
-_FOLLOWUP_MAX_WORDS = 14
-_FOLLOWUP_MAX_CHARS = 180
 
-# System corto (va en el campo `system` de Ollama): modelos chicos suelen repetir prompts largos mezclados en `prompt`.
+def _env_int(key: str, default: int, *, lo: int, hi: int) -> int:
+    try:
+        return max(lo, min(hi, int((os.getenv(key) or str(default)).strip())))
+    except ValueError:
+        return default
+
+
+def oracle_max_words_primary() -> int:
+    return _env_int("ORACLE_MAX_WORDS", _DEF_MAX_WORDS, lo=5, hi=40)
+
+
+def oracle_max_chars_primary() -> int:
+    return _env_int("ORACLE_MAX_CHARS", _DEF_MAX_CHARS, lo=120, hi=900)
+
+
+def oracle_max_words_followup() -> int:
+    return _env_int("ORACLE_FOLLOWUP_MAX_WORDS", _DEF_FOLLOWUP_MAX_WORDS, lo=6, hi=48)
+
+
+def oracle_max_chars_followup() -> int:
+    return _env_int("ORACLE_FOLLOWUP_MAX_CHARS", _DEF_FOLLOWUP_MAX_CHARS, lo=150, hi=1000)
+
+
+# System (campo `system` en Ollama). {max_words} se rellena al llamar.
 _SYSTEM_ORACLE = (
-    "Sos el oráculo de un Discord de anime/otaku. "
-    "Respondé UNA sola frase en español, tono jocoso o místico, sin listas ni comillas. "
-    "Máximo {max_words} palabras. Opiná o inventá; no afirmes fechas oficiales."
+    "Sos el oráculo de un Discord de anime/otaku; respondés en español. "
+    "Si piden **recomendación** o **qué elegir**, decí opción concreta (aunque sea con humor). "
+    "Si es **opinión**, historia, cultura o explicación breve, contestá con **idea completa**: "
+    "no repitas el título de la pregunta ni te quedes a medias; preferí **una** frase cerrada, "
+    "o **dos frases muy cortas** si hace falta para no cortar el sentido. "
+    "**Máximo {max_words} palabras** en total (contalas; cuantas menos, mejor). "
+    "Sin listas numeradas ni comillas decorativas. Tono jocoso o místico OK. "
+    "No inventés fechas oficiales ni citas verificables. "
+    "Las preguntas que son solo sí/no al azar las responde **otra parte del bot** (dado: 40% sí, 40% no, 20% con %); "
+    "acá respondés con criterio cuando piden opinión, datos generales o consejo."
 )
 
 _SYSTEM_FOLLOWUP = (
-    "Seguís como oráculo del mismo Discord. "
-    "Respondé UNA frase en español al mensaje nuevo del usuario; máximo {max_words} palabras. "
-    "No repitas literal tu frase anterior; sin listas."
+    "Seguís como oráculo del mismo Discord; español. "
+    "Contestá al **último mensaje** del usuario: concreto; si piden recomendación, decí qué harías. "
+    "Una frase o dos muy cortas si cerrás mejor; **máx. {max_words} palabras** en total (menos es mejor). "
+    "No repitas reglas, encabezados ni el texto del contexto; solo tu respuesta final."
 )
 
 
-def _truncate_response(text: str) -> str:
+def _truncate_response(text: str, *, max_words: int, max_chars: int) -> str:
     t = " ".join((text or "").replace("\n", " ").split()).strip()
     if not t:
         return ""
     if (t.startswith('"') and t.endswith('"')) or (t.startswith("'") and t.endswith("'")):
         t = t[1:-1].strip()
     words = t.split()
-    if len(words) > _MAX_WORDS:
-        t = " ".join(words[:_MAX_WORDS])
-    if len(t) > _MAX_CHARS:
-        t = t[: _MAX_CHARS - 1].rstrip() + "…"
+    if len(words) > max_words:
+        t = " ".join(words[:max_words])
+    if len(t) > max_chars:
+        t = t[: max_chars - 1].rstrip() + "…"
     return t
 
 
-def _truncate_followup(text: str) -> str:
+def _truncate_followup(text: str, *, max_words: int, max_chars: int) -> str:
     t = " ".join((text or "").replace("\n", " ").split()).strip()
     if not t:
         return ""
     if (t.startswith('"') and t.endswith('"')) or (t.startswith("'") and t.endswith("'")):
         t = t[1:-1].strip()
     words = t.split()
-    if len(words) > _FOLLOWUP_MAX_WORDS:
-        t = " ".join(words[:_FOLLOWUP_MAX_WORDS])
-    if len(t) > _FOLLOWUP_MAX_CHARS:
-        t = t[: _FOLLOWUP_MAX_CHARS - 1].rstrip() + "…"
+    if len(words) > max_words:
+        t = " ".join(words[:max_words])
+    if len(t) > max_chars:
+        t = t[: max_chars - 1].rstrip() + "…"
     return t
 
 
 def _response_echoes_instructions(text: str) -> bool:
-    """Modelos muy chicos a veces repiten el system; en ese caso preferimos fallback del cog."""
+    """Modelos muy chicos a veces repiten el system o el prompt; preferimos fallback del cog."""
     low = (text or "").lower()
+    if re.search(r"máximo\s+\d+\s*palabras", low) or re.search(r"maximo\s+\d+\s*palabras", low):
+        return True
     needles = (
         "reglas oblig",
         "respondé solo",
@@ -73,6 +106,30 @@ def _response_echoes_instructions(text: str) -> bool:
         "máximo 14",
         "palabras (cont",
         "discord] reglas",
+        # Eco del follow-up (tinyllama y similares)
+        "seguís como oráculo",
+        "seguis como oraculo",
+        "seguimos como oración",
+        "seguís como oración",
+        "mismo discord",
+        "del mismo discord",
+        "respondé una frase",
+        "respondé una sola frase",
+        "una frase en español",
+        "al mensaje nuevo",
+        "mensaje nuevo del usuario",
+        "pregunta inicial:",
+        "tu respuesta anterior",
+        "tu nueva respuesta",
+        "oración del mismo",
+        "no repitas literal",
+        "solo una frase",
+        "tu frase anterior",
+        "contexto (no lo repitas)",
+        "contexto breve (no lo copies)",
+        "(no lo copies)",
+        "contestá solo con tu frase",
+        "usuario ahora:",
     )
     return any(n in low for n in needles)
 
@@ -158,14 +215,20 @@ async def oracle_local_reply(user_question: str) -> Optional[str]:
     if len(q) < 2:
         return None
 
+    mw = oracle_max_words_primary()
+    mc = oracle_max_chars_primary()
+    try:
+        num_pred = int((os.getenv("ORACLE_NUM_PREDICT") or "72").strip())
+    except ValueError:
+        num_pred = 72
     # `prompt` = solo la consulta; reglas en `system` (API Ollama) para menos eco y menos tokens.
-    system = _SYSTEM_ORACLE.format(max_words=_MAX_WORDS)
+    system = _SYSTEM_ORACLE.format(max_words=mw)
     payload: Dict[str, Any] = {
         "model": model,
         "system": system,
         "prompt": q,
         "stream": False,
-        "options": _ollama_options(num_predict=28),
+        "options": _ollama_options(num_predict=num_pred),
     }
     ka = _ollama_keep_alive()
     if ka:
@@ -178,7 +241,7 @@ async def oracle_local_reply(user_question: str) -> Optional[str]:
     text = data.get("response")
     if not text or not isinstance(text, str):
         return None
-    out = _truncate_response(text)
+    out = _truncate_response(text, max_words=mw, max_chars=mc)
     if not out:
         return None
     if _response_echoes_instructions(out):
@@ -210,18 +273,16 @@ async def oracle_local_reply_followup(
     if len(uf) < 1:
         return None
 
-    try:
-        mw = int((os.getenv("ORACLE_FOLLOWUP_MAX_WORDS") or str(_FOLLOWUP_MAX_WORDS)).strip())
-    except ValueError:
-        mw = _FOLLOWUP_MAX_WORDS
-    mw = max(6, min(24, mw))
+    mw = oracle_max_words_followup()
+    mc = oracle_max_chars_followup()
+    mw = max(6, min(48, mw))
 
     system = _SYSTEM_FOLLOWUP.format(max_words=mw)
+    # Prompt compacto: menos texto copiable por modelos chicos.
     prompt = (
-        f"Pregunta inicial:\n{oq or '—'}\n\n"
-        f"Tu respuesta anterior:\n{pa or '—'}\n\n"
-        f"Mensaje nuevo del usuario:\n{uf}\n\n"
-        "Tu nueva respuesta (una sola frase):"
+        f"Contexto breve (no lo copies): antes «{(oq or '…')[:200]}»; tu línea anterior «{(pa or '…')[:160]}».\n"
+        f"El usuario ahora dice: «{uf}»\n"
+        "Contestá solo con tu frase (sin repetir esta consigna):"
     )
     try:
         num_pred = int((os.getenv("ORACLE_NUM_PREDICT_FOLLOWUP") or "40").strip())
@@ -245,7 +306,7 @@ async def oracle_local_reply_followup(
     text = data.get("response")
     if not text or not isinstance(text, str):
         return None
-    out = _truncate_followup(text)
+    out = _truncate_followup(text, max_words=mw, max_chars=mc)
     if not out:
         return None
     if _response_echoes_instructions(out):

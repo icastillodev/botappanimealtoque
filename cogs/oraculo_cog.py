@@ -1,4 +1,4 @@
-# Preguntas sí / no (40% sí, 40% no, 20% respuesta con % al azar).
+# Preguntas sí / no: 40% sí, 40% no, 20% respuesta tipo probabilidad con % (ver constantes del dado).
 # Cuentas simples («2+2», «te pregunte 3*4»): resultado exacto en el bot (rápido); si no se puede parsear, IA local.
 # La IA local (Ollama) solo entra en preguntas “abiertas”; el resto siempre va al dado (más divertido).
 # Cuenta para la diaria + puntos extra (config .env).
@@ -295,7 +295,18 @@ _OPEN_QUESTION_RE = re.compile(
     r"\bdónde\b|\bdonde\b\s+(está|esta|ver|mirar|consigo)|"
     r"por\s*qué|"
     r"\b(temporadas?|caps?\.?|capítulos?|episodios?|ep\.?)\b|"
-    r"\bqué\s+opinas\b|\bque\s+opinas\b|\b(opinás|opinas|recomendás|recomendas)\b)",
+    r"\bqué\s+opinas\b|\bque\s+opinas\b|\b(opinás|opinas|recomendás|recomendas)\b|"
+    # Pedidos de explicación / definición (no van al dado sí/no).
+    r"\b(explicá|explica|explícame|explicame|explain)\b|"
+    r"\b(describí|describe|descríbeme|describime)\b|"
+    r"\b(definí|define|definición|definicion)\b|"
+    r"\b(qué\s+es|que\s+es|qué\s+son|que\s+son)\b|"
+    r"\b(cuéntame|cuentame|contame)\s+(sobre|de)\b|"
+    r"\b(hablame|háblame|hablá)\s+de\b|"
+    r"\brecomendame\b|\brecomiendame\b|\brecomendá\b|"
+    r"\btodo\s+al\b|\bal\s+(rojo|negro|verde)\b|"
+    r"\b(quizás|quiza|quizá)\s+el\s+(rojo|negro|verde)\b)",
+    r")",
 )
 
 
@@ -328,6 +339,12 @@ def _extract_topic_for_oracle(q: str) -> str:
     return t[:120] if t else "eso"
 
 
+# Rango 1–100 del dado: [1..yes] sí, (yes..yes+no] no, el resto probabilidad con %.
+_ORACLE_DICE_PROBABILITY_PCT = 20
+_ORACLE_DICE_YES_PCT = (100 - _ORACLE_DICE_PROBABILITY_PCT) // 2
+_ORACLE_DICE_NO_PCT = 100 - _ORACLE_DICE_PROBABILITY_PCT - _ORACLE_DICE_YES_PCT
+
+
 def _oracle_open_answer(pregunta: str) -> str:
     """Respuesta ‘tipo IA básica’ pero 100 % plantillas + azar (sin API)."""
     raw_topic = _extract_topic_for_oracle(pregunta)
@@ -351,9 +368,11 @@ def _oracle_open_answer(pregunta: str) -> str:
 def _roll_oracle() -> Tuple[str, str, int]:
     """
     Devuelve (categoría, texto_respuesta, dado 1-100 usado).
-    1-40 sí, 41-80 no, 81-100 probabilístico.
+    Por defecto: 40% sí, 40% no, 20% respuesta con % (constantes _ORACLE_DICE_*).
     """
     dado = random.randint(1, 100)
+    y_max = _ORACLE_DICE_YES_PCT
+    n_max = y_max + _ORACLE_DICE_NO_PCT
     si_msg = random.choice(
         [
             "Sí.",
@@ -374,9 +393,9 @@ def _roll_oracle() -> Tuple[str, str, int]:
             "El destino dice que no.",
         ]
     )
-    if dado <= 40:
+    if dado <= y_max:
         return "Sí", si_msg, dado
-    if dado <= 80:
+    if dado <= n_max:
         return "No", no_msg, dado
     pct = random.randint(5, 95)
     lean_si = random.choice([True, False])
@@ -507,6 +526,9 @@ def _looks_like_new_oracle_question(text: str) -> bool:
         "qué ", "que ", "quién ", "quien ", "cuándo ", "cuando ", "dónde ", "donde ",
         "cuánt", "cuant", "por qué", "por que ", "va a ", "habrá ", "habra ",
         "debería ", "deberia ", "creés ", "crees ", "pensás ", "piensas ",
+        "explicá ", "explica ", "explícame ", "explicame ", "describe ", "definí ", "define ",
+        "hablame ", "háblame ", "hablá ", "contame ", "cuéntame ", "cuentame ",
+        "recomendame ", "recomiendame ", "recomendá ", "todo al ",
     )
     return any(low.startswith(st) for st in starters)
 
@@ -741,6 +763,33 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             )
         return sent
 
+    async def _resolve_oracle_followup_body(
+        self, pending: OraclePending, user_line: str
+    ) -> Tuple[str, _OracleResponseKind]:
+        """Cuenta local → IA con contexto → IA solo último mensaje → dado / plantilla."""
+        if _is_simple_arithmetic_question(user_line):
+            expr = _extract_arithmetic_expression_for_eval(user_line)
+            val = _safe_eval_arithmetic(expr) if expr else None
+            if val is not None:
+                return _format_math_answer_body(expr, val), "math"
+        llm = await oracle_local_reply_followup(
+            pending.original_question,
+            pending.last_answer,
+            user_line,
+        )
+        if llm:
+            return llm, "llm"
+        llm2 = await oracle_local_reply(user_line)
+        if llm2:
+            return llm2, "llm"
+        if _is_simple_arithmetic_question(user_line):
+            return (
+                "No pude resolver esa cuenta; probá solo la expresión (ej. `3*4`) o `?pregunta …`.",
+                "open",
+            )
+        kind, ans, _ = _roll_oracle_for_question(user_line)
+        return ans, ("open" if kind == "open" else "yesno")
+
     async def _send_oracle_followup(
         self,
         channel: discord.abc.Messageable,
@@ -754,42 +803,12 @@ class OraculoCog(commands.Cog, name="Oráculo"):
         persist_pending: bool = True,
     ) -> None:
         """Respuesta a quien citó el último embed del oráculo (sin sumar otra diaria)."""
-        if _is_simple_arithmetic_question(user_line):
-            expr = _extract_arithmetic_expression_for_eval(user_line)
-            val = _safe_eval_arithmetic(expr) if expr else None
-            if val is not None:
-                body, rk = _format_math_answer_body(expr, val), "math"
-            else:
-                llm = await oracle_local_reply_followup(
-                    pending.original_question,
-                    pending.last_answer,
-                    user_line,
-                )
-                if llm:
-                    body, rk = llm, "llm"
-                else:
-                    body, rk = (
-                        "No pude resolver esa cuenta; probá solo la expresión (ej. `3*4`) o `?pregunta …`.",
-                        "open",
-                    )
-        else:
-            llm = await oracle_local_reply_followup(
-                pending.original_question,
-                pending.last_answer,
-                user_line,
-            )
-            if llm:
-                body, rk = llm, "llm"
-            else:
-                body, rk = _template_followup_no_llm(user_line), "open"
-
-        q_short = (pending.original_question or "")[:700]
+        body, rk = await self._resolve_oracle_followup_body(pending, user_line)
         body_show = discord.utils.escape_markdown(body) if rk == "llm" else body
         desc = (
             f"{author.mention} **({nombre_visible})** sigue el hilo:\n"
             f"> {discord.utils.escape_markdown(user_line)[:500]}\n\n"
-            f"**Oráculo:** {body_show}\n\n"
-            f"_Consulta inicial:_ {discord.utils.escape_markdown(q_short)[:350]}"
+            f"**Oráculo:** {body_show}"
         )
         if len(desc) > 4090:
             desc = desc[:4087] + "…"
@@ -798,11 +817,6 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             description=desc,
             color=discord.Color.dark_magenta(),
         )
-        if rk == "llm":
-            mod = (os.getenv("ORACLE_MODEL") or "local").strip()
-            emb.set_footer(text=f"IA local (Ollama) · {mod}")
-        elif rk == "math":
-            emb.set_footer(text="Cuenta resuelta en el bot · instantáneo")
 
         sent = await channel.send(embed=emb, reference=reference, mention_author=False)
         if persist_pending and isinstance(sent, discord.Message) and sent.guild:
@@ -1071,26 +1085,27 @@ class OraculoCog(commands.Cog, name="Oráculo"):
                     if llm:
                         esc = discord.utils.escape_markdown(user_text)[:500]
                         esc_r = discord.utils.escape_markdown(llm)
+                        d_fb = (
+                            f"{message.author.mention} **({nombre})** sigue el hilo:\n"
+                            f"> {esc}\n\n**Oráculo:** {esc_r}"
+                        )[:4096]
                         emb_fb = discord.Embed(
                             title="🔮 Oráculo · seguimiento",
-                            description=(
-                                f"{message.author.mention} **({nombre})** (sin contexto guardado del embed):\n"
-                                f"> {esc}\n\n**Oráculo:** {esc_r}"
-                            )[:4096],
+                            description=d_fb,
                             color=discord.Color.dark_magenta(),
                         )
-                        mod = (os.getenv("ORACLE_MODEL") or "local").strip()
-                        emb_fb.set_footer(text=f"IA local (Ollama) · {mod}")
                         await message.reply(embed=emb_fb, mention_author=False)
                     else:
-                        body_fb = _template_followup_no_llm(user_text)
+                        kind, ans, _ = _roll_oracle_for_question(user_text)
+                        body_fb = ans
+                        d_fb2 = (
+                            f"{message.author.mention} **({nombre})** sigue el hilo:\n"
+                            f"> {discord.utils.escape_markdown(user_text)[:500]}\n\n"
+                            f"**Oráculo:** {body_fb}"
+                        )[:4096]
                         emb_fb2 = discord.Embed(
                             title="🔮 Oráculo · seguimiento",
-                            description=(
-                                f"{message.author.mention} **({nombre})** (sin contexto guardado del embed):\n"
-                                f"> {discord.utils.escape_markdown(user_text)[:500]}\n\n"
-                                f"**Oráculo:** {body_fb}"
-                            )[:4096],
+                            description=d_fb2,
                             color=discord.Color.dark_magenta(),
                         )
                         await message.reply(embed=emb_fb2, mention_author=False)
