@@ -117,16 +117,33 @@ class VersusVoteView(discord.ui.View):
         cog.db.set_vote(week, interaction.user.id, side)
         counts = cog._count_sides(week)
         label = self.label_a if side == 0 else self.label_b
-        total = max(1, counts[0] + counts[1])
-        p0 = (counts[0] / total) * 100
-        p1 = (counts[1] / total) * 100
+        total_v = counts[0] + counts[1]
+        if total_v <= 0:
+            p0 = p1 = 0.0
+        else:
+            p0 = (counts[0] / total_v) * 100.0
+            p1 = (counts[1] / total_v) * 100.0
         if counts[0] == counts[1]:
             lead = f"Empate — {self.label_a}: **{p0:.1f}%** · {self.label_b}: **{p1:.1f}%**"
         else:
             lead_side = self.label_a if counts[0] > counts[1] else self.label_b
             lead_pct = p0 if counts[0] > counts[1] else p1
             lead = f"Va ganando: **{lead_side}** (**{lead_pct:.1f}%**)"
-        await interaction.response.send_message(
+
+        poll_row = cog.db.get_poll(week)
+        end_dt = _week_end_from_key(week)
+        if poll_row and end_dt is not None:
+            char_a, char_b = poll_row["char_a"], poll_row["char_b"]
+            public_embed = _versus_embed(week, char_a, char_b, end_dt, counts)
+            await interaction.response.defer(ephemeral=True)
+            try:
+                await interaction.message.edit(embed=public_embed, view=self)
+            except Exception:
+                log.exception("No se pudo actualizar el embed público del VERSUS")
+        else:
+            await interaction.response.defer(ephemeral=True)
+
+        await interaction.followup.send(
             f"✅ Voto: **{label}**\n"
             f"Marcador — {self.label_a}: **{counts[0]}** ({p0:.1f}%) · {self.label_b}: **{counts[1]}** ({p1:.1f}%)\n"
             f"{lead}",
@@ -152,16 +169,46 @@ def _week_end_from_key(week_key: str) -> Optional[datetime]:
         return None
 
 
-def _versus_embed(week_key: str, a: str, b: str, end: datetime) -> discord.Embed:
+def _versus_embed(
+    week_key: str,
+    a: str,
+    b: str,
+    end: datetime,
+    counts: Tuple[int, int] = (0, 0),
+) -> discord.Embed:
     end_ts = int(end.timestamp())
+    c0, c1 = int(counts[0] or 0), int(counts[1] or 0)
+    tot = c0 + c1
+    if tot <= 0:
+        marcador = (
+            "\n\n**📊 Marcador en vivo** (lo ve todo el mundo; no hace falta haber votado)\n"
+            f"• {_link_char(a)} — **0.0%**\n"
+            f"• {_link_char(b)} — **0.0%**\n"
+            "_**0** votos todavía — ambas opciones en 0% hasta el primer voto._"
+        )
+    else:
+        p0 = (c0 / tot) * 100.0
+        p1 = (c1 / tot) * 100.0
+        marcador = (
+            "\n\n**📊 Marcador en vivo** (lo ve todo el mundo)\n"
+            f"• {_link_char(a)} — **{p0:.1f}%** ({c0} votos)\n"
+            f"• {_link_char(b)} — **{p1:.1f}%** ({c1} votos)\n"
+        )
+        if c0 > c1:
+            marcador += f"**Va ganando:** {_link_char(a)} (**{p0:.1f}%** del total)"
+        elif c1 > c0:
+            marcador += f"**Va ganando:** {_link_char(b)} (**{p1:.1f}%** del total)"
+        else:
+            marcador += f"**Empate** — **{p0:.1f}%** cada uno ({c0} votos por lado)"
+
     return discord.Embed(
         title=f"⚔️ VERSUS semanal `{week_key}`",
         description=(
             f"**{_link_char(a)}** vs **{_link_char(b)}**\n"
             f"Links: [AniList A]({_anilist_character_search_url(a)}) · [AniList B]({_anilist_character_search_url(b)})\n\n"
             "Votá con los botones (podés cambiar votando el otro).\n"
-            f"Cierre: **domingo 21:00** ({os.getenv('VERSUS_TIMEZONE', 'Europe/Madrid')}) · <t:{end_ts}:F>\n"
-            "Staff: `/aat_versus_votos` para ver quién votó qué."
+            f"Cierre: **domingo 21:00** ({os.getenv('VERSUS_TIMEZONE', 'Europe/Madrid')}) · <t:{end_ts}:F>"
+            f"{marcador}"
         ),
         color=discord.Color.gold(),
     )
@@ -236,7 +283,8 @@ class SemanalVersusCog(commands.Cog, name="SemanalVersus"):
             self._register_view_safe(_make_view(week_key, a, b))
             return
 
-        embed = _versus_embed(week_key, a, b, end)
+        c0, c1 = self._count_sides(week_key)
+        embed = _versus_embed(week_key, a, b, end, (c0, c1))
         view = _make_view(week_key, a, b)
         try:
             msg = await ch_out.send(embed=embed, view=view)
@@ -352,7 +400,7 @@ class SemanalVersusCog(commands.Cog, name="SemanalVersus"):
         if not ch or not isinstance(ch, discord.TextChannel):
             return
         a, b = await _pick_pair_from_api()
-        embed = _versus_embed(week_key, a, b, end)
+        embed = _versus_embed(week_key, a, b, end, (0, 0))
         view = _make_view(week_key, a, b)
         msg = await ch.send(embed=embed, view=view)
         inserted = self.db.insert_poll_new(week_key, msg.id, ch.id, a, b)
@@ -389,12 +437,14 @@ class SemanalVersusCog(commands.Cog, name="SemanalVersus"):
             return True
         return False
 
-    @app_commands.command(name="aat_versus_votos", description="Lista quién votó a cada opción (VERSUS semanal actual).")
+    @app_commands.command(name="aat-versus-votos", description="Lista quién votó a cada opción (VERSUS semanal actual).")
     async def versus_votos(self, interaction: discord.Interaction):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Solo en servidor.", ephemeral=True)
         if not self._is_staff(interaction.user):
-            return await interaction.response.send_message("Solo staff / Hokage.", ephemeral=True)
+            return await interaction.response.send_message(
+                "No tenés permiso para ver el listado de votos.", ephemeral=True
+            )
         await interaction.response.defer(ephemeral=True)
         tz = _tz()
         week_key, _ = _active_week_and_close(datetime.now(tz))

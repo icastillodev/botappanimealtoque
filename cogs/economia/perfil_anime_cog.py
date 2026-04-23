@@ -1,4 +1,4 @@
-# Wishlist (1–30), animes odiados (1–10), personajes favoritos (1–10) — visibles para todos.
+# Wishlist (1–33), animes odiados (1–10), personajes favoritos (1–10) — visibles para todos.
 from __future__ import annotations
 
 import logging
@@ -17,7 +17,7 @@ def _esc(s: str) -> str:
     return discord.utils.escape_markdown((s or "").strip()) or "—"
 
 
-def _fmt_wishlist(rows: List[Dict[str, Any]], max_pos: int = 30) -> str:
+def _fmt_wishlist(rows: List[Dict[str, Any]], max_pos: int = 33) -> str:
     lines: List[str] = []
     for r in sorted(rows, key=lambda x: int(x["pos"])):
         p = int(r["pos"])
@@ -57,7 +57,7 @@ class PerfilAnimeCog(commands.Cog, name="Perfil anime"):
         self.db: EconomiaDBManagerV2 = bot.economia_db
 
     # --- Wishlist ---
-    @app_commands.command(name="aat_wishlist_ver", description="Ver la wishlist de anime de alguien (público).")
+    @app_commands.command(name="aat-wishlist-ver", description="Ver la wishlist de anime de alguien (público).")
     @app_commands.describe(usuario="Usuario (por defecto vos)")
     async def wishlist_ver(self, interaction: discord.Interaction, usuario: Optional[discord.User] = None):
         target = usuario or interaction.user
@@ -68,15 +68,15 @@ class PerfilAnimeCog(commands.Cog, name="Perfil anime"):
             description=body or "Sin entradas todavía.",
             color=discord.Color.fuchsia(),
         )
-        emb.set_footer(text="Hasta 30 títulos · ordená por posición (1 = lo que más querés ver)")
+        emb.set_footer(text="Hasta 33 títulos · ordená por posición (1 = lo que más querés ver)")
         await interaction.response.send_message(embed=emb)
 
-    @app_commands.command(name="aat_wishlist_set", description="Guardar o cambiar un título en tu wishlist (1–30).")
+    @app_commands.command(name="aat-wishlist-set", description="Guardar o cambiar un título en tu wishlist (1–33).")
     @app_commands.describe(posicion="1 = el que más querés ver", titulo="Nombre del anime o manga")
     async def wishlist_set(
         self,
         interaction: discord.Interaction,
-        posicion: app_commands.Range[int, 1, 30],
+        posicion: app_commands.Range[int, 1, 33],
         titulo: str,
     ):
         await interaction.response.defer(ephemeral=True)
@@ -87,13 +87,13 @@ class PerfilAnimeCog(commands.Cog, name="Perfil anime"):
             return
         await interaction.followup.send("Guardado en tu wishlist.", ephemeral=True)
 
-    @app_commands.command(name="aat_wishlist_quitar", description="Vaciar una posición de tu wishlist.")
-    async def wishlist_quitar(self, interaction: discord.Interaction, posicion: app_commands.Range[int, 1, 30]):
+    @app_commands.command(name="aat-wishlist-quitar", description="Vaciar una posición de tu wishlist.")
+    async def wishlist_quitar(self, interaction: discord.Interaction, posicion: app_commands.Range[int, 1, 33]):
         self.db.wishlist_remove(interaction.user.id, int(posicion))
         await interaction.response.send_message(f"Posición **{posicion}** vaciada.", ephemeral=True)
 
     # --- Odiados ---
-    @app_commands.command(name="aat_hated_ver", description="Ver los animes que más odia alguien (público).")
+    @app_commands.command(name="aat-hated-ver", description="Ver los animes que más odia alguien (público).")
     @app_commands.describe(usuario="Usuario (por defecto vos)")
     async def hated_ver(self, interaction: discord.Interaction, usuario: Optional[discord.User] = None):
         target = usuario or interaction.user
@@ -107,7 +107,7 @@ class PerfilAnimeCog(commands.Cog, name="Perfil anime"):
         emb.set_footer(text="Hasta 10 títulos")
         await interaction.response.send_message(embed=emb)
 
-    @app_commands.command(name="aat_hated_set", description="Guardar o cambiar un anime odiado (1–10).")
+    @app_commands.command(name="aat-hated-set", description="Guardar o cambiar un anime odiado (1–10).")
     async def hated_set(
         self,
         interaction: discord.Interaction,
@@ -122,13 +122,13 @@ class PerfilAnimeCog(commands.Cog, name="Perfil anime"):
             return
         await interaction.followup.send("Guardado.", ephemeral=True)
 
-    @app_commands.command(name="aat_hated_quitar", description="Vaciar una posición de odiados.")
+    @app_commands.command(name="aat-hated-quitar", description="Vaciar una posición de odiados.")
     async def hated_quitar(self, interaction: discord.Interaction, posicion: app_commands.Range[int, 1, 10]):
         self.db.hated_remove(interaction.user.id, int(posicion))
         await interaction.response.send_message(f"Posición **{posicion}** vaciada.", ephemeral=True)
 
     # --- Personajes ---
-    @app_commands.command(name="aat_chars_ver", description="Ver el top de personajes favoritos (público).")
+    @app_commands.command(name="aat-chars-ver", description="Ver el top de personajes favoritos (público).")
     @app_commands.describe(usuario="Usuario (por defecto vos)")
     async def chars_ver(self, interaction: discord.Interaction, usuario: Optional[discord.User] = None):
         target = usuario or interaction.user
@@ -143,7 +143,7 @@ class PerfilAnimeCog(commands.Cog, name="Perfil anime"):
         await interaction.response.send_message(embed=emb)
 
     @app_commands.command(
-        name="aat_chars_set",
+        name="aat-chars-set",
         description="Guardar personaje favorito en una posición (1–10) + anime de origen.",
     )
     async def chars_set(
@@ -161,7 +161,7 @@ class PerfilAnimeCog(commands.Cog, name="Perfil anime"):
             return
         await interaction.followup.send("Guardado.", ephemeral=True)
 
-    @app_commands.command(name="aat_chars_quitar", description="Vaciar una posición de personajes.")
+    @app_commands.command(name="aat-chars-quitar", description="Vaciar una posición de personajes.")
     async def chars_quitar(self, interaction: discord.Interaction, posicion: app_commands.Range[int, 1, 10]):
         self.db.fav_char_remove(interaction.user.id, int(posicion))
         await interaction.response.send_message(f"Posición **{posicion}** vaciada.", ephemeral=True)

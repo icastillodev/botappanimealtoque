@@ -46,20 +46,20 @@ def register_lobby_ping(channel_id: int) -> None:
     _last_lobby_ping_ts[channel_id] = time.monotonic()
 
 
-class ImpostorNotifyView(discord.ui.View):
-    """Vista persistente: botón para darse/quitar el rol de avisos."""
+class NotifyToggleButton(discord.ui.Button):
+    """Rol de avisos: verde = sin rol (podés activar); rojo = con rol (avisos encendidos)."""
 
-    def __init__(self):
-        super().__init__(timeout=None)
+    def __init__(self, *, subscribed: bool) -> None:
+        style = discord.ButtonStyle.danger if subscribed else discord.ButtonStyle.success
+        super().__init__(
+            style=style,
+            label="Avisos Impostor",
+            emoji="🔔",
+            custom_id="imp:notify_role_toggle",
+            row=0,
+        )
 
-    @discord.ui.button(
-        label="Avisos Impostor",
-        style=discord.ButtonStyle.primary,
-        emoji="🔔",
-        custom_id="imp:notify_role_toggle",
-        row=0,
-    )
-    async def toggle_notify(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def callback(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
             return await interaction.response.send_message(
                 "❌ Esto solo funciona en un servidor.", ephemeral=True
@@ -93,23 +93,49 @@ class ImpostorNotifyView(discord.ui.View):
         try:
             if role in member.roles:
                 await member.remove_roles(role, reason="Toggle avisos Impostor (botón)")
-                await interaction.response.send_message(
-                    "✅ Te quité el rol de avisos. Ya no recibirás menciones de partidas.",
-                    ephemeral=True,
-                )
+                ok_msg = "✅ Te quité el rol de avisos. Ya no recibirás menciones de partidas."
             else:
                 await member.add_roles(role, reason="Toggle avisos Impostor (botón)")
-                await interaction.response.send_message(
-                    "✅ Te asigné el rol de avisos. Te mencionarán cuando busquen jugadores.",
-                    ephemeral=True,
-                )
+                ok_msg = "✅ Te asigné el rol de avisos. Te mencionarán cuando busquen jugadores."
         except discord.Forbidden:
-            await interaction.response.send_message(
+            return await interaction.response.send_message(
                 "❌ No pude modificar tu rol (permisos o jerarquía).", ephemeral=True
             )
         except discord.HTTPException as e:
             log.exception("Error HTTP al togglear rol de avisos: %s", e)
-            await interaction.response.send_message("❌ Error de Discord al cambiar el rol.", ephemeral=True)
+            return await interaction.response.send_message(
+                "❌ Error de Discord al cambiar el rol.", ephemeral=True
+            )
+
+        await interaction.response.defer(ephemeral=True)
+        await interaction.followup.send(ok_msg, ephemeral=True)
+
+        # Refrescar cartelera + color del botón según tu estado (verde = sin rol, rojo = con avisos).
+        try:
+            fresh = await interaction.guild.fetch_member(member.id)
+            has_role = role in fresh.roles
+        except (discord.HTTPException, discord.NotFound):
+            has_role = role in member.roles
+
+        if interaction.message:
+            try:
+                from . import feed as impostor_feed
+
+                embed = await impostor_feed._generate_feed_embed(interaction.client)
+                await interaction.message.edit(
+                    embed=embed,
+                    view=ImpostorNotifyView(subscribed=has_role),
+                )
+            except Exception:
+                log.exception("No se pudo refrescar el panel de cartelera tras toggle de avisos.")
+
+
+class ImpostorNotifyView(discord.ui.View):
+    """Vista persistente: botón para darse/quitar el rol de avisos."""
+
+    def __init__(self, *, subscribed: bool = False) -> None:
+        super().__init__(timeout=None)
+        self.add_item(NotifyToggleButton(subscribed=subscribed))
 
 
 class ImpostorNotifyCog(commands.Cog, name="ImpostorNotify"):
@@ -120,5 +146,5 @@ class ImpostorNotifyCog(commands.Cog, name="ImpostorNotify"):
 
 
 async def setup(bot: commands.Bot):
-    bot.add_view(ImpostorNotifyView())
+    bot.add_view(ImpostorNotifyView(subscribed=False))
     await bot.add_cog(ImpostorNotifyCog(bot))

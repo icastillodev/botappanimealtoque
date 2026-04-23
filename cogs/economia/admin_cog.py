@@ -23,7 +23,7 @@ def is_hokage():
     return app_commands.check(predicate)
 
 # --- ¡¡¡CLASE QUE FALTABA!!! ---
-# Esta es la vista (botones) para el comando /aat_admin_vercartas
+# Esta es la vista (botones) para el comando /aat-admin-vercartas
 class CardStockView(discord.ui.View):
     def __init__(self, author_id: int, all_cards: List[Dict[str, Any]]):
         super().__init__(timeout=300) # 5 minutos
@@ -103,7 +103,7 @@ class AdminCog(commands.Cog, name="Economia Admin"):
             for c in cartas
         ]
 
-    @app_commands.command(name="aat_admin_darpuntos", description="[ADMIN] Da puntos a un usuario.")
+    @app_commands.command(name="aat-admin-darpuntos", description="[ADMIN] Da puntos a un usuario.")
     @app_commands.describe(usuario="El usuario", cantidad="Cuántos puntos dar", razon="Opcional: Razón")
     async def dar_puntos(self, interaction: discord.Interaction, usuario: discord.Member, cantidad: int, razon: Optional[str] = None):
         if cantidad <= 0:
@@ -117,7 +117,7 @@ class AdminCog(commands.Cog, name="Economia Admin"):
             await usuario.send(msg)
         except discord.Forbidden: pass
 
-    @app_commands.command(name="aat_admin_sacarpuntos", description="[ADMIN] Quita puntos a un usuario.")
+    @app_commands.command(name="aat-admin-sacarpuntos", description="[ADMIN] Quita puntos a un usuario.")
     @app_commands.describe(usuario="El usuario", cantidad="Cuántos puntos quitar", razon="Opcional: Razón")
     async def sacar_puntos(self, interaction: discord.Interaction, usuario: discord.Member, cantidad: int, razon: Optional[str] = None):
         if cantidad <= 0:
@@ -131,7 +131,7 @@ class AdminCog(commands.Cog, name="Economia Admin"):
             await usuario.send(msg)
         except discord.Forbidden: pass
 
-    @app_commands.command(name="aat_admin_darblister", description="[ADMIN] Da blisters (sobres) a un usuario.")
+    @app_commands.command(name="aat-admin-darblister", description="[ADMIN] Da blisters (sobres) a un usuario.")
     @app_commands.describe(usuario="El usuario", tipo_blister="El tipo de blister (ej: 'trampa')", cantidad="Cuántos blisters dar")
     async def dar_blister(self, interaction: discord.Interaction, usuario: discord.Member, tipo_blister: str, cantidad: int):
         if cantidad <= 0:
@@ -148,7 +148,7 @@ class AdminCog(commands.Cog, name="Economia Admin"):
             await usuario.send(f"¡Has recibido **{cantidad} Blister(s) de tipo '{tipo_blister}'** de un administrador!")
         except discord.Forbidden: pass
 
-    @app_commands.command(name="aat_admin_setcreditos", description="[ADMIN] Establece los créditos para fijar mensajes de un usuario.")
+    @app_commands.command(name="aat-admin-setcreditos", description="[ADMIN] Establece los créditos para fijar mensajes de un usuario.")
     @app_commands.describe(usuario="El usuario", cantidad="El número total de créditos que tendrá")
     async def set_creditos(self, interaction: discord.Interaction, usuario: discord.Member, cantidad: int):
         if cantidad < 0:
@@ -157,7 +157,7 @@ class AdminCog(commands.Cog, name="Economia Admin"):
         self.economia_db.set_credits(usuario.id, cantidad)
         await interaction.response.send_message(f"📌 Se establecieron los créditos de {usuario.mention} a {cantidad}.", ephemeral=True)
 
-    @app_commands.command(name="aat_admin_crear_carta", description="[ADMIN] Añade una nueva carta al stock global.")
+    @app_commands.command(name="aat-admin-crear-carta", description="[ADMIN] Añade una nueva carta al stock global.")
     @app_commands.describe(
         nombre="Nombre exacto",
         rareza="Rareza",
@@ -194,7 +194,7 @@ class AdminCog(commands.Cog, name="Economia Admin"):
         embed.add_field(name="Poder", value=str(poder), inline=True)
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="aat_admin_modificar_carta", description="[ADMIN] Modifica una carta existente en el stock.")
+    @app_commands.command(name="aat-admin-modificar-carta", description="[ADMIN] Modifica una carta existente en el stock.")
     @app_commands.autocomplete(carta_id=card_stock_autocomplete)
     @app_commands.describe(carta_id="Elige la carta a modificar (usa el autocompletado).")
     async def modificar_carta(self, interaction: discord.Interaction, carta_id: str):
@@ -208,7 +208,7 @@ class AdminCog(commands.Cog, name="Economia Admin"):
         modal = CartaEditModal(carta_data, self.card_db)
         await interaction.response.send_modal(modal)
 
-    @app_commands.command(name="aat_admin_borrar_carta", description="[ADMIN] BORRA una carta del stock (¡PELIGRO!).")
+    @app_commands.command(name="aat-admin-borrar-carta", description="[ADMIN] BORRA una carta del stock (¡PELIGRO!).")
     @app_commands.autocomplete(carta_id=card_stock_autocomplete)
     @app_commands.describe(carta_id="Elige la carta a borrar (usa el autocompletado).")
     async def borrar_carta(self, interaction: discord.Interaction, carta_id: str):
@@ -222,7 +222,7 @@ class AdminCog(commands.Cog, name="Economia Admin"):
         self.card_db.delete_carta_stock(int(carta_id))
         await interaction.response.send_message(f"🗑️ Carta '{carta_data['nombre']}' borrada permanentemente del stock.", ephemeral=True)
 
-    @app_commands.command(name="aat_admin_vercartas", description="[ADMIN] Muestra todas las cartas creadas en el stock.")
+    @app_commands.command(name="aat-admin-vercartas", description="[ADMIN] Muestra todas las cartas creadas en el stock.")
     async def ver_cartas(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         all_cards = self.card_db.get_all_cards_stock()

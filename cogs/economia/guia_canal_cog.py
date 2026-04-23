@@ -6,17 +6,35 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Optional
+from typing import List, Optional
 
 import discord
 from discord.ext import commands
 
 from .db_manager import EconomiaDBManagerV2
-from .guia_contenido import build_guia_embeds
+from .guia_contenido import chunk_guia_embeds_for_send
 
 META_KEY = "guia_bot_message_id"
 
 log = logging.getLogger(__name__)
+
+
+def _parse_guia_message_ids(raw: Optional[str]) -> List[int]:
+    if not raw:
+        return []
+    s = str(raw).strip()
+    if "|" in s:
+        parts = s.split("|")
+    elif "," in s:
+        parts = s.split(",")
+    else:
+        parts = [s]
+    out: List[int] = []
+    for p in parts:
+        p = p.strip()
+        if p.isdigit():
+            out.append(int(p))
+    return out
 
 
 class GuiaCanalCog(commands.Cog, name="Guía canal fijo"):
@@ -81,43 +99,60 @@ class GuiaCanalCog(commands.Cog, name="Guía canal fijo"):
             log.warning("Faltan permisos send_messages/embed_links en canal guía %s", ch_id)
             return
 
-        embeds = build_guia_embeds(self.bot)
-        if len(embeds) > 10:
-            embeds = embeds[:10]
-
-        raw_id = self.db.bot_meta_get(META_KEY)
-        msg: Optional[discord.Message] = None
-        if raw_id and str(raw_id).isdigit():
-            try:
-                msg = await channel.fetch_message(int(raw_id))
-            except discord.NotFound:
-                msg = None
-            except Exception as e:
-                log.warning("No se pudo fetch el mensaje guía %s: %s", raw_id, e)
-                msg = None
-
-        try:
-            if msg is not None and msg.author.id == self.bot.user.id:
-                await msg.edit(content=None, embeds=embeds)
-                log.info("Mensaje de guía actualizado (%s) en canal %s (id %s).", reason, channel.id, msg.id)
-                return
-            if msg is not None and msg.author.id != self.bot.user.id:
-                log.warning(
-                    "El mensaje guardado en bot_meta no es del bot; se publica uno nuevo en %s.",
-                    channel.id,
-                )
-        except discord.Forbidden:
-            log.warning("Sin permiso para editar el mensaje de guía en %s", channel.id)
+        if not self.bot.user:
             return
-        except Exception as e:
-            log.warning("Error editando mensaje guía: %s", e)
 
-        try:
-            new_msg = await channel.send(embeds=embeds)
-            self.db.bot_meta_set(META_KEY, str(new_msg.id))
-            log.info("Mensaje de guía creado en canal %s (id %s).", channel.id, new_msg.id)
-        except Exception as e:
-            log.exception("No se pudo enviar el mensaje de guía: %s", e)
+        chunks = chunk_guia_embeds_for_send(self.bot)
+        n = len(chunks)
+        old_ids = _parse_guia_message_ids(self.db.bot_meta_get(META_KEY))
+        old_msgs: List[Optional[discord.Message]] = []
+        for mid in old_ids:
+            try:
+                m = await channel.fetch_message(mid)
+                old_msgs.append(m if m.author.id == self.bot.user.id else None)
+            except discord.NotFound:
+                old_msgs.append(None)
+            except Exception as e:
+                log.warning("No se pudo fetch el mensaje guía %s: %s", mid, e)
+                old_msgs.append(None)
+
+        new_ids: List[int] = []
+
+        for i, part in enumerate(chunks):
+            content = f"📚 **Guía del bot ({i + 1}/{n})**" if n > 1 else None
+            m_old = old_msgs[i] if i < len(old_msgs) else None
+            if m_old is not None:
+                try:
+                    await m_old.edit(content=content, embeds=part)
+                    new_ids.append(m_old.id)
+                    continue
+                except discord.Forbidden as e:
+                    log.warning("Sin permiso para editar el mensaje de guía %s en %s: %s", m_old.id, channel.id, e)
+                except Exception as e:
+                    log.warning("Error editando mensaje guía %s: %s", m_old.id, e)
+                try:
+                    await m_old.delete()
+                except Exception:
+                    pass
+
+            try:
+                m = await channel.send(content=content, embeds=part)
+                new_ids.append(m.id)
+            except Exception as e:
+                log.exception("No se pudo enviar el mensaje de guía (parte %s): %s", i + 1, e)
+                return
+
+        for j in range(len(chunks), len(old_msgs)):
+            m = old_msgs[j]
+            if m is None:
+                continue
+            try:
+                await m.delete()
+            except Exception as e:
+                log.debug("No se pudo borrar mensaje guía sobrante %s: %s", m.id, e)
+
+        self.db.bot_meta_set(META_KEY, "|".join(str(x) for x in new_ids))
+        log.info("Guía sincronizada (%s) en canal %s — %s mensaje(s).", reason, channel.id, len(new_ids))
 
 
 async def setup(bot: commands.Bot) -> None:

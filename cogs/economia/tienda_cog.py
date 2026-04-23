@@ -10,6 +10,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from .db_manager import EconomiaDBManagerV2
+from .toque_labels import fmt_toque_line, guia_toque_explicacion, toque_emote
 
 log = logging.getLogger(__name__)
 
@@ -46,11 +47,12 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
         return int(ch) if ch else None
 
     def _build_tienda_embed(self, eco: dict) -> discord.Embed:
+        tq = toque_emote()
         embed = discord.Embed(
-            title="🏪 Tienda Anime al Toque",
+            title=f"{tq} Tienda Anime al Toque",
             description=(
-                "Gastá **puntos** 🪙 en recompensas. Los precios dependen del servidor.\n"
-                f"**Tu saldo:** `{eco['puntos_actuales']}` pts · **Créditos pin:** `{eco.get('creditos_pin', 0)}`"
+                f"Gastá **Toque points** {tq} en recompensas. Los precios dependen del servidor.\n"
+                f"**Tu saldo:** `{eco['puntos_actuales']}` · **Créditos pin:** `{eco.get('creditos_pin', 0)}`"
             ),
             color=discord.Color.from_rgb(88, 101, 242),
         )
@@ -61,7 +63,7 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
         def line(name: str, item_id: str, price: int, extra: str = "") -> str:
             if price <= 0:
                 return f"~~{name}~~ — *no disponible*\n"
-            return f"**{name}** · `{item_id}` — **{price}** pts{extra}\n"
+            return f"**{name}** · `{item_id}` — {fmt_toque_line(int(price))}{extra}\n"
 
         pa = self.config.get("price_akatsuki", 0)
         pj = self.config.get("price_jonin", 0)
@@ -77,7 +79,7 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
             value=(
                 line("Rol Akatsuki", "akatsuki", int(pa or 0))
                 + line("Rol Jonin", "jonin", int(pj or 0))
-                + "_Canje:_ `/aat_tienda_canjear` → elegí el ítem."
+                + "_Canje:_ `/aat-tienda-canjear` → elegí el ítem."
             ),
             inline=False,
         )
@@ -85,9 +87,9 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
             name="Pin de mensajes",
             value=(
                 line("Crédito para fijar (cualquier canal donde tengas permiso)", "pin", int(pp or 0))
-                + "· Usá `/aat_tienda_fijar` con la **ID del mensaje** en ese canal.\n"
+                + "· Usá `/aat-tienda-fijar` con la **ID del mensaje** en ese canal.\n"
                 + (line("Fijar en #general (un solo pago, sin crédito)", "—", int(ppg)) if ppg > 0 else "")
-                + (f"· Comando: `/aat_tienda_pin_general`\n" if ppg > 0 else "")
+                + (f"· Comando: `/aat-tienda-pin-general`\n" if ppg > 0 else "")
             ),
             inline=False,
         )
@@ -95,23 +97,23 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
             name="Cartas",
             value=(
                 line("Sobre **Trampa** (1 blister)", "blister_trampa", int(pbt))
-                + "· Abrilo con `/aat_abrirblister` tipo trampa.\n"
+                + "· Abrilo con `/aat-abrirblister` tipo trampa.\n"
             ),
             inline=False,
         )
         extra = ""
         if poll > 0 and vch > 0:
-            extra = f"**Encuesta en canal votación** — **{poll}** pts → `/aat_tienda_encuesta`\n"
+            extra = f"**Encuesta en canal votación** — {fmt_toque_line(int(poll))} → `/aat-tienda-encuesta`\n"
         elif poll > 0 and vch <= 0:
             extra = "_Encuesta tienda:_ esta opción no está disponible en este servidor.\n"
         if ptr > 0:
-            extra += f"**Rol personal 30 días** — **{ptr}** pts → `/aat_tienda_rol_temporal`\n"
+            extra += f"**Rol personal 30 días** — {fmt_toque_line(int(ptr))} → `/aat-tienda-rol-temporal`\n"
         if extra:
-            embed.add_field(name="Extras (puntos)", value=extra, inline=False)
-        embed.set_footer(text="/aat_ayuda · página Tienda para paso a paso")
+            embed.add_field(name="Extras (Toque points)", value=extra, inline=False)
+        embed.set_footer(text=f"{guia_toque_explicacion()} · /aat-ayuda → Tienda")
         return embed
 
-    @app_commands.command(name="aat_tienda_ver", description="Catálogo de la tienda y tu saldo.")
+    @app_commands.command(name="aat-tienda-ver", description="Catálogo de la tienda y tu saldo.")
     async def ver_tienda(self, interaction: discord.Interaction):
         if not self.config:
             await interaction.response.send_message("La tienda no está configurada.", ephemeral=True)
@@ -120,7 +122,7 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
         eco = self.economia_db.get_user_economy(interaction.user.id)
         await interaction.response.send_message(embed=self._build_tienda_embed(eco), ephemeral=True)
 
-    @app_commands.command(name="aat_tienda_canjear", description="Comprá un ítem de la tienda con puntos.")
+    @app_commands.command(name="aat-tienda-canjear", description="Comprá un ítem de la tienda con puntos.")
     @app_commands.describe(
         item_id="akatsuki | jonin | pin | blister_trampa",
     )
@@ -190,19 +192,19 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
         elif item_id == "pin":
             self.economia_db.set_credits(interaction.user.id, user_data["creditos_pin"] + 1)
             await interaction.followup.send(
-                "✅ **+1 crédito de pin.** Usalo con `/aat_tienda_fijar` (ID del mensaje en el canal correspondiente).",
+                "✅ **+1 crédito de pin.** Usalo con `/aat-tienda-fijar` (ID del mensaje en el canal correspondiente).",
                 ephemeral=True,
             )
         elif item_id == "blister_trampa":
             _, bcol = self.economia_db.modify_blisters(interaction.user.id, "trampa", 1)
             extra = ("\n\n" + "\n".join(bcol)) if bcol else ""
             await interaction.followup.send(
-                "✅ **+1 sobre Trampa.** Abrilo con `/aat_abrirblister` eligiendo tipo **trampa**." + extra,
+                "✅ **+1 sobre Trampa.** Abrilo con `/aat-abrirblister` eligiendo tipo **trampa**." + extra,
                 ephemeral=True,
             )
 
     @app_commands.command(
-        name="aat_tienda_fijar",
+        name="aat-tienda-fijar",
         description="Gastás 1 crédito de pin para fijar un mensaje en el canal donde ejecutás el comando.",
     )
     @app_commands.describe(id_mensaje="ID numérica del mensaje (clic derecho → Copiar ID).")
@@ -213,7 +215,7 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
             return
         if not self.economia_db.use_credit(interaction.user.id):
             await interaction.followup.send(
-                "No tenés créditos. Comprá con `/aat_tienda_canjear` → **pin**.",
+                "No tenés créditos. Comprá con `/aat-tienda-canjear` → **pin**.",
                 ephemeral=True,
             )
             return
@@ -247,7 +249,7 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
             await interaction.followup.send(f"Error: {e}. Crédito devuelto.", ephemeral=True)
 
     @app_commands.command(
-        name="aat_tienda_pin_general",
+        name="aat-tienda-pin-general",
         description="Pagás con puntos y fijás un mensaje en #general (sin usar crédito de pin).",
     )
     @app_commands.describe(id_mensaje="ID del mensaje en #general.")
@@ -303,7 +305,7 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
             await interaction.followup.send(f"Error: {e}. **Puntos devueltos.**", ephemeral=True)
 
     @app_commands.command(
-        name="aat_tienda_encuesta",
+        name="aat-tienda-encuesta",
         description="Pagás puntos y publicás una votación en el canal de votaciones del servidor.",
     )
     @app_commands.describe(
@@ -386,7 +388,7 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
         )
 
     @app_commands.command(
-        name="aat_tienda_rol_temporal",
+        name="aat-tienda-rol-temporal",
         description="Creás un rol con nombre personal y se lo das a alguien (o a vos) por 30 días.",
     )
     @app_commands.describe(

@@ -69,7 +69,7 @@ class CheckTareasCog(commands.Cog, name="Check Tareas Antiguas"):
 
     # --- El Comando ---
 
-    @app_commands.command(name="aat_verificar_antiguas", description="Escanea el historial para encontrar tus tareas de iniciación ya completadas.")
+    @app_commands.command(name="aat-verificar-antiguas", description="Escanea el historial para encontrar tus tareas de iniciación ya completadas.")
     @app_commands.checks.cooldown(1, 3600, key=lambda i: i.user.id) # 1 vez por hora por usuario
     async def verificar_antiguas(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -124,11 +124,13 @@ class CheckTareasCog(commands.Cog, name="Check Tareas Antiguas"):
             f"{self._check_task(new_prog['reaccion_social'])} Reaccionar en `#redes-sociales`\n"
             f"{self._check_task(new_prog['reaccion_reglas'])} Reaccionar en `#reglas`\n"
             f"{self._check_task(new_prog['general_mensaje'])} Escribir 1 vez en `#general`\n\n"
+            "**Nota:** este comando **no** revisa tu perfil (wishlist, top anime, odiados). "
+            "Para iniciación también necesitás **10 / 10 / 5** títulos — ver `/aat-progreso-iniciacion`.\n\n"
         )
         
         if all(new_prog[key] >= 1 for key in ['presentacion', 'reaccion_pais', 'reaccion_rol', 'reaccion_social', 'reaccion_reglas', 'general_mensaje']):
-            desc_final += "✅ **¡Felicidades!** Se ha verificado que completaste todas las tareas.\n"
-            desc_final += "Ahora puedes usar `/aat_reclamar inicial` para obtener tu recompensa."
+            desc_final += "✅ **Discord:** tareas de iniciación verificadas.\n"
+            desc_final += "Si ya tenés también el **perfil** (wishlist, top, odiados), usá `/aat-reclamar` → `inicial`."
         else:
             desc_final += "Se han actualizado tus tareas. Sigue completando las que te faltan (marcadas con ❌)."
 
@@ -149,11 +151,11 @@ class CheckTareasCog(commands.Cog, name="Check Tareas Antiguas"):
         
         # Esto maneja el 'AttributeError' que vimos
         elif isinstance(error, app_commands.CommandInvokeError):
-            self.log.error(f"Error en /aat_verificar_antiguas: {error.original}")
+            self.log.error(f"Error en /aat-verificar-antiguas: {error.original}")
             await interaction.followup.send(f"Ocurrió un error inesperado al verificar: {error.original}", ephemeral=True)
         
         else:
-            self.log.error(f"Error no manejado en /aat_verificar_antiguas: {error}")
+            self.log.error(f"Error no manejado en /aat-verificar-antiguas: {error}")
             await interaction.followup.send("Ocurrió un error inesperado.", ephemeral=True)
 
 # Función setup obligatoria

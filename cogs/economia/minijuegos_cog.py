@@ -54,7 +54,7 @@ class MinijuegosCog(commands.Cog, name="Economia Minijuegos"):
         return raw in {"1", "true", "yes", "on"}
 
     # --- Roll casual (marca tarea semanal una vez) ---
-    @app_commands.command(name="aat_roll", description="Tira dados entre dos números (casual). Cuenta 1 vez por semana para la tarea de minijuegos.")
+    @app_commands.command(name="aat-roll", description="Tira dados entre dos números (casual). Cuenta 1 vez por semana para la tarea de minijuegos.")
     @app_commands.describe(minimo="Mínimo inclusive", maximo="Máximo inclusive")
     async def aat_roll(self, interaction: discord.Interaction, minimo: int = 1, maximo: int = 100):
         if minimo >= maximo:
@@ -68,7 +68,7 @@ class MinijuegosCog(commands.Cog, name="Economia Minijuegos"):
         await interaction.response.send_message(f"🎲 **{interaction.user.display_name}** sacó **{r}** ({minimo}–{maximo}).")
 
     # --- Apuesta por roll 1–100 ---
-    @app_commands.command(name="aat_roll_retar", description="Retá a alguien: ambos pagan puntos; quien saque más en 1–100 gana el pozo.")
+    @app_commands.command(name="aat-roll-retar", description="Retá a alguien: ambos pagan puntos; quien saque más en 1–100 gana el pozo.")
     @app_commands.describe(oponente="A quién retás", apuesta="Puntos que arriesgan ambos")
     async def aat_roll_retar(self, interaction: discord.Interaction, oponente: discord.Member, apuesta: int):
         if apuesta < 1 or apuesta > 5000:
@@ -96,11 +96,11 @@ class MinijuegosCog(commands.Cog, name="Economia Minijuegos"):
         )
         await interaction.response.send_message(
             f"🎲 Reto a {oponente.mention}: apuesta **{apuesta}** pts c/u en un roll 1–100.\n"
-            f"{oponente.mention}: usá **`/aat_roll_aceptar`** (o ignorá y el reto expira y se devuelve tu apuesta).",
+            f"{oponente.mention}: usá **`/aat-roll-aceptar`** (o ignorá y el reto expira y se devuelve tu apuesta).",
             allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
         )
 
-    @app_commands.command(name="aat_roll_aceptar", description="Aceptás un reto de roll con apuesta pendiente.")
+    @app_commands.command(name="aat-roll-aceptar", description="Aceptás un reto de roll con apuesta pendiente.")
     async def aat_roll_aceptar(self, interaction: discord.Interaction):
         if not interaction.guild:
             return await interaction.response.send_message("Solo en servidor.", ephemeral=True)
@@ -133,7 +133,7 @@ class MinijuegosCog(commands.Cog, name="Economia Minijuegos"):
 
     # --- Duelo por poder + dado ---
     @app_commands.command(
-        name="aat_duelo_retar",
+        name="aat-duelo-retar",
         description="Duelo: apostás puntos y elegís carta + si tu total (poder+dado) será mayor o menor que el del rival.",
     )
     @app_commands.describe(
@@ -181,11 +181,11 @@ class MinijuegosCog(commands.Cog, name="Economia Minijuegos"):
         )
         await interaction.response.send_message(
             f"⚔️ {oponente.mention}: **duelo** por **{apuesta}** pts. Predicción del retador: **{prediccion}**.\n"
-            f"Usá **`/aat_duelo_aceptar`** con tu `carta_id`.",
+            f"Usá **`/aat-duelo-aceptar`** con tu `carta_id`.",
             allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
         )
 
-    @app_commands.command(name="aat_duelo_aceptar", description="Aceptás un duelo pendiente con tu carta.")
+    @app_commands.command(name="aat-duelo-aceptar", description="Aceptás un duelo pendiente con tu carta.")
     @app_commands.describe(carta_id="ID de tu carta en inventario")
     async def aat_duelo_aceptar(self, interaction: discord.Interaction, carta_id: str):
         if not self._duelos_enabled():
@@ -235,7 +235,7 @@ class MinijuegosCog(commands.Cog, name="Economia Minijuegos"):
         await interaction.response.send_message(msg)
 
     # --- Voto semanal (domingo / semana ISO) ---
-    @app_commands.command(name="aat_voto_semanal", description="Votá en la encuesta semanal del servidor (una vez por semana).")
+    @app_commands.command(name="aat-voto-semanal", description="Votá en la encuesta semanal del servidor (una vez por semana).")
     @app_commands.describe(opcion="Tu voto")
     async def aat_voto_semanal(self, interaction: discord.Interaction, opcion: Literal["A", "B"]):
         prog = self.db.get_progress_semanal(interaction.user.id)

@@ -6,6 +6,8 @@ from typing import Optional, Literal, List, Dict, Any
 import logging
 
 from .db_manager import EconomiaDBManagerV2
+from .mi_resumen import render_mi_embed, render_top_embed
+from .toque_labels import toque_emote
 
 # Opciones más claras y opción 'General' por defecto
 TipoRanking = Literal["General", "Puntos Actuales", "Puntos Conseguidos", "Puntos Gastados"]
@@ -41,7 +43,7 @@ class RankingCog(commands.Cog, name="Economia Ranking"):
             
         return text
 
-    @app_commands.command(name="aat_ranking_top", description="Muestra los rankings de economía del servidor.")
+    @app_commands.command(name="aat-ranking-top", description="Muestra los rankings de economía del servidor.")
     @app_commands.describe(tipo="Elige qué ranking ver. 'General' muestra un resumen de todos.")
     async def top(self, interaction: discord.Interaction, tipo: TipoRanking = "General"):
         await interaction.response.defer()
@@ -68,7 +70,7 @@ class RankingCog(commands.Cog, name="Economia Ranking"):
             embed.add_field(name="📈 Total Conseguido", value=text_conseguidos, inline=True)
             embed.add_field(name="💸 Total Gastado", value=text_gastados, inline=True)
             
-            embed.set_footer(text="Usa /aat_ranking_top [tipo] para ver el Top 10 completo de una categoría.")
+            embed.set_footer(text="Usa /aat-ranking-top [tipo] para ver el Top 10 completo de una categoría.")
             await interaction.followup.send(embed=embed)
             return
 
@@ -81,8 +83,13 @@ class RankingCog(commands.Cog, name="Economia Ranking"):
             "Puntos Gastados": "gastados"
         }
         db_key = db_key_map.get(tipo, "actual")
-        column_name = f"puntos_{db_key}"
-        
+        col_by_key = {
+            "actual": "puntos_actuales",
+            "conseguidos": "puntos_conseguidos",
+            "gastados": "puntos_gastados",
+        }
+        column_name = col_by_key[db_key]
+
         top_users = self.economia_db.get_top_users(db_key, limit=10)
         
         embed = discord.Embed(title=f"🏆 Top 10 - {tipo}", color=discord.Color.blue())
@@ -94,6 +101,30 @@ class RankingCog(commands.Cog, name="Economia Ranking"):
         else:
              embed.description = text_list
 
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="aat-mi", description="Tu saldo, posición en tops, cartas e histórico ganado.")
+    async def aat_mi(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        self.economia_db.ensure_user_exists(interaction.user.id)
+        embed = await render_mi_embed(self.bot, self.economia_db, interaction.user)
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(
+        name="aat-top-hist",
+        description="Top 5 del servidor por total histórico ganado (puntos conseguidos de por vida).",
+    )
+    async def aat_top_hist(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        tq = toque_emote()
+        embed = await render_top_embed(
+            self.bot,
+            self.economia_db,
+            ranking_type="conseguidos",
+            points_key="puntos_conseguidos",
+            title=f"{tq} Top 5 — histórico ganado (total conseguido)",
+            limit=5,
+        )
         await interaction.followup.send(embed=embed)
 
 async def setup(bot):

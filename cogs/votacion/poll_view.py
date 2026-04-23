@@ -66,21 +66,39 @@ def create_poll_embed(
 
     display_format = poll_data.get('formato_votos', 'ambos')
 
-    # Regla del servidor: mientras esté activa, que TODOS vean quién va ganando y %,
-    # pero sin mostrar cantidad de votos.
+    # Mientras esté activa: en los campos no mostrar número bruto de votos (solo %).
     public_hide_counts = bool(is_active)
 
-    # Mostrar quién va ganando (si no está oculto)
-    if is_active and display_format != 'oculto' and total_votes > 0 and max_votes_count > 0:
-        winners_list = [opt.get('label', 'N/A') for opt in options if opt.get('vote_count', 0) == max_votes_count]
-        pct = (max_votes_count / total_votes) * 100 if total_votes > 0 else 0.0
-        if not winners_list:
-            pass
-        elif is_tie:
-            embed.description += f"\n\n**Van empatados:** {', '.join(winners_list)} (**{pct:.1f}%** c/u)"
+    # Marcador en la descripción: TODOS ven % de cada opción y quién va arriba, aunque no hayan votado.
+    if is_active and display_format != 'oculto' and options:
+        lines_m = []
+        for opt in options:
+            label = opt.get("label", "Opción")
+            vc = int(opt.get("vote_count", 0) or 0)
+            pct = (vc / total_votes * 100.0) if total_votes > 0 else 0.0
+            lines_m.append(f"• **{label}** — **{pct:.1f}%**")
+        block_m = (
+            "\n\n**📊 Marcador en vivo** (lo ve todo el mundo; no hace falta haber votado)\n"
+            + "\n".join(lines_m)
+        )
+        if total_votes == 0:
+            block_m += "\n_**0** votos todavía: todos los % muestran 0 hasta el primer voto._"
         else:
-            embed.description += f"\n\n**Va ganando:** **{winners_list[0]}** (**{pct:.1f}%**)"
-    
+            winners_list = [
+                opt.get("label", "N/A")
+                for opt in options
+                if int(opt.get("vote_count", 0) or 0) == max_votes_count and max_votes_count > 0
+            ]
+            pct_leader = (max_votes_count / total_votes * 100.0) if total_votes else 0.0
+            if len(winners_list) > 1:
+                block_m += (
+                    f"\n**Empate al frente:** {', '.join(winners_list)} "
+                    f"(**{pct_leader:.1f}%** c/u sobre el total de votos)"
+                )
+            elif len(winners_list) == 1:
+                block_m += f"\n**Va ganando:** **{winners_list[0]}** (**{pct_leader:.1f}%** del total)"
+        embed.description += block_m
+
     if display_format == 'oculto' and is_active:
         for option in options:
             embed.add_field(name=f"❓ {option.get('label', 'Opción desconocida')}", value="Votos ocultos", inline=False)
@@ -190,23 +208,23 @@ class PollButton(discord.ui.Button):
             return
 
         updated_poll_data = db.get_poll_data(message_id)
-        
-        # --- ¡¡¡AQUÍ ESTÁ EL ARREGLO!!! ---
-        # 1. Definimos las variables *fuera* de la clase anidada
+
         author = None
         if interaction.message.embeds and interaction.message.embeds[0].footer:
             footer_text = interaction.message.embeds[0].footer.text
             footer_icon_url = interaction.message.embeds[0].footer.icon_url
-            
-            # 2. La clase ahora usa esas variables que sí están en su scope
+
             if footer_text.startswith("Votación creada por "):
                 class FakeAuthor:
                     display_name = footer_text.replace("Votación creada por ", "")
                     display_avatar = footer_icon_url
+
                 author = FakeAuthor()
-        
+
         new_public_embed = create_poll_embed(updated_poll_data, author=author)
-        await interaction.message.edit(embed=new_public_embed)
+
+        await interaction.response.defer(ephemeral=True)
+        await interaction.message.edit(embed=new_public_embed, view=view)
 
         # --- Respuesta privada de confirmación ---
         user_votes_final: List[int] = db.get_user_votes_for_poll(message_id, user_id)
@@ -243,7 +261,7 @@ class PollButton(discord.ui.Button):
         except Exception:
             pass
 
-        await interaction.response.send_message(embed=private_embed, ephemeral=True)
+        await interaction.followup.send(embed=private_embed, ephemeral=True)
 
 
 # --- La Vista Persistente (Madre) ---

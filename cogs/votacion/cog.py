@@ -1,8 +1,9 @@
 # cogs/votacion/cog.py
+import os
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-from typing import Optional, List, Literal, TYPE_CHECKING
+from typing import Optional, List, Literal, TYPE_CHECKING, Set
 import logging
 import time
 import datetime
@@ -15,6 +16,41 @@ from .poll_modal import PollEditModal
 
 VoteDisplayFormat = Literal["Ambos (Números y %)", "Solo Números", "Solo Porcentaje", "Ocultar hasta el cierre"]
 UserPollDuration = Literal["10 Minutos", "20 Minutos", "30 Minutos", "60 Minutos"]
+
+# Roles que siempre se mencionan al publicar una votación (IDs de rol del servidor).
+# Sobrescribible con VOTACION_NOTIFY_ROLE_IDS=id1,id2
+_DEFAULT_VOTACION_NOTIFY_ROLE_IDS: tuple[int, ...] = (1424910127680716860, 1424927660097929348)
+_VOTACION_ALLOWED = discord.AllowedMentions(everyone=False, users=True, roles=True)
+
+
+def _votacion_notify_role_ids() -> List[int]:
+    raw = (os.getenv("VOTACION_NOTIFY_ROLE_IDS") or "").strip()
+    ids: List[int] = []
+    if raw:
+        for part in raw.split(","):
+            p = part.strip()
+            if p.isdigit():
+                ids.append(int(p))
+    return ids if ids else list(_DEFAULT_VOTACION_NOTIFY_ROLE_IDS)
+
+
+def _votacion_ping_line(
+    guild: Optional[discord.Guild],
+    *extra_roles: Optional[discord.Role],
+) -> str:
+    """Menciones `<@&id>` + roles extra (sin duplicar)."""
+    seen: Set[int] = set()
+    parts: List[str] = []
+    for rid in _votacion_notify_role_ids():
+        if rid not in seen:
+            parts.append(f"<@&{rid}>")
+            seen.add(rid)
+    for role in extra_roles:
+        if role is not None and role.id not in seen:
+            parts.append(role.mention)
+            seen.add(role.id)
+    return " ".join(parts)
+
 
 def is_hokage():
     async def predicate(interaction: discord.Interaction) -> bool:
@@ -59,8 +95,8 @@ class PollHelpView(discord.ui.View):
         )
         embed.add_field(
             name="Comandos Disponibles",
-            value="`/crear_votacion` - Inicia el proceso para crear tu encuesta.\n"
-                  "`/mis_resultados` - Muestra (en privado) quién votó qué en una encuesta que tú creaste.",
+            value="`/crear-votacion` - Inicia el proceso para crear tu encuesta.\n"
+                  "`/mis-resultados` - Muestra (en privado) quién votó qué en una encuesta que tú creaste.",
             inline=False
         )
         embed.set_footer(text="Usa los botones para navegar.")
@@ -69,7 +105,7 @@ class PollHelpView(discord.ui.View):
     def _create_page_2(self) -> discord.Embed:
         embed = discord.Embed(
             title="Cómo Crear una Votación (Página 2/3)",
-            description="Usar el comando `/crear_votacion` es muy fácil.",
+            description="Usar el comando `/crear-votacion` es muy fácil.",
             color=discord.Color.green()
         )
         embed.add_field(
@@ -97,13 +133,13 @@ class PollHelpView(discord.ui.View):
             color=discord.Color.purple()
         )
         embed.add_field(
-            name="Comando `/mis_resultados`",
+            name="Comando `/mis-resultados`",
             value="Este comando es **privado**. Solo tú puedes usarlo y solo tú verás la respuesta.",
             inline=False
         )
         embed.add_field(
             name="¿Cómo funciona?",
-            value="1. Escribe `/mis_resultados`.\n"
+            value="1. Escribe `/mis-resultados`.\n"
                   "2. En la opción `votacion_id`, empieza a escribir el título de la votación que creaste.\n"
                   "3. El bot te mostrará una lista (con un ID, ej: `#123: Mi Votación`). ¡Selecciónala!\n"
                   "4. El bot te responderá con un mensaje privado listando quién votó por cada opción.",
@@ -266,11 +302,14 @@ class VotacionCog(commands.Cog):
         }
         embed = create_poll_embed(temp_poll_data, author=creator)
         view = PollView(poll_options=None, db_manager=self.db)
+        ping = _votacion_ping_line(guild)
+        shop_head = f"🛒 **Votación de la tienda** — pedida por **{creator.display_name}**."
         try:
             poll_message = await channel.send(
-                content=f"🛒 **Votación de la tienda** — pedida por **{creator.display_name}**.",
+                content=f"{ping}\n{shop_head}" if ping else shop_head,
                 embed=embed,
                 view=view,
+                allowed_mentions=_VOTACION_ALLOWED,
             )
         except discord.Forbidden:
             return False, "Sin permiso para escribir en el canal de votaciones.", None
@@ -305,7 +344,7 @@ class VotacionCog(commands.Cog):
         await poll_message.edit(embed=final_embed, view=final_view)
         return True, "", poll_message
 
-    @app_commands.command(name="crear_votacion", description="Crea una votación de usuario simple (max 4 opciones).")
+    @app_commands.command(name="crear-votacion", description="Crea una votación de usuario simple (max 4 opciones).")
     @app_commands.describe(
         titulo="El título de la votación",
         opcion1="Opción 1",
@@ -347,9 +386,15 @@ class VotacionCog(commands.Cog):
         }
 
         embed = create_poll_embed(temp_poll_data, author=interaction.user)
-        view = PollView(poll_options=None, db_manager=self.db) 
-        
-        poll_message = await interaction.followup.send(embed=embed, view=view)
+        view = PollView(poll_options=None, db_manager=self.db)
+        ping = _votacion_ping_line(interaction.guild)
+        head = "🗳️ **Nueva votación**"
+        poll_message = await interaction.followup.send(
+            content=f"{ping}\n{head}" if ping else head,
+            embed=embed,
+            view=view,
+            allowed_mentions=_VOTACION_ALLOWED,
+        )
 
         try:
             self.db.add_poll(
@@ -379,7 +424,7 @@ class VotacionCog(commands.Cog):
         
         await interaction.followup.send(f"¡Votación creada! Terminará automáticamente {discord.utils.format_dt(datetime.datetime.fromtimestamp(end_timestamp), style='R')}.", ephemeral=True)
 
-    @app_commands.command(name="crear_votacionadmin", description="[ADMIN] Crea una votación avanzada.")
+    @app_commands.command(name="crear-votacionadmin", description="[ADMIN] Crea una votación avanzada.")
     @app_commands.describe(
         titulo="El título de la votación",
         opcion1="Opción de votación 1",
@@ -447,11 +492,8 @@ class VotacionCog(commands.Cog):
 
         await interaction.response.defer() 
 
-        roles_to_ping = [r for r in [rol_1, rol_2, rol_3] if r is not None]
-        notification_content = ""
-        if roles_to_ping:
-            mentions = ' '.join([r.mention for r in roles_to_ping])
-            notification_content = f"¡Atención {mentions}! Nueva votación:"
+        ping = _votacion_ping_line(interaction.guild, rol_1, rol_2, rol_3)
+        notification_content = f"¡Atención {ping}! Nueva votación:" if ping else ""
 
         formato_db = {
             "Ambos (Números y %)": "ambos",
@@ -476,9 +518,10 @@ class VotacionCog(commands.Cog):
         view = PollView(poll_options=None, db_manager=self.db) 
         
         poll_message = await interaction.followup.send(
-            content=notification_content,
-            embed=embed, 
-            view=view
+            content=notification_content or None,
+            embed=embed,
+            view=view,
+            allowed_mentions=_VOTACION_ALLOWED,
         )
 
         try:
@@ -682,7 +725,7 @@ class VotacionCog(commands.Cog):
             embed.add_field(name=f"Opción: {label} ({len(user_ids)} votos)", value=value_str, inline=False)
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="mis_resultados", description="Muestra los resultados de una votación que tú creaste.")
+    @app_commands.command(name="mis-resultados", description="Muestra los resultados de una votación que tú creaste.")
     @app_commands.autocomplete(votacion_id=my_votacion_autocomplete)
     @app_commands.describe(votacion_id="Elige una de tus votaciones activas.")
     async def mis_resultados(self, interaction: discord.Interaction, votacion_id: str):

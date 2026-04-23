@@ -18,7 +18,7 @@ class CreadorCog(commands.Cog, name="Rol de Creador"):
         self.canal_contenido_id = self.task_config.get("channels", {}).get("contenido_comunidad")
         self.hokage_role_id = bot.hokage_role_id
 
-    @app_commands.command(name="solicitar_rol_creador", description="Verifica si tienes 20,000+ puntos para obtener el rol Creador (1 sola vez).")
+    @app_commands.command(name="solicitar-rol-creador", description="Verifica si tienes 20,000+ puntos para obtener el rol Creador (1 sola vez).")
     async def solicitar_rol_creador(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         user_id = interaction.user.id
@@ -92,7 +92,7 @@ class CreadorCog(commands.Cog, name="Rol de Creador"):
                 embed = discord.Embed(title="Publicación Borrada", description=f"Tu mensaje en <#{message.channel.id}> fue borrado.", color=discord.Color.red())
                 embed.add_field(name="Razón", value=f"Solo los usuarios con el rol **{role.name}** pueden publicar en este canal.")
                 embed.add_field(name="¿Cómo consigo el rol?", value=f"Puedes obtenerlo si tienes **{self.costo_rol} puntos** de economía.\n"
-                                                              f"Usa el comando `/solicitar_rol_creador` para verificar tus puntos.", inline=False)
+                                                              f"Usa el comando `/solicitar-rol-creador` para verificar tus puntos.", inline=False)
                 await message.author.send(embed=embed)
                 
             except discord.Forbidden:

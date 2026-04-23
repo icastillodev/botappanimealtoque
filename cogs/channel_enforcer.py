@@ -16,6 +16,10 @@ PUBLIC_GENERAL_PREFIX_COMMANDS = frozenset(
         "puntos",
         "inventario",
         "top",
+        "tophist",
+        "histtop",
+        "tophistorico",
+        "mi",
         "rank",
         "ranking",
         "reclamar",
@@ -94,8 +98,8 @@ class ChannelEnforcerCog(commands.Cog, name="Limpieza de Chat"):
                 embed = discord.Embed(
                     description=(
                         f"🚫 **{message.author.mention}, en #general no se usan comandos con `?` (salvo los permitidos).**\n"
-                        f"Guía completa: **`?guia`** o **`/aat_guia`**. Slash en <#{self.bot_channel_id}> "
-                        f"(economía: `/aat_ayuda`, cartas: `/usar`)."
+                        f"Guía completa: **`?guia`** o **`/aat-guia`**. Slash en <#{self.bot_channel_id}> "
+                        f"(economía: `/aat-ayuda`, cartas: `/usar`)."
                     ),
                     color=discord.Color.red()
                 )

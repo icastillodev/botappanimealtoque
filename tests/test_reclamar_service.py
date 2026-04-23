@@ -17,6 +17,9 @@ class TestReclaimRewards(unittest.TestCase):
             "reaccion_reglas": 1,
             "general_mensaje": 1,
         }
+        db.wishlist_total_filled.return_value = 10
+        db.anime_top_count_filled.return_value = 10
+        db.hated_total_filled.return_value = 5
         task_config = {"rewards": {"inicial": 1000, "diaria": 1, "semanal": 1}}
 
         ok, ok_msgs, err_msgs = reclaim_rewards(db, task_config, 12345, "inicial")

@@ -65,7 +65,11 @@ async def _generate_feed_embed(bot: commands.Bot) -> discord.Embed:
             "Encuentra una partida o crea la tuya con `/crearsimpostor` "
             f"(elegís el cupo, hasta **{cap_hint}** según configuración).\n"
             "Usa `/helpimpostor` para las reglas.\n\n"
-            "**🔔** Tocá el botón para darte o quitarte el rol de avisos de partidas."
+            "**🔔 Avisos por mención:** para que te lleguen las notificaciones cuando buscan gente para Impostor, "
+            "marcá el botón **Avisos Impostor** abajo (te da o quita el rol de avisos del servidor).\n"
+            "• **Verde** — no tenés el rol; tocá para **activar** avisos.\n"
+            "• **Rojo** — ya tenés el rol; tocá de nuevo para **apagar** avisos.\n"
+            "_El color se actualiza al tocar el botón (refleja el último cambio en el panel)._"
         ),
         color=discord.Color.blue()
     )
@@ -142,7 +146,7 @@ async def update_feed(bot: commands.Bot):
         if _LAST_FEED_MESSAGE_ID:
             try:
                 msg = await channel.fetch_message(_LAST_FEED_MESSAGE_ID)
-                await msg.edit(embed=embed, view=ImpostorNotifyView())
+                await msg.edit(embed=embed, view=ImpostorNotifyView(subscribed=False))
                 # log.debug(f"Feed actualizado (Editado por ID): {msg.id}")
                 return
             except discord.NotFound:
@@ -160,7 +164,7 @@ async def update_feed(bot: commands.Bot):
             async for msg in channel.history(limit=50):
                 if msg.author.id == bot.user.id:
                     _LAST_FEED_MESSAGE_ID = msg.id
-                    await msg.edit(embed=embed, view=ImpostorNotifyView())
+                    await msg.edit(embed=embed, view=ImpostorNotifyView(subscribed=False))
                     # log.debug(f"Feed actualizado (Editado por Búsqueda): {msg.id}")
                     return
         except discord.Forbidden:
@@ -171,7 +175,7 @@ async def update_feed(bot: commands.Bot):
             
         # --- Estrategia 3: Enviar mensaje nuevo ---
         try:
-            new_msg = await channel.send(embed=embed, view=ImpostorNotifyView())
+            new_msg = await channel.send(embed=embed, view=ImpostorNotifyView(subscribed=False))
             _LAST_FEED_MESSAGE_ID = new_msg.id
             log.info(f"Nuevo feed publicado en {channel.name} (ID: {new_msg.id})")
         except discord.Forbidden:
@@ -197,7 +201,7 @@ class ImpostorFeedCog(commands.Cog, name="ImpostorFeed"):
         await asyncio.sleep(1) 
         await update_feed(self.bot)
 
-    @app_commands.command(name="feed_refresh", description="[Admin] Fuerza la actualización de la cartelera de Impostor.")
+    @app_commands.command(name="feed-refresh", description="[Admin] Fuerza la actualización de la cartelera de Impostor.")
     @app_commands.checks.has_any_role(
         int(role_id.strip()) for role_id in os.getenv("IMPOSTOR_ADMIN_ROLE_IDS", "").split(',') if role_id.strip()
     )
@@ -216,7 +220,7 @@ class ImpostorFeedCog(commands.Cog, name="ImpostorFeed"):
                 ephemeral=True
             )
         else:
-            log.error(f"Error en /feed_refresh: {error}")
+            log.error(f"Error en /feed-refresh: {error}")
             await interaction.response.send_message(
                 "❌ Ocurrió un error inesperado.",
                 ephemeral=True

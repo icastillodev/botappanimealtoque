@@ -7,6 +7,7 @@ import logging
 import datetime
 
 from .db_manager import EconomiaDBManagerV2
+from .toque_labels import guia_toque_explicacion, toque_emote
 from .card_db_manager import CardDBManager
 from . import card_effectos
 
@@ -29,7 +30,7 @@ class StockCatalogView(discord.ui.View):
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.author_id:
-            await interaction.response.send_message("No puedes usar este paginador. Usa `/aat_catalogo` para ver el tuyo.", ephemeral=True)
+            await interaction.response.send_message("No puedes usar este paginador. Usa `/aat-catalogo` para ver el tuyo.", ephemeral=True)
             return False
         return True
 
@@ -110,20 +111,24 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
         return choices[:25]
 
     # --- Comandos ---
-    @app_commands.command(name="aat_puntos", description="Muestra cuántos puntos tienes.")
+    @app_commands.command(name="aat-puntos", description="Muestra tu saldo de Toque points (moneda del canal).")
     async def mis_puntos(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         user_data = self.economia_db.get_user_economy(interaction.user.id)
+        tq = toque_emote()
         embed = discord.Embed(
-            title=f"🪙 Puntos de {interaction.user.display_name}",
-            description=f"Tienes **{user_data['puntos_actuales']}** puntos para gastar.",
-            color=discord.Color.gold()
+            title=f"{tq} Toque points — {interaction.user.display_name}",
+            description=(
+                f"Tienes **{user_data['puntos_actuales']}** para gastar.\n\n"
+                f"{guia_toque_explicacion()}"
+            ),
+            color=discord.Color.gold(),
         )
         embed.add_field(name="Total Conseguido", value=f"{user_data['puntos_conseguidos']}", inline=True)
         embed.add_field(name="Total Gastado", value=f"{user_data['puntos_gastados']}", inline=True)
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="aat_inventario", description="Muestra tu stash de puntos, créditos y blisters.")
+    @app_commands.command(name="aat-inventario", description="Muestra tu stash de Toque points, créditos y blisters.")
     async def inventario(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         user_id = interaction.user.id
@@ -132,20 +137,20 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
         blisters = self.economia_db.get_blisters_for_user(user_id)
         
         embed = discord.Embed(title=f"Inventario de {interaction.user.display_name}", color=discord.Color.dark_green())
-        embed.add_field(name="🪙 Puntos Actuales", value=f"{eco_data['puntos_actuales']}", inline=True)
+        embed.add_field(name=f"{toque_emote()} Toque points", value=f"{eco_data['puntos_actuales']}", inline=True)
         embed.add_field(name="📌 Créditos para Fijar", value=f"{eco_data['creditos_pin']}", inline=True)
         
-        blister_desc = "No tenés blisters.\n¡Conseguí más con `/aat_reclamar diaria`!"
+        blister_desc = "No tenés blisters.\n¡Conseguí más con `/aat-reclamar diaria`!"
         if blisters:
             blister_desc = ""
             for b in blisters:
                 blister_desc += f"• **Blister de {b['blister_tipo'].capitalize()}**: x{b['cantidad']}\n"
         
         embed.add_field(name="🃏 Blisters (Sobres)", value=blister_desc, inline=False)
-        embed.set_footer(text="Usa /aat_abrirblister para abrir tus sobres.")
+        embed.set_footer(text="Usa /aat-abrirblister para abrir tus sobres.")
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="aat_abrirblister", description="Abre blisters (sobres) de tu inventario.")
+    @app_commands.command(name="aat-abrirblister", description="Abre blisters (sobres) de tu inventario.")
     @app_commands.autocomplete(tipo=blister_autocomplete)
     @app_commands.describe(tipo="El tipo de blister que quieres abrir.", cantidad="Cuántos quieres abrir (1, 5, o todos).")
     async def abrir_blister(self, interaction: discord.Interaction, tipo: str, cantidad: CantidadBlister):
@@ -199,16 +204,16 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
         for nombre, num in conteo_cartas.items():
             desc += f"• {nombre} (x{num})\n"
         embed.description = desc
-        embed.set_footer(text="Puedes ver tu colección completa con /aat_miscartas")
+        embed.set_footer(text="Puedes ver tu colección completa con /aat-miscartas")
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="aat_miscartas", description="Muestra tu inventario de cartas.")
+    @app_commands.command(name="aat-miscartas", description="Muestra tu inventario de cartas.")
     async def mis_cartas(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         cartas_inv = self.economia_db.get_cards_in_inventory(interaction.user.id)
         embed = discord.Embed(title=f"Inventario de Cartas de {interaction.user.display_name}", color=discord.Color.blue())
         if not cartas_inv:
-            embed.description = "No tenés ninguna carta. ¡Conseguí blisters con `/aat_reclamar diaria`!"
+            embed.description = "No tenés ninguna carta. ¡Conseguí blisters con `/aat-reclamar diaria`!"
             await interaction.followup.send(embed=embed, ephemeral=True)
             return
         desc = ""
@@ -343,7 +348,7 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
         embed.add_field(name="Poder", value=str(carta.get("poder", 50)), inline=True)
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="aat_catalogo", description="Muestra todas las cartas que existen en el juego.")
+    @app_commands.command(name="aat-catalogo", description="Muestra todas las cartas que existen en el juego.")
     @app_commands.describe(tipo="El tipo de cartas que quieres ver (default: Todas).")
     async def catalogo(self, interaction: discord.Interaction, tipo: TipoCartaCatalogo = "Todas"):
         await interaction.response.defer(ephemeral=True) 

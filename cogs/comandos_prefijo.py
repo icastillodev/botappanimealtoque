@@ -13,9 +13,20 @@ from cogs.economia.db_manager import EconomiaDBManagerV2
 from cogs.economia.card_db_manager import CardDBManager
 from cogs.economia.cartas_cog import StockCatalogView
 from cogs.economia import card_effectos
-from cogs.economia.reclamar_service import reclaim_rewards
+from cogs.economia.reclamar_service import (
+    INICIAL_HATED_MIN,
+    INICIAL_TOP_MIN,
+    INICIAL_WISHLIST_MIN,
+    PERFIL_HATED_CAP,
+    PERFIL_TOP_CAP,
+    PERFIL_WISHLIST_CAP,
+    build_inicial_reclaim_hint,
+    reclaim_rewards,
+)
 from cogs.economia.anime_top_cog import _embed_top_for
-from cogs.economia.guia_contenido import build_guia_embeds
+from cogs.economia.guia_contenido import build_guia_embeds, chunk_guia_embeds_for_send
+from cogs.economia.toque_labels import fmt_toque_sentence, guia_toque_explicacion, toque_emote
+from cogs.economia.mi_resumen import render_mi_embed, render_top_embed
 from cogs.impostor import core as impostor_core
 from cogs.impostor import feed as impostor_feed
 from cogs.impostor import notify as impostor_notify
@@ -36,25 +47,28 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         embed = discord.Embed(
             title="Comandos del bot (Anime al Toque)",
             description=(
-                "**Lista completa** (todos los `?` y `/`): **`?ayuda`** / **`?guia`** / **`/aat_guia`** (varios embeds).\n"
+                "**Lista completa** (todos los `?` y `/`): **`?ayuda`** / **`?guia`** / **`/aat-guia`** (varios embeds).\n"
                 "**Con `?` en el canal** (todos lo ven) — atajos abajo.\n"
                 "**Con `/`** — versión completa (Discord te autocompleta).\n\n"
-                "**Economía:** `?puntos` · `?inventario` · `?top` · `?reclamar` · `?progreso` · "
+                "**Economía:** `?puntos` · `?inventario` · `?mi` · `?top` · `?tophist` · `?reclamar` · `?progreso` · "
                 "`?diaria` · `?semanal` · `?inicial` · `?abrir` · `?miscartas` · `?catalogo` · `?usar`\n"
                 "**Impostor:** `?impostor` — avisá que buscás gente / ver lobbies abiertos.\n"
-                "**Oráculo:** arrobá al bot + tu pregunta en el mismo mensaje · `?pregunta` + texto · `/aat_consulta` — sí / no / a veces %. Cuenta para la **diaria** y puede dar puntos extra.\n"
-                "**Top anime:** `?animetop` · `?animetop @usuario` — slash: `/aat_anime_top_*`\n"
-                "**Perfil:** `/aat_wishlist_*` · `/aat_hated_*` · `/aat_chars_*` (wishlist 1–30, odiados 1–10, personajes 1–10).\n"
+                "**Oráculo:** arrobá al bot + tu pregunta en el mismo mensaje · `?pregunta` + texto · `/aat-consulta` — sí / no / a veces %. Cuenta para la **diaria** y puede dar **Toque points** extra.\n"
+                "**Top anime:** `?animetop` · `?animetop @usuario` — slash: `/aat-anime-top_*`\n"
+                "**Perfil:** `/aat-wishlist_*` · `/aat-hated_*` · `/aat-chars_*` (wishlist 1–33, odiados 1–10, personajes 1–10).\n"
                 "**Trivia anime:** el bot publica en **#general**; respondé ahí con `?respuestapregunta` + respuesta.\n"
-                "**Slash útiles:** `/aat_ayuda` · `/crearsimpostor` · `/entrar` · `/aat_tienda_ver`"
+                "**Slash útiles:** `/aat-ayuda` · `/crearsimpostor` · `/entrar` · `/aat-tienda-ver`"
             ),
             color=discord.Color.blurple(),
         )
         await ctx.send(embed=embed)
 
     async def _send_full_guia_embeds(self, ctx: commands.Context) -> None:
-        embeds = build_guia_embeds(self.bot)[:10]
-        await ctx.send(embeds=embeds)
+        chunks = chunk_guia_embeds_for_send(self.bot)
+        n = len(chunks)
+        for i, part in enumerate(chunks):
+            head = f"📚 **Guía ({i + 1}/{n})**" if n > 1 else None
+            await ctx.send(content=head, embeds=part)
 
     @commands.command(name="ayuda")
     async def ayuda(self, ctx: commands.Context):
@@ -65,9 +79,14 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
     async def puntos_cmd(self, ctx: commands.Context):
         self.db.ensure_user_exists(ctx.author.id)
         eco = self.db.get_user_economy(ctx.author.id)
+        tq = toque_emote()
         embed = discord.Embed(
-            title=f"Puntos de {ctx.author.display_name}",
-            description=f"**{eco['puntos_actuales']}** puntos · Conseguidos: {eco['puntos_conseguidos']} · Gastados: {eco['puntos_gastados']}",
+            title=f"{tq} Toque points — {ctx.author.display_name}",
+            description=(
+                f"**{eco['puntos_actuales']}** actuales · Conseguidos: **{eco['puntos_conseguidos']}** · "
+                f"Gastados: **{eco['puntos_gastados']}**\n\n"
+                f"{guia_toque_explicacion()}"
+            ),
             color=discord.Color.gold(),
         )
         await ctx.send(embed=embed)
@@ -80,7 +99,7 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         lines = "\n".join(f"• {b['blister_tipo']}: x{b['cantidad']}" for b in blisters) or "Ninguno"
         embed = discord.Embed(
             title=f"Inventario de {ctx.author.display_name}",
-            description=f"Puntos: **{eco['puntos_actuales']}** · Pins: **{eco['creditos_pin']}**\n{lines}",
+            description=f"Toque points: **{eco['puntos_actuales']}** · Pins: **{eco['creditos_pin']}**\n{lines}",
             color=discord.Color.dark_green(),
         )
         await ctx.send(embed=embed)
@@ -103,19 +122,39 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         emb = _embed_top_for(self.bot, target, rows, viewer_is_target=target.id == ctx.author.id)
         await ctx.send(embed=emb)
 
+    @commands.command()
+    async def mi(self, ctx: commands.Context):
+        """Saldo, posición en `?top` y `?tophist`, cartas en inventario y totales."""
+        self.db.ensure_user_exists(ctx.author.id)
+        embed = await render_mi_embed(self.bot, self.db, ctx.author)
+        await ctx.send(embed=embed)
+
+    @commands.command(aliases=["histtop", "tophistorico"])
+    async def tophist(self, ctx: commands.Context):
+        """Top 5 por total histórico ganado (`puntos_conseguidos`), sin importar lo gastado."""
+        tq = toque_emote()
+        embed = await render_top_embed(
+            self.bot,
+            self.db,
+            ranking_type="conseguidos",
+            points_key="puntos_conseguidos",
+            title=f"{tq} Top 5 — histórico ganado (total conseguido)",
+            limit=5,
+        )
+        await ctx.send(embed=embed)
+
     @commands.command(aliases=["rank", "ranking"])
     async def top(self, ctx: commands.Context):
-        top_actual = self.db.get_top_users("actual", limit=5)
-        text = ""
-        medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
-        for i, u in enumerate(top_actual):
-            try:
-                user = self.bot.get_user(u["user_id"]) or await self.bot.fetch_user(u["user_id"])
-                name = user.display_name
-            except Exception:
-                name = "Desconocido"
-            text += f"{medals[i]} {name} • **{u['puntos_actuales']}**\n"
-        embed = discord.Embed(title="Top 5 puntos actuales", description=text or "Nadie aún.", color=discord.Color.gold())
+        """Top 5 por saldo actual (`?tophist` = histórico ganado)."""
+        tq = toque_emote()
+        embed = await render_top_embed(
+            self.bot,
+            self.db,
+            ranking_type="actual",
+            points_key="puntos_actuales",
+            title=f"{tq} Top 5 — saldo actual (Toque points)",
+            limit=5,
+        )
         await ctx.send(embed=embed)
 
     @commands.command(aliases=["daily"])
@@ -131,40 +170,101 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         or_n = int(prog.get("oraculo_preguntas") or 0)
         or_ok = or_n >= 1
         rw = self.task_config["rewards"]["diaria"]
-        desc = (
-            f"**Diaria** ({fecha})\n"
-            f"• Mensajes servidor: {msg_n}/10\n"
-            f"• Reacciones: {rx_n}/3\n"
-            f"• Trampa (dirigida o 2 casual): {'OK' if tr_ok else 'pendiente'} ({tr}/1 · {ts}/2)\n"
-            f"• Oráculo (1 pregunta): {'OK' if or_ok else 'pendiente'} (@bot / `?pregunta` / `/aat_consulta`)\n"
-            f"Premio: **{rw}** pts + 1 blister → `?reclamar`"
+        premio_txt = f"Cuando **las dos partes** estén listas: {fmt_toque_sentence(int(rw))} + 1 blister → `?reclamar`"
+        e_act = discord.Embed(
+            title=f"Diaria — actividad y oráculo ({fecha})",
+            description=(
+                f"• Mensajes en el servidor: **{msg_n}/10**\n"
+                f"• Reacciones en el servidor: **{rx_n}/3**\n"
+                f"• Oráculo (1 pregunta): **{'OK' if or_ok else 'pendiente'}** — {or_n}/1 "
+                f"(@bot + pregunta · `?pregunta` · `/aat-consulta`)\n\n"
+                f"_{premio_txt}_"
+            ),
+            color=discord.Color.orange(),
         )
-        await ctx.send(embed=discord.Embed(title="Progreso diario", description=desc, color=discord.Color.orange()))
+        e_tr = discord.Embed(
+            title=f"Diaria — trampa ({fecha})",
+            description=(
+                "**Trampa:** carta **dirigida** a alguien (`?usar` con mención) **o** **2** trampas **sin** objetivo.\n"
+                f"• Dirigida: **{tr}/1**\n"
+                f"• Sin objetivo (hacen falta 2): **{ts}/2**\n"
+                f"• Estado trampa: **{'OK' if tr_ok else 'pendiente'}**\n\n"
+                f"_{premio_txt}_"
+            ),
+            color=discord.Color.dark_orange(),
+        )
+        await ctx.send(embeds=[e_act, e_tr])
 
     @commands.command(aliases=["weekly", "semanal"])
     async def semanal_cmd(self, ctx: commands.Context):
         _, semana = self.db.get_current_date_keys()
         prog = self.db.get_progress_semanal(user_id := ctx.author.id)
         rw = self.task_config["rewards"]
-        desc = (
-            f"**Semanal** (semana {semana.split('-')[-1]})\n"
-            f"• Foro / media / videos: {prog.get('debate_post',0)}/{prog.get('media_escrito',0)}/{prog.get('videos_reaccion',0)} (cada uno 1)\n"
-            f"• Impostor: {int(prog.get('impostor_partidas') or 0)}/3 partidas, victoria impostor: {int(prog.get('impostor_victorias') or 0)}/1\n"
-            f"Premio base: **{rw['semanal']}** pts — especial y minijuegos: `/aat_progreso_semanal`"
+        sl = semana.split("-")[-1]
+        ip = int(prog.get("impostor_partidas") or 0)
+        iv = int(prog.get("impostor_victorias") or 0)
+        pie_sem = (
+            "✅ Premio **semanal base** ya reclamado."
+            if int(prog.get("completado") or 0) == 1
+            else f"**Premio base (una vez):** {fmt_toque_sentence(int(rw['semanal']))} + 1 blister — `?reclamar` cuando estén **media + foro + #videos**."
         )
-        await ctx.send(embed=discord.Embed(title="Progreso semanal", description=desc, color=discord.Color.purple()))
+        e1 = discord.Embed(
+            title=f"Semanal — memes / fanart (sem. {sl})",
+            description=(
+                f"**Media:** publicá algo con contenido en **memes**, **fanarts** u otro canal de creación que cuente el bot — "
+                f"**{int(prog.get('media_escrito') or 0)}/1**\n\n_{pie_sem}_"
+            ),
+            color=discord.Color.purple(),
+        )
+        e2 = discord.Embed(
+            title=f"Semanal — foro y #videos (sem. {sl})",
+            description=(
+                f"**Foro:** {int(prog.get('debate_post') or 0)}/1 · **#videos:** {int(prog.get('videos_reaccion') or 0)}/1\n\n"
+                f"_{pie_sem}_"
+            ),
+            color=discord.Color.dark_purple(),
+        )
+        pie_imp = (
+            "✅ **Impostor** ya reclamado."
+            if int(prog.get("completado_especial") or 0) == 1
+            else f"**Premio aparte:** {fmt_toque_sentence(int(rw.get('especial_semanal', 400)))} — `/aat-progreso-semanal`."
+        )
+        e3 = discord.Embed(
+            title=f"Semanal — Impostor (sem. {sl})",
+            description=f"Partidas: **{ip}/3** · Victoria como impostor: **{iv}/1**\n\n_{pie_imp}_",
+            color=discord.Color.dark_red(),
+        )
+        await ctx.send(embeds=[e1, e2, e3])
 
     @commands.command(aliases=["starter", "iniciacion"])
     async def inicial(self, ctx: commands.Context):
-        prog = self.db.get_progress_inicial(ctx.author.id)
+        uid = ctx.author.id
+        prog = self.db.get_progress_inicial(uid)
         if prog["completado"] == 1:
             await ctx.send("✅ Iniciación ya reclamada.")
             return
-        desc = (
-            "• Presentación · autorol país/rol · redes · reglas · 1 mensaje en #general\n"
-            f"Premio: **{self.task_config['rewards']['inicial']}** pts + 3 blisters → `?reclamar`"
+        wl = int(self.db.wishlist_total_filled(uid))
+        top10 = int(self.db.anime_top_count_filled(uid, INICIAL_TOP_MIN))
+        hat = int(self.db.hated_total_filled(uid))
+        pie = f"Premio: {fmt_toque_sentence(int(self.task_config['rewards']['inicial']))} + 3 blisters → `?reclamar` (Discord + perfil)."
+        e1 = discord.Embed(
+            title="Iniciación — Discord",
+            description=f"Presentación, autorol, redes, reglas y 1× #general.\n\n_{pie}_",
+            color=discord.Color.blue(),
         )
-        await ctx.send(embed=discord.Embed(title="Iniciación", description=desc, color=discord.Color.blue()))
+        e2 = discord.Embed(
+            title="Iniciación — perfil",
+            description=(
+                f"• Wishlist: **{wl}/{INICIAL_WISHLIST_MIN}**\n"
+                f"• Top favoritos (pos. 1–{INICIAL_TOP_MIN}): **{top10}/{INICIAL_TOP_MIN}**\n"
+                f"• Odiados: **{hat}/{INICIAL_HATED_MIN}**\n\n"
+                f"Máx. opcional: wishlist **{min(wl, PERFIL_WISHLIST_CAP)}/{PERFIL_WISHLIST_CAP}**, top "
+                f"**{int(self.db.anime_top_count_filled(uid, PERFIL_TOP_CAP))}/{PERFIL_TOP_CAP}**, "
+                f"odiados **{min(hat, PERFIL_HATED_CAP)}/{PERFIL_HATED_CAP}**.\n\n_{pie}_"
+            ),
+            color=discord.Color.dark_blue(),
+        )
+        await ctx.send(embeds=[e1, e2])
 
     @commands.command()
     async def progreso(self, ctx: commands.Context):
@@ -181,13 +281,17 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         elif err_msgs:
             await ctx.send("\n".join(err_msgs))
         else:
-            await ctx.send("Nada para reclamar ahora. `?progreso` o `/aat_progreso_diaria`.")
+            hint = build_inicial_reclaim_hint(self.db, ctx.author.id)
+            msg = "Nada para reclamar ahora. `?progreso` · `/aat-progreso-diaria`."
+            if hint:
+                msg = f"{msg}\n\n{hint}"
+            await ctx.send(msg)
 
     @commands.command()
     async def miscartas(self, ctx: commands.Context):
         cartas = self.db.get_cards_in_inventory(ctx.author.id)
         if not cartas:
-            await ctx.send("No tenés cartas. Abrí blisters con `?abrir` o `/aat_abrirblister`.")
+            await ctx.send("No tenés cartas. Abrí blisters con `?abrir` o `/aat-abrirblister`.")
             return
         lines: List[str] = []
         for c in cartas:
@@ -348,17 +452,17 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         extra = discord.Embed(title="📋 Ver qué te falta y reclamar", color=discord.Color.blurple())
         extra.description = (
             "**En este canal (todos lo ven):** `?progreso` · `?diaria` · `?semanal` · `?inicial` · `?reclamar`\n"
-            "**Por slash (también sirve en #general):** `/aat_progreso_iniciacion` · `/aat_progreso_diaria` · "
-            "`/aat_progreso_semanal` · `/aat_reclamar`\n\n"
-            "Tip: si querés reclamar **solo** un tipo con slash, usá `/aat_reclamar` eligiendo "
+            "**Por slash (también sirve en #general):** `/aat-progreso-iniciacion` · `/aat-progreso-diaria` · "
+            "`/aat-progreso-semanal` · `/aat-reclamar`\n\n"
+            "Tip: si querés reclamar **solo** un tipo con slash, usá `/aat-reclamar` eligiendo "
             "`inicial` / `diaria` / `semanal` / `semanal_especial` / `semanal_minijuegos`.\n"
-            "Guía completa en embeds: `?ayuda` / `?guia` / `/aat_guia`. Interactiva (solo vos): `/aat_ayuda`."
+            "Guía completa en embeds: `?ayuda` / `?guia` / `/aat-guia`. Interactiva (solo vos): `/aat-ayuda`."
         )
         await ctx.send(embeds=[e0, extra])
 
     @commands.command(name="guia")
     async def guia(self, ctx: commands.Context):
-        """Guía larga (embeds): puntos, recompensas, tienda, cartas, comandos. También: `/aat_guia`; con botones: `/aat_ayuda`."""
+        """Guía larga (embeds): puntos, recompensas, tienda, cartas, comandos. También: `/aat-guia`; con botones: `/aat-ayuda`."""
         await self._send_full_guia_embeds(ctx)
 
     @usar.error

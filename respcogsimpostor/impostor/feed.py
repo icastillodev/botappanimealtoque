@@ -188,7 +188,7 @@ class ImpostorFeedCog(commands.Cog, name="ImpostorFeed"):
         await asyncio.sleep(1) 
         await update_feed(self.bot)
 
-    @app_commands.command(name="feed_refresh", description="[Admin] Fuerza la actualización de la cartelera de Impostor.")
+    @app_commands.command(name="feed-refresh", description="[Admin] Fuerza la actualización de la cartelera de Impostor.")
     @app_commands.checks.has_any_role(
         int(role_id.strip()) for role_id in os.getenv("IMPOSTOR_ADMIN_ROLE_IDS", "").split(',') if role_id.strip()
     )
@@ -207,7 +207,7 @@ class ImpostorFeedCog(commands.Cog, name="ImpostorFeed"):
                 ephemeral=True
             )
         else:
-            log.error(f"Error en /feed_refresh: {error}")
+            log.error(f"Error en /feed-refresh: {error}")
             await interaction.response.send_message(
                 "❌ Ocurrió un error inesperado.",
                 ephemeral=True

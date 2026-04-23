@@ -185,7 +185,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
         embed.set_footer(
             text=(
                 f"Tipo: {cat} · dado {dado}/100 · cuenta diaria · "
-                f"formas: @bot + pregunta · ?pregunta · /aat_consulta"
+                f"formas: @bot + pregunta · ?pregunta · /aat-consulta"
             )
         )
         return embed
@@ -210,7 +210,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
         self._oracle_mark_use(ctx.author.id)
 
     @app_commands.command(
-        name="aat_consulta",
+        name="aat-consulta",
         description="Preguntá al oráculo (sí / no / %). También: @bot + pregunta en el canal o ?pregunta.",
     )
     @app_commands.describe(pregunta="Lo que querés preguntar (sí / no / a veces un porcentaje).")
@@ -265,7 +265,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             try:
                 await message.reply(
                     "Escribí la **pregunta** en el mismo mensaje donde me arrobás "
-                    f"(ej. {me.mention} ¿va a llover mañana?). También podés usar `?pregunta …` o `/aat_consulta`.",
+                    f"(ej. {me.mention} ¿va a llover mañana?). También podés usar `?pregunta …` o `/aat-consulta`.",
                     mention_author=False,
                 )
             except discord.HTTPException:
