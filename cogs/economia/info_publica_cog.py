@@ -71,8 +71,9 @@ class InfoPublicaCog(commands.Cog, name="Economía info pública"):
             if raw_bc.isdigit():
                 hint = f" Probá también en <#{raw_bc}> (canal de comandos del bot)."
             await interaction.followup.send(
-                "Discord rechazó parte del envío (faltan **Incrustar enlaces** / **Insertar enlaces** en este canal, "
-                "o el mensaje supera límites). Pedí al staff que revise permisos del rol del bot."
+                "Discord rechazó parte del envío. Si el bot ya tiene **Incrustar enlaces** acá, asegurate de tener "
+                "la **última versión del código** (se corrigieron límites de tamaño de la guía). Si no, pedí al staff "
+                "que revise permisos del rol del bot."
                 + hint,
                 ephemeral=True,
             )

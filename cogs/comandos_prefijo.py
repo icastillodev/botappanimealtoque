@@ -102,8 +102,9 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
                 )
             except Exception:
                 await ctx.send(
-                    "Discord rechazó el envío (revisá **Incrustar enlaces** / **Insertar enlaces** para el bot en este canal). "
-                    "Probá en otro canal o `/aat-guia`.",
+                    "Discord rechazó el envío. Si el bot ya tiene **Incrustar enlaces** acá, actualizá el bot a la última "
+                    "versión (había un límite de 1024 caracteres por bloque de texto en la guía). "
+                    "Probá `/aat-guia` o en otro canal.",
                     mention_author=False,
                 )
 

@@ -19,6 +19,93 @@ def _linea_precio(nombre: str, precio: int) -> Optional[str]:
     return None
 
 
+# Límites API Discord (embed): valor de campo ≤1024; descripción ≤4096; máx. 25 campos por embed.
+_MAX_FIELD_VALUE_LEN = 1020
+_MAX_FIELDS_PER_EMBED = 25
+_MAX_DESCRIPTION_LEN = 4096
+
+
+def _split_field_value(value: str, limit: int = _MAX_FIELD_VALUE_LEN) -> List[str]:
+    """Parte un texto en trozos ≤ limit, cortando preferentemente por líneas."""
+    if not value:
+        return [""]
+    if len(value) <= limit:
+        return [value]
+    chunks: List[str] = []
+    lines = value.split("\n")
+    cur: List[str] = []
+    cur_len = 0
+    for line in lines:
+        while len(line) > limit:
+            if cur:
+                chunks.append("\n".join(cur))
+                cur = []
+                cur_len = 0
+            chunks.append(line[:limit])
+            line = line[limit:]
+        add = len(line) + (1 if cur else 0)
+        if cur_len + add > limit and cur:
+            chunks.append("\n".join(cur))
+            cur = [line]
+            cur_len = len(line)
+        else:
+            cur.append(line)
+            cur_len += add
+    if cur:
+        chunks.append("\n".join(cur))
+    return [c[:1024] for c in chunks]
+
+
+def _normalize_embed_for_discord_limits(src: discord.Embed) -> List[discord.Embed]:
+    """Parte valores de campo largos y reparte en varios embeds si hace falta (>25 campos)."""
+    rows: List[tuple[str, str, bool]] = []
+    for f in src.fields:
+        base_name = (f.name or "Campo")[:240]
+        for i, part in enumerate(_split_field_value(f.value or "")):
+            nm = base_name if i == 0 else f"{base_name} ({i + 1})"[:256]
+            rows.append((nm, part, f.inline))
+
+    if not rows:
+        e = discord.Embed(
+            title=src.title[:256] if src.title else None,
+            description=(src.description or "")[:_MAX_DESCRIPTION_LEN] or None,
+            color=src.color,
+        )
+        if src.footer and src.footer.text:
+            e.set_footer(text=src.footer.text[:2048])
+        return [e]
+
+    out: List[discord.Embed] = []
+    i = 0
+    part_n = 0
+    while i < len(rows):
+        chunk = rows[i : i + _MAX_FIELDS_PER_EMBED]
+        i += len(chunk)
+        part_n += 1
+        if part_n == 1:
+            e = discord.Embed(
+                title=src.title[:256] if src.title else None,
+                description=((src.description or "")[:_MAX_DESCRIPTION_LEN] or None),
+                color=src.color,
+            )
+            if src.footer and src.footer.text:
+                e.set_footer(text=src.footer.text[:2048])
+        else:
+            title = (src.title or "Guía")[:220]
+            e = discord.Embed(title=f"{title} (parte {part_n})"[:256], color=src.color)
+        for name, val, inline in chunk:
+            e.add_field(name=name[:256], value=val[:1024], inline=inline)
+        out.append(e)
+    return out
+
+
+def _normalize_guia_embed_list(embeds: List[discord.Embed]) -> List[discord.Embed]:
+    flat: List[discord.Embed] = []
+    for emb in embeds:
+        flat.extend(_normalize_embed_for_discord_limits(emb))
+    return flat[:25]
+
+
 def guia_fixed_channel_id(bot: Any) -> int:
     tc = getattr(bot, "task_config", None) or {}
     gid = int((tc.get("channels") or {}).get("guia_bot") or 0)
@@ -62,7 +149,7 @@ def _embed_char_count(embed: discord.Embed) -> int:
 
 def chunk_guia_embeds_for_send(bot: Any) -> List[List[discord.Embed]]:
     """Parte la guía respetando el límite combinado de ~6000 caracteres y ≤10 embeds por mensaje."""
-    embeds = build_guia_embeds(bot)[:10]
+    embeds = _normalize_guia_embed_list(build_guia_embeds(bot)[:10])
     if not embeds:
         return []
     chunks: List[List[discord.Embed]] = []
