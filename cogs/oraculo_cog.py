@@ -1,9 +1,11 @@
 # Preguntas sí / no (40% sí, 40% no, 20% respuesta con % al azar).
-# Cuentas tipo «2+2?» no usan el dado (respuesta fija “no soy calculadora”).
+# Cuentas simples («2+2», «te pregunte 3*4»): resultado exacto en el bot (rápido); si no se puede parsear, IA local.
 # La IA local (Ollama) solo entra en preguntas “abiertas”; el resto siempre va al dado (más divertido).
 # Cuenta para la diaria + puntos extra (config .env).
 from __future__ import annotations
 
+import ast
+import math
 import os
 import random
 import re
@@ -11,6 +13,8 @@ import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import Deque, Dict, Literal, Optional, Tuple
+
+_OracleResponseKind = Literal["yesno", "open", "llm", "math"]
 
 import discord
 from discord import app_commands
@@ -21,11 +25,114 @@ from cogs.oracle_llm import oracle_local_reply, oracle_local_reply_followup
 
 # Preguntas que no son un sí/no claro: mejor “charla” que un porcentaje místico.
 # Solo números y operadores (p. ej. "2+2?", "12 * 3") — no va al dado sí/no.
-_ARITH_EXPRESSION_ONLY_RE = re.compile(r"^[\d\s\+\-\*\/x×÷.,\(\)=]+$", re.IGNORECASE)
+_ARITH_EXPRESSION_ONLY_RE = re.compile(r"^[\d\s\+\-\*\/x×÷.,\(\)=%^]+$", re.IGNORECASE)
+# Cuenta “visible” dentro de una frase corta (p. ej. "te pregunte 2+2", "@bot 12*3 jaja").
+_ARITH_SNIPPET_RE = re.compile(r"\b(?:\d{1,8}\s*[\+\-\*\/x×÷]\s*)+\d{1,8}\b", re.IGNORECASE)
+
+# Palabras / risas que suelen rodear la cuenta sin convertirla en consulta seria al oráculo.
+_ARITH_CONTEXT_FILLER = frozenset(
+    {
+        "te",
+        "me",
+        "le",
+        "nos",
+        "os",
+        "se",
+        "lo",
+        "la",
+        "los",
+        "las",
+        "un",
+        "una",
+        "unos",
+        "unas",
+        "el",
+        "ella",
+        "ellos",
+        "ellas",
+        "por",
+        "favor",
+        "pf",
+        "plis",
+        "please",
+        "pregunte",
+        "pregunté",
+        "pregunta",
+        "preguntas",
+        "consulta",
+        "decime",
+        "decí",
+        "dime",
+        "che",
+        "boludo",
+        "boluda",
+        "tipo",
+        "literal",
+        "re",
+        "eh",
+        "hey",
+        "hol",
+        "hola",
+        "buenas",
+        "buenos",
+        "jaja",
+        "jajaja",
+        "jajajaa",
+        "jajajjaa",
+        "ja",
+        "jj",
+        "jiji",
+        "dale",
+        "daale",
+        "bueno",
+        "buen",
+        "eso",
+        "está",
+        "esta",
+        "es",
+        "son",
+        "da",
+        "sos",
+        "eres",
+        "cuanto",
+        "cuánto",
+        "cuantos",
+        "cuántos",
+        "qué",
+        "que",
+        "ay",
+        "aay",
+        "uff",
+        "yo",
+        "mi",
+        "mis",
+        "tu",
+        "tus",
+        "su",
+        "sus",
+        "acá",
+        "aca",
+        "ahi",
+        "ahí",
+        "mira",
+        "mirá",
+        "ven",
+        "vení",
+        "ponele",
+        "posta",
+        "copado",
+        "copada",
+        "respondeme",
+        "respondé",
+        "contesta",
+        "contestá",
+        "decia",
+        "decía",
+    }
+)
 
 
-def _is_simple_arithmetic_question(q: str) -> bool:
-    """Pregunta que es básicamente una cuenta: el oráculo no debe tirar sí/no al azar."""
+def _is_pure_arithmetic_expression(q: str) -> bool:
     s = (q or "").strip()
     s = re.sub(r"^[¿?]+", "", s)
     s = re.sub(r"[?.!…]+$", "", s)
@@ -41,15 +148,142 @@ def _is_simple_arithmetic_question(q: str) -> bool:
     return True
 
 
-def _oracle_math_refusal() -> str:
-    return random.choice(
-        [
-            "Eso es **calculadora**, no profecía: acá no tiro **sí/no** con cuentas del cole.",
-            "Para **mate pura** ya inventaron la app del teléfono; el oráculo vende **humo**, no parciales.",
-            "Si la pregunta tiene **solo números y signos**, no entra en el dado místico — buscá resultado en serio en otro lado.",
-            "Mi especialidad es el **drama** y el **azar filosófico**, no el álgebra; re-preguntá con palabras si querés onda.",
-        ]
-    )
+def _is_simple_arithmetic_question(q: str) -> bool:
+    """Pregunta que es básicamente una cuenta: el oráculo no debe tirar sí/no al azar."""
+    if _is_pure_arithmetic_expression(q):
+        return True
+    s0 = " ".join((q or "").strip().split())
+    if len(s0) < 3 or len(s0) > 88:
+        return False
+    m = _ARITH_SNIPPET_RE.search(s0)
+    if not m:
+        return False
+    core = re.sub(r"\s+", "", m.group(0))
+    if len(core) > 22:
+        return False
+    before, after = s0[: m.start()], s0[m.end() :]
+    rest = f"{before} {after}".strip().lower()
+    rest = re.sub(r"[^\w\sáéíóúüñ]", " ", rest, flags=re.IGNORECASE)
+    words = [w for w in rest.split() if w]
+    meaningful = [w for w in words if w not in _ARITH_CONTEXT_FILLER]
+    return len(meaningful) == 0
+
+
+def _normalize_arith_eval_expr(raw: str) -> str:
+    t = "".join((raw or "").split())
+    t = t.replace("×", "*").replace("÷", "/")
+    t = re.sub(r"(?<=\d)[xX](?=\d)", "*", t)
+    t = t.replace("^", "**")
+    if "=" in t:
+        t = t.split("=", 1)[0].strip()
+    return t
+
+
+def _extract_arithmetic_expression_for_eval(q: str) -> str:
+    if not _is_simple_arithmetic_question(q):
+        return ""
+    if _is_pure_arithmetic_expression(q):
+        s = (q or "").strip()
+        s = re.sub(r"^[¿?]+", "", s)
+        s = re.sub(r"[?.!…]+$", "", s)
+        core = "".join(s.split())
+    else:
+        s0 = " ".join((q or "").strip().split())
+        m = _ARITH_SNIPPET_RE.search(s0)
+        if not m:
+            return ""
+        core = re.sub(r"\s+", "", m.group(0))
+    return _normalize_arith_eval_expr(core)
+
+
+def _format_math_result_value(val: float) -> str:
+    if not math.isfinite(val):
+        return "∞"
+    if abs(val - round(val)) < 1e-9 and abs(round(val)) < 10**15:
+        return str(int(round(val)))
+    s = f"{val:.12g}"
+    if "e" in s.lower():
+        return s
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+    return s or "0"
+
+
+def _format_math_answer_body(expr_norm: str, val: float) -> str:
+    disp = expr_norm.replace("**", "^") or "?"
+    res = _format_math_result_value(val)
+    return f"`{disp}` → **{res}**"
+
+
+def _arith_eval_node(node: ast.AST) -> float:
+    if isinstance(node, ast.Expression):
+        return _arith_eval_node(node.body)
+    if isinstance(node, ast.Constant):
+        v = node.value
+        if isinstance(v, bool) or v is None:
+            raise ValueError("bool")
+        if isinstance(v, (int, float)):
+            x = float(v)
+            if not math.isfinite(x):
+                raise ValueError("inf")
+            return x
+        raise ValueError("const")
+    if isinstance(node, ast.UnaryOp):
+        if isinstance(node.op, ast.USub):
+            return -_arith_eval_node(node.operand)
+        if isinstance(node.op, ast.UAdd):
+            return _arith_eval_node(node.operand)
+        raise ValueError("unary")
+    if isinstance(node, ast.BinOp):
+        left = _arith_eval_node(node.left)
+        right = _arith_eval_node(node.right)
+        op = node.op
+        if isinstance(op, ast.Add):
+            return left + right
+        if isinstance(op, ast.Sub):
+            return left - right
+        if isinstance(op, ast.Mult):
+            return left * right
+        if isinstance(op, ast.Div):
+            if right == 0:
+                raise ZeroDivisionError
+            return left / right
+        if isinstance(op, ast.FloorDiv):
+            if right == 0:
+                raise ZeroDivisionError
+            return float(left // right)
+        if isinstance(op, ast.Mod):
+            if right == 0:
+                raise ZeroDivisionError
+            return left % right
+        if isinstance(op, ast.Pow):
+            if abs(right) > 48 or abs(left) > 1e9:
+                raise ValueError("pow")
+            try:
+                out = left**right
+            except (OSError, OverflowError, ValueError):
+                raise ValueError("powr") from None
+            if not math.isfinite(out):
+                raise ValueError("pown")
+            return float(out)
+        raise ValueError("binop")
+    raise ValueError("node")
+
+
+def _safe_eval_arithmetic(expr: str) -> Optional[float]:
+    if not expr or len(expr) > 44:
+        return None
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError:
+        return None
+    try:
+        v = _arith_eval_node(tree)
+        if not math.isfinite(v):
+            return None
+        return float(v)
+    except (ValueError, TypeError, ZeroDivisionError, OverflowError):
+        return None
 
 
 _OPEN_QUESTION_RE = re.compile(
@@ -170,8 +404,6 @@ def _roll_oracle_for_question(pregunta: str) -> Tuple[str, str, int]:
     Si la pregunta parece abierta (cuántas, cuándo, temporadas…), contesta en modo ‘opinión’.
     Si no, mantiene sí / no / % como antes.
     """
-    if _is_simple_arithmetic_question(pregunta):
-        return "open", _oracle_math_refusal(), random.randint(1, 100)
     if _is_open_ended_question(pregunta):
         return "open", _oracle_open_answer(pregunta), random.randint(1, 100)
     cat, body, dado = _roll_oracle()
@@ -195,6 +427,70 @@ _ORACLE_QUIP_NOT_ORACLE = [
     "Jaja no—ahí estaba en **modo decoración**. El hilo serio es solo bajo el embed del oráculo o con `?pregunta`.",
     "Mi yo del pasado en ese mensaje no traía traje de oráculo; probá otra vez citando el **último** 🔮 o con `?pregunta`.",
 ]
+
+
+def _parse_consulta_embed_description(desc: str) -> Optional[Tuple[str, str, _OracleResponseKind]]:
+    """Recupera (pregunta, última respuesta, tipo) del embed principal de consulta."""
+    if not desc or "preguntó:" not in desc:
+        return None
+    m_q = re.search(r"preguntó:\s*\n>\s*(.+?)(?=\n\n\*\*|\Z)", desc, re.DOTALL | re.IGNORECASE)
+    if not m_q:
+        return None
+    q = (m_q.group(1) or "").strip()
+    if not q:
+        return None
+    if "**La respuesta es:**" in desc:
+        m = re.search(r"\*\*La respuesta es:\*\*\s*(.+?)(?:\n\n|\Z)", desc, re.DOTALL)
+        if m:
+            return (q, m.group(1).strip(), "yesno")
+    if "**Cuenta:**" in desc:
+        m = re.search(r"\*\*Cuenta:\*\*\s*(.+?)(?:\n\n|\Z)", desc, re.DOTALL)
+        if m:
+            return (q, m.group(1).strip(), "math")
+    if "**Oráculo (IA local, respuesta corta):**" in desc:
+        m = re.search(r"\*\*Oráculo \(IA local, respuesta corta\):\*\*\s*(.+?)(?:\n\n|\Z)", desc, re.DOTALL)
+        if m:
+            return (q, m.group(1).strip(), "llm")
+    if "**Modo charla" in desc:
+        m = re.search(
+            r"\*\*Modo charla \(sin IA local, plantillas \+ humor\):\*\*\s*\n(.+?)(?:\n\n|\Z)",
+            desc,
+            re.DOTALL,
+        )
+        if m:
+            return (q, m.group(1).strip(), "open")
+    return None
+
+
+def _parse_seguimiento_embed_description(desc: str) -> Optional[Tuple[str, str]]:
+    """Recupera (consulta inicial, última respuesta del oráculo) del embed de seguimiento."""
+    if not desc:
+        return None
+    m_or = re.search(r"\*\*Oráculo:\*\*\s*(.+?)(?=\n\n_Consulta inicial:|\Z)", desc, re.DOTALL)
+    m_ini = re.search(r"_Consulta inicial:_\s*(.+?)\Z", desc, re.DOTALL | re.IGNORECASE)
+    if not m_or or not m_ini:
+        return None
+    return m_ini.group(1).strip(), m_or.group(1).strip()
+
+
+def _oracle_context_from_reply_message(msg: discord.Message) -> Optional[Tuple[str, str, _OracleResponseKind]]:
+    """Contexto para seguir charlando citando un mensaje del bot con embed de oráculo (sin RAM)."""
+    if not msg.embeds:
+        return None
+    emb = msg.embeds[0]
+    desc = emb.description or ""
+    title = (emb.title or "").lower()
+    if "seguimiento" in title:
+        pair = _parse_seguimiento_embed_description(desc)
+        if not pair:
+            return None
+        oq, la = pair
+        if not oq or not la:
+            return None
+        return (oq, la, "open")
+    if _ORACLE_EMBED_TITLE in (emb.title or "") or "consulta al oráculo" in title:
+        return _parse_consulta_embed_description(desc)
+    return None
 
 
 def _looks_like_new_oracle_question(text: str) -> bool:
@@ -248,7 +544,7 @@ class OraclePending:
     bot_message_id: int
     original_question: str
     last_answer: str
-    response_kind: Literal["yesno", "open", "llm"]
+    response_kind: _OracleResponseKind
     deadline_monotonic: float
 
 
@@ -313,7 +609,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
         *,
         original_question: str,
         last_answer: str,
-        response_kind: Literal["yesno", "open", "llm"],
+        response_kind: _OracleResponseKind,
     ) -> None:
         g = bot_message.guild
         if not g:
@@ -368,7 +664,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
         mencion: str,
         pregunta: str,
         author_id: int,
-    ) -> Tuple[discord.Embed, str, Literal["yesno", "open", "llm"]]:
+    ) -> Tuple[discord.Embed, str, _OracleResponseKind]:
         assert self.db is not None
         self.db.ensure_user_exists(author_id)
         pq = pregunta.strip()
@@ -377,8 +673,32 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             if llm:
                 body, response_kind = llm, "llm"
             else:
-                kind, body, _ = _roll_oracle_for_question(pq)
-                response_kind = "open" if kind == "open" else "yesno"
+                expr = _extract_arithmetic_expression_for_eval(pq)
+                if expr:
+                    val = _safe_eval_arithmetic(expr)
+                    if val is not None:
+                        body, response_kind = _format_math_answer_body(expr, val), "math"
+                    else:
+                        kind, body, _ = _roll_oracle_for_question(pq)
+                        response_kind = "open" if kind == "open" else "yesno"
+                else:
+                    kind, body, _ = _roll_oracle_for_question(pq)
+                    response_kind = "open" if kind == "open" else "yesno"
+        elif _is_simple_arithmetic_question(pq):
+            expr = _extract_arithmetic_expression_for_eval(pq)
+            val = _safe_eval_arithmetic(expr) if expr else None
+            if val is not None:
+                body, response_kind = _format_math_answer_body(expr, val), "math"
+            else:
+                llm = await oracle_local_reply(pq)
+                if llm:
+                    body, response_kind = llm, "llm"
+                else:
+                    body = (
+                        "No pude resolver esa cuenta tal cual está; "
+                        "probá con `+ - * / % ^ ( )` y números simples."
+                    )
+                    response_kind = "open"
         else:
             kind, body, _ = _roll_oracle_for_question(pq)
             response_kind = "open" if kind == "open" else "yesno"
@@ -431,17 +751,37 @@ class OraculoCog(commands.Cog, name="Oráculo"):
         pending: OraclePending,
         reference: discord.Message,
         pending_key: Tuple[int, int, int],
+        persist_pending: bool = True,
     ) -> None:
         """Respuesta a quien citó el último embed del oráculo (sin sumar otra diaria)."""
-        llm = await oracle_local_reply_followup(
-            pending.original_question,
-            pending.last_answer,
-            user_line,
-        )
-        if llm:
-            body, rk = llm, "llm"
+        if _is_simple_arithmetic_question(user_line):
+            expr = _extract_arithmetic_expression_for_eval(user_line)
+            val = _safe_eval_arithmetic(expr) if expr else None
+            if val is not None:
+                body, rk = _format_math_answer_body(expr, val), "math"
+            else:
+                llm = await oracle_local_reply_followup(
+                    pending.original_question,
+                    pending.last_answer,
+                    user_line,
+                )
+                if llm:
+                    body, rk = llm, "llm"
+                else:
+                    body, rk = (
+                        "No pude resolver esa cuenta; probá solo la expresión (ej. `3*4`) o `?pregunta …`.",
+                        "open",
+                    )
         else:
-            body, rk = _template_followup_no_llm(user_line), "open"
+            llm = await oracle_local_reply_followup(
+                pending.original_question,
+                pending.last_answer,
+                user_line,
+            )
+            if llm:
+                body, rk = llm, "llm"
+            else:
+                body, rk = _template_followup_no_llm(user_line), "open"
 
         q_short = (pending.original_question or "")[:700]
         body_show = discord.utils.escape_markdown(body) if rk == "llm" else body
@@ -461,9 +801,11 @@ class OraculoCog(commands.Cog, name="Oráculo"):
         if rk == "llm":
             mod = (os.getenv("ORACLE_MODEL") or "local").strip()
             emb.set_footer(text=f"IA local (Ollama) · {mod}")
+        elif rk == "math":
+            emb.set_footer(text="Cuenta resuelta en el bot · instantáneo")
 
         sent = await channel.send(embed=emb, reference=reference, mention_author=False)
-        if isinstance(sent, discord.Message) and sent.guild:
+        if persist_pending and isinstance(sent, discord.Message) and sent.guild:
             self._refresh_oracle_pending(
                 pending_key,
                 new_bot_message=sent,
@@ -498,7 +840,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
         mencion: str,
         pregunta: str,
         body: str,
-        response_kind: Literal["yesno", "open", "llm"] = "yesno",
+        response_kind: _OracleResponseKind = "yesno",
     ) -> discord.Embed:
         q = (pregunta or "").strip()[:900] or "*(silencio místico)*"
         body_show = discord.utils.escape_markdown(body) if response_kind == "llm" else body
@@ -507,6 +849,12 @@ class OraculoCog(commands.Cog, name="Oráculo"):
                 f"{mencion} **({nombre_visible})** preguntó:\n"
                 f"> {q}\n\n"
                 f"**Oráculo (IA local, respuesta corta):** {body_show}"
+            )
+        elif response_kind == "math":
+            bloque = (
+                f"{mencion} **({nombre_visible})** preguntó:\n"
+                f"> {q}\n\n"
+                f"**Cuenta:** {body_show}"
             )
         elif response_kind == "open":
             bloque = (
@@ -532,6 +880,8 @@ class OraculoCog(commands.Cog, name="Oráculo"):
         if response_kind == "llm":
             mod = (os.getenv("ORACLE_MODEL") or "local").strip()
             emb.set_footer(text=f"IA local (Ollama) · {mod}")
+        elif response_kind == "math":
+            emb.set_footer(text="Cuenta resuelta en el bot · instantáneo")
         return emb
 
     @commands.command(name="pregunta", aliases=["consulta", "8ball", "bola", "oraculo"])
@@ -671,13 +1021,79 @@ class OraculoCog(commands.Cog, name="Oráculo"):
                 )
                 return True
 
-            # C) Embed del oráculo pero sin estado en memoria (reinicio / expiró hace rato)
+            # C) Embed del oráculo pero sin estado en memoria: igual contestamos leyendo el embed (sin guardar hilo).
             if oracle_embed and not pending:
-                await message.reply(
-                    "No retengo esa consulta en memoria (reinicio del bot o pasó demasiado tiempo).\n"
-                    "Volvé a consultar con `?pregunta …` o arrobándome con la duda.",
-                    mention_author=False,
+                if len(user_text) < 1:
+                    await message.reply(
+                        "Escribí algo para seguir la charla (aunque sea corto).",
+                        mention_author=False,
+                    )
+                    return True
+                fu = self._followup_cooldown_retry_after(message.author.id)
+                if fu > 0:
+                    await message.reply(
+                        f"Despacito el hilo del oráculo: esperá **{fu:.1f}s**.",
+                        mention_author=False,
+                        delete_after=8,
+                    )
+                    return True
+                self._followup_mark(message.author.id)
+                if not self.db:
+                    await message.reply("Economía no disponible.", mention_author=False)
+                    return True
+                nombre = (
+                    message.author.display_name
+                    if isinstance(message.author, discord.Member)
+                    else str(message.author)
                 )
+                parsed = _oracle_context_from_reply_message(ref_msg)
+                if parsed:
+                    orig_q, last_a, rk_guess = parsed
+                    synthetic = OraclePending(
+                        bot_message_id=ref_msg.id,
+                        original_question=orig_q[:900],
+                        last_answer=last_a[:900],
+                        response_kind=rk_guess,
+                        deadline_monotonic=time.monotonic(),
+                    )
+                    await self._send_oracle_followup(
+                        message.channel,
+                        author=message.author,
+                        nombre_visible=nombre,
+                        user_line=user_text,
+                        pending=synthetic,
+                        reference=message,
+                        pending_key=key,
+                        persist_pending=False,
+                    )
+                else:
+                    llm = await oracle_local_reply(user_text)
+                    if llm:
+                        esc = discord.utils.escape_markdown(user_text)[:500]
+                        esc_r = discord.utils.escape_markdown(llm)
+                        emb_fb = discord.Embed(
+                            title="🔮 Oráculo · seguimiento",
+                            description=(
+                                f"{message.author.mention} **({nombre})** (sin contexto guardado del embed):\n"
+                                f"> {esc}\n\n**Oráculo:** {esc_r}"
+                            )[:4096],
+                            color=discord.Color.dark_magenta(),
+                        )
+                        mod = (os.getenv("ORACLE_MODEL") or "local").strip()
+                        emb_fb.set_footer(text=f"IA local (Ollama) · {mod}")
+                        await message.reply(embed=emb_fb, mention_author=False)
+                    else:
+                        body_fb = _template_followup_no_llm(user_text)
+                        emb_fb2 = discord.Embed(
+                            title="🔮 Oráculo · seguimiento",
+                            description=(
+                                f"{message.author.mention} **({nombre})** (sin contexto guardado del embed):\n"
+                                f"> {discord.utils.escape_markdown(user_text)[:500]}\n\n"
+                                f"**Oráculo:** {body_fb}"
+                            )[:4096],
+                            color=discord.Color.dark_magenta(),
+                        )
+                        await message.reply(embed=emb_fb2, mention_author=False)
                 return True
 
             # D) Reply a otro mensaje mío: si mandaron una pregunta de verdad, la procesamos
