@@ -31,6 +31,8 @@ def get_admin_role_ids() -> Set[int]:
 
 # ID del mensaje del feed que estamos editando
 _LAST_FEED_MESSAGE_ID: Optional[int] = None
+# Evita dos update_feed a la vez (p. ej. on_ready del feed + limpieza de arranque de impostor).
+_feed_update_lock = asyncio.Lock()
 
 
 # --- Lógica del Embed ---
@@ -128,7 +130,14 @@ async def update_feed(bot: commands.Bot):
     Esta función es llamada por otros cogs.
     """
     global _LAST_FEED_MESSAGE_ID
-    
+
+    async with _feed_update_lock:
+        await _update_feed_unlocked(bot)
+
+
+async def _update_feed_unlocked(bot: commands.Bot) -> None:
+    global _LAST_FEED_MESSAGE_ID
+
     channel_id = get_feed_channel_id()
     if not channel_id:
         log.warning("IMPOSTOR_FEED_CHANNEL_ID no está configurado. No se puede actualizar el feed.")

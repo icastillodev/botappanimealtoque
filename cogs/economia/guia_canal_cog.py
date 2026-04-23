@@ -16,6 +16,8 @@ from .guia_contenido import chunk_guia_embeds_for_send
 
 META_KEY = "guia_bot_message_id"
 META_FORUM_THREAD = "guia_bot_forum_thread_id"
+# Discord limita PATCH seguidos al mismo canal; la guía son muchas páginas.
+_GUIA_CHANNEL_EDIT_DELAY_SEC = 1.15
 
 log = logging.getLogger(__name__)
 
@@ -191,6 +193,8 @@ class GuiaCanalCog(commands.Cog, name="Guía canal fijo"):
         new_ids: List[int] = []
 
         for i, part in enumerate(chunks):
+            if i > 0:
+                await asyncio.sleep(_GUIA_CHANNEL_EDIT_DELAY_SEC)
             content = f"📚 **Guía del bot ({i + 1}/{n})**" if n > 1 else None
             m_old = old_msgs[i] if i < len(old_msgs) else None
             if m_old is not None:
@@ -215,6 +219,7 @@ class GuiaCanalCog(commands.Cog, name="Guía canal fijo"):
                 return
 
         for j in range(len(chunks), len(old_msgs)):
+            await asyncio.sleep(_GUIA_CHANNEL_EDIT_DELAY_SEC)
             m = old_msgs[j]
             if m is None:
                 continue
