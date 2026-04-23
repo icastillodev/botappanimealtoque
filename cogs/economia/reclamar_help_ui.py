@@ -34,7 +34,11 @@ def build_reclaim_result_embed(
     if err_msgs:
         parts.append("**Avisos:**\n" + "\n".join(err_msgs))
     if not ok_msgs and not err_msgs:
-        parts.append("_No se cobró nada en este paso (nada listo o ya reclamado)._")
+        parts.append(
+            "_No se cobró nada en este paso (nada listo o ya reclamado)._\n"
+            "Podés cobrar **cada** ☑ por separado: `?reclamar diaria` · `?reclamar semanal`… "
+            "no hace falta tener todo completo para usar **Reclamar todo lo listo**."
+        )
     parts.append("**Tu estado ahora:**\n" + snap)
     desc = "\n\n".join(parts)[:4000]
     color = discord.Color.green() if ok_msgs else (discord.Color.orange() if err_msgs else discord.Color.light_grey())

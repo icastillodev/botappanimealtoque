@@ -1,9 +1,24 @@
 # Lógica compartida de /aat-reclamar (una sola implementación).
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from .toque_labels import fmt_toque_sentence
+
+log = logging.getLogger(__name__)
+
+
+def _pv(val: Any) -> int:
+    """SQLite / Row a veces devuelve None o str; evita TypeError en comparaciones."""
+    try:
+        return int(val or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _claimed(val: Any) -> bool:
+    return _pv(val) == 1
 
 TipoReclamo = Optional[Literal["inicial", "diaria", "semanal", "semanal_especial", "semanal_minijuegos"]]
 
@@ -79,7 +94,7 @@ PERFIL_HATED_CAP = 10
 
 
 def _inicial_discord_done(prog: Dict[str, Any]) -> bool:
-    return all(int(prog.get(k) or 0) >= 1 for k in INICIAL_DISCORD_KEYS)
+    return all(_pv(prog.get(k)) >= 1 for k in INICIAL_DISCORD_KEYS)
 
 
 def _inicial_profile_counts(db: Any, user_id: int) -> Tuple[int, int, int]:
@@ -95,12 +110,12 @@ def inicial_profile_ready(db: Any, user_id: int) -> bool:
 
 
 def _diaria_prog_ready(prog: Dict[str, Any]) -> bool:
-    msg_n = int(prog.get("mensajes_servidor") or 0)
-    rx_n = int(prog.get("reacciones_servidor") or 0)
-    tr = int(prog.get("trampa_enviada") or 0)
-    ts = int(prog.get("trampa_sin_objetivo") or 0)
+    msg_n = _pv(prog.get("mensajes_servidor"))
+    rx_n = _pv(prog.get("reacciones_servidor"))
+    tr = _pv(prog.get("trampa_enviada"))
+    ts = _pv(prog.get("trampa_sin_objetivo"))
     tr_ok = tr >= 1 or ts >= 1
-    or_n = int(prog.get("oraculo_preguntas") or 0)
+    or_n = _pv(prog.get("oraculo_preguntas"))
     return msg_n >= 10 and rx_n >= 3 and tr_ok and or_n >= 1
 
 
@@ -192,135 +207,153 @@ def reclaim_rewards(
 ) -> Tuple[bool, List[str], List[str]]:
     """
     Devuelve (hubo_reclamo, mensajes_exito, mensajes_error).
+    Con `tipo=None` intenta **cada** recompensa por separado: cobra las que estén listas
+    aunque falte el resto (inicial / diario / semanal no tienen que estar todos juntos).
     """
     tipos_a_revisar: List[str] = [tipo] if tipo else ["inicial", "diaria", "semanal", "semanal_especial", "semanal_minijuegos"]
+    rewards = (task_config or {}).get("rewards") or {}
 
     reclamado_algo = False
     mensajes_exito: List[str] = []
     mensajes_error: List[str] = []
 
     for objetivo in tipos_a_revisar:
-        if objetivo == "inicial":
-            prog = db.get_progress_inicial(user_id)
-            if prog["completado"] == 1:
-                if tipo:
-                    mensajes_error.append("Inicial: Ya reclamado.")
-                continue
+        try:
+            if objetivo == "inicial":
+                prog = db.get_progress_inicial(user_id)
+                if _claimed(prog.get("completado")):
+                    if tipo:
+                        mensajes_error.append("Inicial: Ya reclamado.")
+                    continue
 
-            if _inicial_discord_done(prog) and inicial_profile_ready(db, user_id):
-                recompensa = task_config["rewards"]["inicial"]
-                db.modify_points(user_id, recompensa)
-                _, bcol = db.modify_blisters(user_id, "trampa", 3)
-                mensajes_exito.extend(bcol)
-                db.claim_reward(user_id, "inicial")
-                mensajes_exito.append(f"**Inicial:** {fmt_toque_sentence(int(recompensa))} + 3 Blisters 🃏")
-                reclamado_algo = True
-            else:
-                if tipo:
-                    partes: List[str] = []
-                    if not _inicial_discord_done(prog):
-                        partes.append("Discord (presentación, autorol, #general, etc.)")
-                    if not inicial_profile_ready(db, user_id):
-                        wl_i, top_i, hat_i = _inicial_profile_counts(db, user_id)
-                        partes.append(
-                            f"perfil: wishlist {wl_i}/{INICIAL_WISHLIST_MIN}, top {top_i}/{INICIAL_TOP_MIN}, "
-                            f"odiados {hat_i}/{INICIAL_HATED_MIN}"
-                        )
-                    err_ini = "Inicial: incompleto — " + " · ".join(partes) + "."
-                    if not _inicial_discord_done(prog):
-                        err_ini += " " + MSG_TIP_INICIACION_AL_RECLAMAR
-                    mensajes_error.append(err_ini)
+                if _inicial_discord_done(prog) and inicial_profile_ready(db, user_id):
+                    recompensa = rewards.get("inicial")
+                    if recompensa is None:
+                        mensajes_error.append("Inicial: falta configuración de recompensa (rewards.inicial).")
+                        continue
+                    db.modify_points(user_id, recompensa)
+                    _, bcol = db.modify_blisters(user_id, "trampa", 3)
+                    mensajes_exito.extend(bcol)
+                    db.claim_reward(user_id, "inicial")
+                    mensajes_exito.append(f"**Inicial:** {fmt_toque_sentence(int(recompensa))} + 3 Blisters 🃏")
+                    reclamado_algo = True
+                else:
+                    if tipo:
+                        partes: List[str] = []
+                        if not _inicial_discord_done(prog):
+                            partes.append("Discord (presentación, autorol, #general, etc.)")
+                        if not inicial_profile_ready(db, user_id):
+                            wl_i, top_i, hat_i = _inicial_profile_counts(db, user_id)
+                            partes.append(
+                                f"perfil: wishlist {wl_i}/{INICIAL_WISHLIST_MIN}, top {top_i}/{INICIAL_TOP_MIN}, "
+                                f"odiados {hat_i}/{INICIAL_HATED_MIN}"
+                            )
+                        err_ini = "Inicial: incompleto — " + " · ".join(partes) + "."
+                        if not _inicial_discord_done(prog):
+                            err_ini += " " + MSG_TIP_INICIACION_AL_RECLAMAR
+                        mensajes_error.append(err_ini)
 
-        elif objetivo == "diaria":
-            prog = db.get_progress_diaria(user_id)
-            if prog["completado"] == 1:
-                if tipo:
-                    mensajes_error.append("Diaria: Ya reclamado hoy.")
-                continue
+            elif objetivo == "diaria":
+                prog = db.get_progress_diaria(user_id)
+                if _claimed(prog.get("completado")):
+                    if tipo:
+                        mensajes_error.append("Diaria: Ya reclamado hoy.")
+                    continue
 
-            msg_n = int(prog.get("mensajes_servidor") or 0)
-            rx_n = int(prog.get("reacciones_servidor") or 0)
-            tr = int(prog.get("trampa_enviada") or 0)
-            ts = int(prog.get("trampa_sin_objetivo") or 0)
-            tr_ok = tr >= 1 or ts >= 1
-            or_n = int(prog.get("oraculo_preguntas") or 0)
-            or_ok = or_n >= 1
-            if msg_n >= 10 and rx_n >= 3 and tr_ok and or_ok:
-                recompensa = task_config["rewards"]["diaria"]
-                db.modify_points(user_id, recompensa)
-                _, bcol = db.modify_blisters(user_id, "trampa", 1)
-                mensajes_exito.extend(bcol)
-                db.claim_reward(user_id, "diaria")
-                mensajes_exito.append(f"**Diaria:** {fmt_toque_sentence(int(recompensa))} + 1 Blister 🃏")
-                reclamado_algo = True
-            else:
-                if tipo:
-                    mensajes_error.append("Diaria: Tareas incompletas.")
+                msg_n = _pv(prog.get("mensajes_servidor"))
+                rx_n = _pv(prog.get("reacciones_servidor"))
+                tr = _pv(prog.get("trampa_enviada"))
+                ts = _pv(prog.get("trampa_sin_objetivo"))
+                tr_ok = tr >= 1 or ts >= 1
+                or_n = _pv(prog.get("oraculo_preguntas"))
+                or_ok = or_n >= 1
+                if msg_n >= 10 and rx_n >= 3 and tr_ok and or_ok:
+                    recompensa = rewards.get("diaria")
+                    if recompensa is None:
+                        mensajes_error.append("Diaria: falta configuración de recompensa (rewards.diaria).")
+                        continue
+                    db.modify_points(user_id, recompensa)
+                    _, bcol = db.modify_blisters(user_id, "trampa", 1)
+                    mensajes_exito.extend(bcol)
+                    db.claim_reward(user_id, "diaria")
+                    mensajes_exito.append(f"**Diaria:** {fmt_toque_sentence(int(recompensa))} + 1 Blister 🃏")
+                    reclamado_algo = True
+                else:
+                    if tipo:
+                        mensajes_error.append("Diaria: Tareas incompletas.")
 
-        elif objetivo == "semanal":
-            prog = db.get_progress_semanal(user_id)
-            if prog["completado"] == 1:
-                if tipo:
-                    mensajes_error.append("Semanal: Ya reclamado esta semana.")
-                continue
+            elif objetivo == "semanal":
+                prog = db.get_progress_semanal(user_id)
+                if _claimed(prog.get("completado")):
+                    if tipo:
+                        mensajes_error.append("Semanal: Ya reclamado esta semana.")
+                    continue
 
-            if prog["debate_post"] >= 1 and prog["videos_reaccion"] >= 1 and prog["media_escrito"] >= 1:
-                recompensa = task_config["rewards"]["semanal"]
-                db.modify_points(user_id, recompensa)
-                _, bcol = db.modify_blisters(user_id, "trampa", 1)
-                mensajes_exito.extend(bcol)
-                db.claim_reward(user_id, "semanal")
-                mensajes_exito.append(f"**Semanal:** {fmt_toque_sentence(int(recompensa))} + 1 Blister 🃏")
-                reclamado_algo = True
-            else:
-                if tipo:
-                    mensajes_error.append("Semanal: Tareas incompletas.")
+                if (
+                    _pv(prog.get("debate_post")) >= 1
+                    and _pv(prog.get("videos_reaccion")) >= 1
+                    and _pv(prog.get("media_escrito")) >= 1
+                ):
+                    recompensa = rewards.get("semanal")
+                    if recompensa is None:
+                        mensajes_error.append("Semanal: falta configuración de recompensa (rewards.semanal).")
+                        continue
+                    db.modify_points(user_id, recompensa)
+                    _, bcol = db.modify_blisters(user_id, "trampa", 1)
+                    mensajes_exito.extend(bcol)
+                    db.claim_reward(user_id, "semanal")
+                    mensajes_exito.append(f"**Semanal:** {fmt_toque_sentence(int(recompensa))} + 1 Blister 🃏")
+                    reclamado_algo = True
+                else:
+                    if tipo:
+                        mensajes_error.append("Semanal: Tareas incompletas.")
 
-        elif objetivo == "semanal_especial":
-            prog = db.get_progress_semanal(user_id)
-            if int(prog.get("completado_especial") or 0) == 1:
-                if tipo:
-                    mensajes_error.append("Especial semanal: Ya reclamado.")
-                continue
-            ip = int(prog.get("impostor_partidas") or 0)
-            iv = int(prog.get("impostor_victorias") or 0)
-            if ip >= 3 and iv >= 1:
-                rw = task_config["rewards"]
-                pts = int(rw.get("especial_semanal", 400))
-                bl = int(rw.get("especial_semanal_blisters", 2))
-                db.modify_points(user_id, pts)
-                _, bcol = db.modify_blisters(user_id, "trampa", bl)
-                mensajes_exito.extend(bcol)
-                db.claim_reward(user_id, "semanal_especial")
-                mensajes_exito.append(f"**Especial semanal:** {fmt_toque_sentence(pts)} + {bl} Blisters 🃏")
-                reclamado_algo = True
-            else:
-                if tipo:
-                    mensajes_error.append("Especial semanal: Necesitás 3 partidas Impostor y 1 victoria como impostor.")
+            elif objetivo == "semanal_especial":
+                prog = db.get_progress_semanal(user_id)
+                if _claimed(prog.get("completado_especial")):
+                    if tipo:
+                        mensajes_error.append("Especial semanal: Ya reclamado.")
+                    continue
+                ip = _pv(prog.get("impostor_partidas"))
+                iv = _pv(prog.get("impostor_victorias"))
+                if ip >= 3 and iv >= 1:
+                    pts = int(rewards.get("especial_semanal", 400))
+                    bl = int(rewards.get("especial_semanal_blisters", 2))
+                    db.modify_points(user_id, pts)
+                    _, bcol = db.modify_blisters(user_id, "trampa", bl)
+                    mensajes_exito.extend(bcol)
+                    db.claim_reward(user_id, "semanal_especial")
+                    mensajes_exito.append(f"**Especial semanal:** {fmt_toque_sentence(pts)} + {bl} Blisters 🃏")
+                    reclamado_algo = True
+                else:
+                    if tipo:
+                        mensajes_error.append("Especial semanal: Necesitás 3 partidas Impostor y 1 victoria como impostor.")
 
-        elif objetivo == "semanal_minijuegos":
-            prog = db.get_progress_semanal(user_id)
-            if int(prog.get("completado_minijuegos") or 0) == 1:
-                if tipo:
-                    mensajes_error.append("Minijuegos semanal: Ya reclamado.")
-                continue
-            if (
-                int(prog.get("mg_ret_roll_apuesta") or 0) >= 1
-                and int(prog.get("mg_roll_casual") or 0) >= 1
-                and int(prog.get("mg_duelo") or 0) >= 1
-                and int(prog.get("mg_voto_dom") or 0) >= 1
-            ):
-                rw = task_config["rewards"]
-                pts = int(rw.get("minijuegos_semanal", 150))
-                bl = int(rw.get("minijuegos_semanal_blisters", 1))
-                db.modify_points(user_id, pts)
-                _, bcol = db.modify_blisters(user_id, "trampa", bl)
-                mensajes_exito.extend(bcol)
-                db.claim_reward(user_id, "semanal_minijuegos")
-                mensajes_exito.append(f"**Minijuegos semanal:** {fmt_toque_sentence(pts)} + {bl} Blister(s) 🃏")
-                reclamado_algo = True
-            else:
-                if tipo:
-                    mensajes_error.append("Minijuegos: faltan reto con apuesta, roll casual, duelo y voto.")
+            elif objetivo == "semanal_minijuegos":
+                prog = db.get_progress_semanal(user_id)
+                if _claimed(prog.get("completado_minijuegos")):
+                    if tipo:
+                        mensajes_error.append("Minijuegos semanal: Ya reclamado.")
+                    continue
+                if (
+                    _pv(prog.get("mg_ret_roll_apuesta")) >= 1
+                    and _pv(prog.get("mg_roll_casual")) >= 1
+                    and _pv(prog.get("mg_duelo")) >= 1
+                    and _pv(prog.get("mg_voto_dom")) >= 1
+                ):
+                    pts = int(rewards.get("minijuegos_semanal", 150))
+                    bl = int(rewards.get("minijuegos_semanal_blisters", 1))
+                    db.modify_points(user_id, pts)
+                    _, bcol = db.modify_blisters(user_id, "trampa", bl)
+                    mensajes_exito.extend(bcol)
+                    db.claim_reward(user_id, "semanal_minijuegos")
+                    mensajes_exito.append(f"**Minijuegos semanal:** {fmt_toque_sentence(pts)} + {bl} Blister(s) 🃏")
+                    reclamado_algo = True
+                else:
+                    if tipo:
+                        mensajes_error.append("Minijuegos: faltan reto con apuesta, roll casual, duelo y voto.")
+        except Exception:
+            log.exception("reclaim_rewards falló en objetivo=%s user=%s", objetivo, user_id)
+            mensajes_error.append(f"{objetivo}: error interno al cobrar (avisá al staff).")
 
     return reclamado_algo, mensajes_exito, mensajes_error

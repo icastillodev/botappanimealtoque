@@ -10,6 +10,7 @@ from .progreso_vistas import (
     build_pages_diaria,
     build_pages_inicial,
     build_pages_semanal,
+    build_progreso_ayuda_pages,
     flatten_embed_pages,
 )
 from .reclamar_service import (
@@ -65,6 +66,13 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
         pages = build_pages_semanal(self.db, cfg, interaction.user.id)
         await self._send_progress_pages(interaction, pages)
 
+    @app_commands.command(
+        name="aat-progreso-ayuda",
+        description="Leyenda de ?progreso (colores), marcas en detalle y comandos para reclamar.",
+    )
+    async def progreso_ayuda(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        await self._send_progress_pages(interaction, build_progreso_ayuda_pages())
 
     # --- ¡¡¡COMANDO RECLAMAR MEJORADO!!! ---
     @app_commands.command(
@@ -101,7 +109,7 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
             extra = build_inicial_reclaim_hint(self.db, user_id)
             if extra:
                 await interaction.followup.send(
-                    extra + "\n\n`/aat-progreso-*` o `?progreso` en el canal del bot.",
+                    extra + "\n\n`/aat-progreso-*` · `/aat-progreso-ayuda` o `?progreso` / `?progresoayuda` en el canal del bot.",
                     ephemeral=True,
                 )
 

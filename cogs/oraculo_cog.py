@@ -1,4 +1,5 @@
 # Preguntas sí / no (40% sí, 40% no, 20% respuesta con % al azar).
+# La IA local (Ollama) solo entra en preguntas “abiertas”; el resto siempre va al dado (más divertido).
 # Cuenta para la diaria + puntos extra (config .env).
 from __future__ import annotations
 
@@ -355,11 +356,16 @@ class OraculoCog(commands.Cog, name="Oráculo"):
     ) -> Tuple[discord.Embed, str, Literal["yesno", "open", "llm"]]:
         assert self.db is not None
         self.db.ensure_user_exists(author_id)
-        llm = await oracle_local_reply(pregunta.strip())
-        if llm:
-            body, response_kind = llm, "llm"
+        pq = pregunta.strip()
+        if _is_open_ended_question(pq):
+            llm = await oracle_local_reply(pq)
+            if llm:
+                body, response_kind = llm, "llm"
+            else:
+                kind, body, _ = _roll_oracle_for_question(pq)
+                response_kind = "open" if kind == "open" else "yesno"
         else:
-            kind, body, _ = _roll_oracle_for_question(pregunta)
+            kind, body, _ = _roll_oracle_for_question(pq)
             response_kind = "open" if kind == "open" else "yesno"
         self._record_oracle_use(author_id)
         emb = self._embed_respuesta(
@@ -550,9 +556,9 @@ class OraculoCog(commands.Cog, name="Oráculo"):
 
     @app_commands.command(
         name="aat-consulta",
-        description="Sí/no/% o charla; seguí citando el embed del bot un rato. También ?pregunta o @bot.",
+        description="Sí/no/% con dado; charla con IA solo en preguntas abiertas. Seguimiento citando embed. ?pregunta.",
     )
-    @app_commands.describe(pregunta="Tu pregunta (sí/no o abierta: cuántas, cuándo, qué opinás…).")
+    @app_commands.describe(pregunta="Sí/no o abierta (cuántas, cuándo, qué opinás…). Lo abierto puede usar IA si está configurada.")
     async def consulta_slash(self, interaction: discord.Interaction, pregunta: str):
         if not pregunta or not pregunta.strip():
             await interaction.response.send_message("Escribí una pregunta.", ephemeral=True)

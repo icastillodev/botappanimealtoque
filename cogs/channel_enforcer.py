@@ -100,7 +100,7 @@ class ChannelEnforcerCog(commands.Cog, name="Limpieza de Chat"):
                     description=(
                         f"🚫 **{message.author.mention}, en #general solo algunos `?`** (roll, rollp/rollc, abrir/usar cartas, oráculo, trivia, impostor, `?comandos`).\n"
                         f"**Reclamar, progreso, diaria, tienda, guía…** → canal de comandos <#{self.bot_channel_id}> "
-                        f"o slash (`/aat-reclamar`, `/aat-progreso-*`, `/aat-guia`, etc.)."
+                        f"o slash (`/aat-reclamar`, `/aat-progreso-*`, `/aat-progreso-ayuda`, `/aat-guia`, etc.)."
                     ),
                     color=discord.Color.red()
                 )

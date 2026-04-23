@@ -63,7 +63,10 @@ class ProgressEmbedsWithReclaimView(GuiaEmbedsPaginator):
 
     def header(self) -> Optional[str]:
         base = super().header()
-        tip = "Tras cobrar, este mensaje se **actualiza**. · `?reclamar diaria` · `?reclamar semanal`…"
+        if self.reclaim_layout == "progreso":
+            tip = "Tras cobrar, el mensaje se **actualiza**. · Leyenda / tips: **`?progresoayuda`**"
+        else:
+            tip = "Tras cobrar, este mensaje se **actualiza**. · `?reclamar diaria` · `?reclamar semanal`…"
         if base:
             return f"{base} — {tip}"
         return f"{self.label} — {tip}"

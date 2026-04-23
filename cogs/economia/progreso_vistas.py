@@ -39,7 +39,8 @@ _LBL_REC_MG = _biling("Recompensa minijuegos", "minigames reward")
 
 _CMD_PROGRESS_HINT = (
     "**Para repasar tu estado:** `?inicial` · `?diaria` (*daily*) · `?semanal` (*weekly*) · `?progreso` "
-    "— o `/aat-progreso-iniciacion` · `/aat-progreso-diaria` (*daily*) · `/aat-progreso-semanal` (*weekly*)."
+    "— o `/aat-progreso-iniciacion` · `/aat-progreso-diaria` (*daily*) · `/aat-progreso-semanal` (*weekly*). "
+    "**Leyenda / tips:** `?progresoayuda` · `/aat-progreso-ayuda`."
 )
 
 _CMD_RECLAMAR = (
@@ -61,17 +62,47 @@ def _tline(done: bool, label: str, detail: str = "") -> str:
     return f"{_tmark(done)} {label}" + (f" — {detail}" if detail else "")
 
 
-def _resumen_glyphe(claimed: bool, ready: bool) -> str:
-    """✅ ya cobrado · ☑ listo para cobrar · ☐ falta."""
+def _resumen_block_embed(block_title_plain: str, detail: str, *, claimed: bool, ready: bool) -> discord.Embed:
+    """Un bloque del resumen `?progreso`: azul = ya cobraste, verde = listo para reclamar, gris = incompleto."""
     if claimed:
-        return "✅"
-    if ready:
-        return "☑"
-    return "☐"
+        color: discord.Color = discord.Color.blue()
+    elif ready:
+        color = discord.Color.green()
+        detail = f"✅ {detail}"
+    else:
+        color = discord.Color.light_grey()
+    return discord.Embed(
+        title=block_title_plain[:256],
+        description=detail[:4096],
+        color=color,
+    )
 
 
-def _resumen_line(glyph: str, label: str, detail: str = "") -> str:
-    return f"{glyph} {label}" + (f" — {detail}" if detail else "")
+def build_progreso_ayuda_pages() -> List[List[discord.Embed]]:
+    """Texto largo que antes iba en el primer embed de `?progreso` (leyenda, reclamar, slash)."""
+    desc = (
+        "**Colores en las tarjetas de `?progreso`:**\n"
+        "• **Azul** — ya cobraste ese premio (hoy / esta semana / iniciación de una vez).\n"
+        "• **Verde** — bloque completo; **`?reclamar …`** o el botón **Reclamar** del paginador.\n"
+        "• **Gris** — falta algo; leé la tarjeta o pasá con **Siguiente ▶** al detalle.\n\n"
+        "**En `?inicial` / `?diaria` / `?semanal` (marcas por ítem):**\n"
+        "✅ ítem hecho · ☑ bloque listo para cobrar · ☐ falta.\n\n"
+        + _LEY_DIARIA.strip()
+        + "\n\n"
+        + _CMD_RECLAMAR
+        + "\n\n"
+        + _CMD_PROGRESS_HINT
+    )
+    emb = discord.Embed(
+        title="?progresoayuda — Leyenda y comandos",
+        description=desc[:4096],
+        color=discord.Color.gold(),
+    )
+    return [[emb]]
+
+
+def _plain_block_title(biling_label: str) -> str:
+    return biling_label.replace("**", "").replace("*", "").replace(" · ", " — ")[:256]
 
 
 def _diaria_trampa_section(tr: int, ts: int) -> str:
@@ -152,7 +183,6 @@ def build_progreso_resumen_pages(db: Any, task_config: Dict[str, Any], user_id: 
     )
     ini_claimed = int(ini.get("completado") or 0) == 1
     ini_ready = not ini_claimed and _inicial_discord_done(ini) and inicial_profile_ready(db, user_id)
-    g_ini = _resumen_glyphe(ini_claimed, ini_ready)
     det_ini = (
         "premio **ya cobrado** (`?reclamar inicial` no aplica)"
         if ini_claimed
@@ -166,7 +196,6 @@ def build_progreso_resumen_pages(db: Any, task_config: Dict[str, Any], user_id: 
         and int(dia.get("oraculo_preguntas") or 0) >= 1
         and (int(dia.get("trampa_enviada") or 0) >= 1 or int(dia.get("trampa_sin_objetivo") or 0) >= 1)
     )
-    g_dia = _resumen_glyphe(dia_claimed, di_ready)
     det_dia = (
         f"hoy **ya cobraste** ({fecha}) — `?reclamar diaria` no aplica"
         if dia_claimed
@@ -179,7 +208,6 @@ def build_progreso_resumen_pages(db: Any, task_config: Dict[str, Any], user_id: 
         and int(sem.get("videos_reaccion") or 0) >= 1
         and int(sem.get("media_escrito") or 0) >= 1
     )
-    g_semb = _resumen_glyphe(semb_claimed, semb_ready)
     det_semb = (
         f"sem. **{sl}** — `?reclamar semanal` ya hecho"
         if semb_claimed
@@ -188,7 +216,6 @@ def build_progreso_resumen_pages(db: Any, task_config: Dict[str, Any], user_id: 
 
     sp_claimed = int(sem.get("completado_especial") or 0) == 1
     sp_ready = not sp_claimed and int(sem.get("impostor_partidas") or 0) >= 3 and int(sem.get("impostor_victorias") or 0) >= 1
-    g_sp = _resumen_glyphe(sp_claimed, sp_ready)
     det_sp = (
         "`?reclamar especial` ya hecho"
         if sp_claimed
@@ -196,7 +223,6 @@ def build_progreso_resumen_pages(db: Any, task_config: Dict[str, Any], user_id: 
     )
 
     mg_claimed = int(sem.get("completado_minijuegos") or 0) == 1
-    g_mg = _resumen_glyphe(mg_claimed, mg_marks and not mg_claimed)
     det_mg = (
         "`?reclamar minijuegos` ya hecho"
         if mg_claimed
@@ -207,23 +233,28 @@ def build_progreso_resumen_pages(db: Any, task_config: Dict[str, Any], user_id: 
         )
     )
 
-    lines = [
-        _resumen_line(g_ini, _LBL_INICIAL, det_ini),
-        _resumen_line(g_dia, _LBL_DIARIO, det_dia),
-        _resumen_line(g_semb, _LBL_SEM_BASE, det_semb),
-        _resumen_line(g_sp, _LBL_SEM_ESP, det_sp),
-        _resumen_line(g_mg, f"{_LBL_SEM_MG} (4 marcas)", det_mg),
+    blocks: List[discord.Embed] = [
+        _resumen_block_embed(_plain_block_title(_LBL_INICIAL), det_ini, claimed=ini_claimed, ready=ini_ready),
+        _resumen_block_embed(_plain_block_title(_LBL_DIARIO), det_dia, claimed=dia_claimed, ready=di_ready),
+        _resumen_block_embed(_plain_block_title(_LBL_SEM_BASE), det_semb, claimed=semb_claimed, ready=semb_ready),
+        _resumen_block_embed(_plain_block_title(_LBL_SEM_ESP), det_sp, claimed=sp_claimed, ready=sp_ready),
+        _resumen_block_embed(
+            _plain_block_title(f"{_LBL_SEM_MG} (4 marcas)"),
+            det_mg,
+            claimed=mg_claimed,
+            ready=mg_marks and not mg_claimed,
+        ),
     ]
-    body = (
-        "**Leyenda:** ✅ ya cobraste ese premio · ☑ **listo para cobrar** (usá el comando o el botón verde) · ☐ falta tarea.\n\n"
-        + "\n".join(lines)
-        + "\n\n**Siguiente ▶** detalle con marcas por ítem en `?inicial`, `?diaria` y `?semanal`.\n\n"
-        + _CMD_RECLAMAR
-        + "\n\n"
-        + _CMD_PROGRESS_HINT
+    footer = discord.Embed(
+        title="📊 Siguientes pasos",
+        description=(
+            "**Siguiente ▶** (paginador): detalle por bloque — `?inicial` · `?diaria` · `?semanal`.\n\n"
+            "Leyenda de colores, diaria/trampa y cómo reclamar: **`?progresoayuda`** · **`/aat-progreso-ayuda`**"
+        ),
+        color=discord.Color.blurple(),
     )
-    emb = discord.Embed(title="📊 Progreso — resumen", description=body, color=discord.Color.dark_green())
-    return [[emb]]
+    blocks.append(footer)
+    return [blocks]
 
 
 def build_pages_inicial(db: Any, task_config: Dict[str, Any], user_id: int) -> List[List[discord.Embed]]:

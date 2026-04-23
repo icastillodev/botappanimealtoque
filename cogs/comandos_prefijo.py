@@ -34,6 +34,7 @@ from cogs.economia.progreso_vistas import (
     build_pages_diaria,
     build_pages_inicial,
     build_pages_semanal,
+    build_progreso_ayuda_pages,
     build_progreso_resumen_pages,
 )
 from cogs.economia.toque_labels import fmt_toque_sentence, guia_toque_explicacion, toque_emote
@@ -98,7 +99,7 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
                 "**En #general** solo: `?roll` · `?rollp` / `?rollc` / `?rollpaceptar` · `?abrir` · `?usar` · oráculo · trivia · `?impostor` · `?animetop` · `?comandos`.\n"
                 "**Economía y tareas** (`?reclamar` = guía + botones; `?reclamar diaria`…; `?progreso`…):** en el **canal del bot** o con **slash** (no en #general).\n"
                 "**Con `/`** — versión completa (Discord te autocompleta).\n\n"
-                "**Economía (canal del bot o slash):** `?puntos` · `?inventario` · `?mi` · `?top` · `?tophist` · `?ranking` (tablas paginadas + botones) · `?reclamar` · `?progreso` · "
+                "**Economía (canal del bot o slash):** `?puntos` · `?inventario` · `?mi` · `?top` · `?tophist` · `?ranking` (tablas paginadas + botones) · `?reclamar` · `?progreso` · `?progresoayuda` · "
                 "`?diario` / `?diaria` (*daily*) · `?semanal` (*weekly*) · `?inicial` · `?abrir` · `?miscartas` · `?catalogo` · `?usar`\n"
                 "**Impostor:** `?impostor` — avisá que buscás gente / ver lobbies abiertos.\n"
                 "**Oráculo:** arrobá al bot + tu pregunta en el mismo mensaje · `?pregunta` + texto · `/aat-consulta` — sí / no / a veces %. Cuenta para el **diario** (*daily*) y puede dar **Toque points** extra.\n"
@@ -327,6 +328,10 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
             ctx, self._pages_inicial(ctx), label="?inicial / ?starter", reclaim_layout="inicial"
         )
 
+    @commands.command(name="progresoayuda", aliases=["ayudaprogreso", "leyendaprogreso", "comoprogreso"])
+    async def progresoayuda(self, ctx: commands.Context):
+        await _reply_paginated_embeds(ctx, build_progreso_ayuda_pages(), label="?progresoayuda")
+
     @commands.command()
     async def progreso(self, ctx: commands.Context):
         pages: List[List[discord.Embed]] = []
@@ -535,9 +540,9 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         e0 = embeds[0]
         extra = discord.Embed(title="📋 Ver qué te falta y reclamar", color=discord.Color.blurple())
         extra.description = (
-            "**En este canal (todos lo ven):** `?progreso` · `?diario` / `?diaria` (*daily*) · `?semanal` (*weekly*) · `?inicial` · `?reclamar` (guía paginada + ver progreso / cobrar)\n"
+            "**En este canal (todos lo ven):** `?progreso` · `?progresoayuda` · `?diario` / `?diaria` (*daily*) · `?semanal` (*weekly*) · `?inicial` · `?reclamar` (guía paginada + ver progreso / cobrar)\n"
             "**Por slash (también sirve en #general):** `/aat-progreso-iniciacion` · `/aat-progreso-diaria` (*daily*) · "
-            "`/aat-progreso-semanal` (*weekly*) · `/aat-reclamar`\n\n"
+            "`/aat-progreso-semanal` (*weekly*) · `/aat-progreso-ayuda` · `/aat-reclamar`\n\n"
             "Tip: si querés reclamar **solo** un tipo con slash, usá `/aat-reclamar` eligiendo "
             "`inicial` / `diaria` (*daily*) / `semanal` (*weekly*) / `semanal_especial` (*special*) / `semanal_minijuegos` (*minigames*).\n"
             "Guía completa en embeds: `?ayuda` / `?guia` / `/aat-guia`. Interactiva (solo vos): `/aat-ayuda`."
