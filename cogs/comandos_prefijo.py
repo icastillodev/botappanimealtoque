@@ -90,12 +90,22 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
                 head = f"📚 **Guía ({i + 1}/{n})**" if n > 1 else None
                 await ctx.send(content=head, embeds=part)
         except discord.HTTPException as e:
-            log.warning("Envío guía embeds falló: %s", e)
-            await ctx.send(
-                "Discord rechazó el envío (muchas imágenes/embeds o sin permiso **insertar enlaces** en este canal). "
-                "Probá en otro canal o `/aat-guia`.",
-                mention_author=False,
-            )
+            log.warning("Envío guía embeds en canal falló: %s", e)
+            try:
+                for i, part in enumerate(chunks):
+                    head = f"📚 **Guía ({i + 1}/{n})**" if n > 1 else None
+                    await ctx.author.send(content=head, embeds=part)
+                await ctx.send(
+                    f"{ctx.author.mention} Te mandé la guía por **mensaje privado** (este canal no aceptó los embeds: "
+                    "permisos o límites de Discord).",
+                    mention_author=False,
+                )
+            except Exception:
+                await ctx.send(
+                    "Discord rechazó el envío (revisá **Incrustar enlaces** / **Insertar enlaces** para el bot en este canal). "
+                    "Probá en otro canal o `/aat-guia`.",
+                    mention_author=False,
+                )
 
     @commands.command(name="ayuda")
     async def ayuda(self, ctx: commands.Context):

@@ -39,15 +39,48 @@ def guia_fixed_channel_blurb(bot: Any) -> str:
     )
 
 
-# Discord suele mostrar mejor varias partes que un solo mensaje con muchos embeds.
-GUIDE_EMBEDS_PER_MESSAGE = 5
+# Discord: la suma de caracteres de *todos* los embeds de un mismo mensaje no puede pasar de 6000.
+# Además hay máximo 10 embeds por mensaje. Troceamos por presupuesto de caracteres + ese tope.
+_GUIDE_MAX_EMBEDS_PER_MESSAGE = 10
+_GUIDE_MAX_CHARS_PER_MESSAGE = 5400
+
+
+def _embed_char_count(embed: discord.Embed) -> int:
+    n = 0
+    if embed.title:
+        n += len(embed.title)
+    if embed.description:
+        n += len(embed.description)
+    if embed.footer and embed.footer.text:
+        n += len(embed.footer.text)
+    if embed.author and embed.author.name:
+        n += len(embed.author.name)
+    for f in embed.fields:
+        n += len(f.name) + len(f.value)
+    return n
 
 
 def chunk_guia_embeds_for_send(bot: Any) -> List[List[discord.Embed]]:
-    """Parte la guía en trozos de a lo sumo `GUIDE_EMBEDS_PER_MESSAGE` embeds (máx. 10 en total)."""
+    """Parte la guía respetando el límite combinado de ~6000 caracteres y ≤10 embeds por mensaje."""
     embeds = build_guia_embeds(bot)[:10]
-    step = GUIDE_EMBEDS_PER_MESSAGE
-    return [embeds[i : i + step] for i in range(0, len(embeds), step)]
+    if not embeds:
+        return []
+    chunks: List[List[discord.Embed]] = []
+    cur: List[discord.Embed] = []
+    cur_chars = 0
+    for e in embeds:
+        sz = _embed_char_count(e)
+        overflow_chars = cur and (cur_chars + sz > _GUIDE_MAX_CHARS_PER_MESSAGE)
+        overflow_count = cur and (len(cur) >= _GUIDE_MAX_EMBEDS_PER_MESSAGE)
+        if cur and (overflow_chars or overflow_count):
+            chunks.append(cur)
+            cur = []
+            cur_chars = 0
+        cur.append(e)
+        cur_chars += sz
+    if cur:
+        chunks.append(cur)
+    return chunks
 
 
 def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
