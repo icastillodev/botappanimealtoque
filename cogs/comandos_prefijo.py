@@ -1,4 +1,4 @@
-# Comandos con prefijo ! — visibles para todos en el canal (no ephemeral).
+# Comandos con prefijo ? — visibles para todos en el canal (no ephemeral).
 # Los slash / siguen existiendo; esto es atajo y descubribilidad.
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from cogs.impostor.engine import PHASE_END
 
 
 class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
-    """Atajos ! públicos (economía, impostor)."""
+    """Atajos `?` públicos (economía, impostor)."""
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -36,16 +36,16 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         embed = discord.Embed(
             title="Comandos del bot (Anime al Toque)",
             description=(
-                "**Lista completa** (todos los `!` y `/`): **`!ayuda`** o **`!guia`** (varios embeds).\n"
-                "**Con `!` en el canal** (todos lo ven) — atajos abajo.\n"
+                "**Lista completa** (todos los `?` y `/`): **`?ayuda`** / **`?guia`** / **`/aat_guia`** (varios embeds).\n"
+                "**Con `?` en el canal** (todos lo ven) — atajos abajo.\n"
                 "**Con `/`** — versión completa (Discord te autocompleta).\n\n"
-                "**Economía:** `!puntos` · `!inventario` · `!top` · `!reclamar` · `!progreso` · "
-                "`!diaria` · `!semanal` · `!inicial` · `!abrir` · `!miscartas` · `!catalogo` · `!usar`\n"
-                "**Impostor:** `!impostor` — avisá que buscás gente / ver lobbies abiertos.\n"
-                "**Oráculo:** arrobá al bot + tu pregunta en el mismo mensaje · `!pregunta` + texto · `/aat_consulta` — sí / no / a veces %. Cuenta para la **diaria** y puntos extra (ver `.env`).\n"
-                "**Top anime:** `!animetop` · `!animetop @usuario` — slash: `/aat_anime_top_*`\n"
+                "**Economía:** `?puntos` · `?inventario` · `?top` · `?reclamar` · `?progreso` · "
+                "`?diaria` · `?semanal` · `?inicial` · `?abrir` · `?miscartas` · `?catalogo` · `?usar`\n"
+                "**Impostor:** `?impostor` — avisá que buscás gente / ver lobbies abiertos.\n"
+                "**Oráculo:** arrobá al bot + tu pregunta en el mismo mensaje · `?pregunta` + texto · `/aat_consulta` — sí / no / a veces %. Cuenta para la **diaria** y puede dar puntos extra.\n"
+                "**Top anime:** `?animetop` · `?animetop @usuario` — slash: `/aat_anime_top_*`\n"
                 "**Perfil:** `/aat_wishlist_*` · `/aat_hated_*` · `/aat_chars_*` (wishlist 1–30, odiados 1–10, personajes 1–10).\n"
-                "**Trivia anime:** el bot publica en **#general**; respondé ahí con `!respuestapregunta` + respuesta.\n"
+                "**Trivia anime:** el bot publica en **#general**; respondé ahí con `?respuestapregunta` + respuesta.\n"
                 "**Slash útiles:** `/aat_ayuda` · `/crearsimpostor` · `/entrar` · `/aat_tienda_ver`"
             ),
             color=discord.Color.blurple(),
@@ -58,7 +58,7 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
 
     @commands.command(name="ayuda")
     async def ayuda(self, ctx: commands.Context):
-        """Misma guía que el canal fijo: economía, tienda, cartas, listado de ! y /."""
+        """Misma guía que el canal fijo: economía, tienda, cartas, listado de comandos y recompensas."""
         await self._send_full_guia_embeds(ctx)
 
     @commands.command(aliases=["puntos"])
@@ -136,8 +136,8 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
             f"• Mensajes servidor: {msg_n}/10\n"
             f"• Reacciones: {rx_n}/3\n"
             f"• Trampa (dirigida o 2 casual): {'OK' if tr_ok else 'pendiente'} ({tr}/1 · {ts}/2)\n"
-            f"• Oráculo (1 pregunta): {'OK' if or_ok else 'pendiente'} (@bot / `!pregunta` / `/aat_consulta`)\n"
-            f"Premio: **{rw}** pts + 1 blister → `!reclamar`"
+            f"• Oráculo (1 pregunta): {'OK' if or_ok else 'pendiente'} (@bot / `?pregunta` / `/aat_consulta`)\n"
+            f"Premio: **{rw}** pts + 1 blister → `?reclamar`"
         )
         await ctx.send(embed=discord.Embed(title="Progreso diario", description=desc, color=discord.Color.orange()))
 
@@ -162,7 +162,7 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
             return
         desc = (
             "• Presentación · autorol país/rol · redes · reglas · 1 mensaje en #general\n"
-            f"Premio: **{self.task_config['rewards']['inicial']}** pts + 3 blisters → `!reclamar`"
+            f"Premio: **{self.task_config['rewards']['inicial']}** pts + 3 blisters → `?reclamar`"
         )
         await ctx.send(embed=discord.Embed(title="Iniciación", description=desc, color=discord.Color.blue()))
 
@@ -181,13 +181,13 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         elif err_msgs:
             await ctx.send("\n".join(err_msgs))
         else:
-            await ctx.send("Nada para reclamar ahora. `!progreso` o `/aat_progreso_diaria`.")
+            await ctx.send("Nada para reclamar ahora. `?progreso` o `/aat_progreso_diaria`.")
 
     @commands.command()
     async def miscartas(self, ctx: commands.Context):
         cartas = self.db.get_cards_in_inventory(ctx.author.id)
         if not cartas:
-            await ctx.send("No tenés cartas. Abrí blisters con `!abrir` o `/aat_abrirblister`.")
+            await ctx.send("No tenés cartas. Abrí blisters con `?abrir` o `/aat_abrirblister`.")
             return
         lines: List[str] = []
         for c in cartas:
@@ -242,7 +242,7 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
     @commands.cooldown(1, 10, commands.BucketType.user)
     async def usar(self, ctx: commands.Context, carta_id: str, target: Optional[discord.Member] = None):
         if not carta_id.isdigit():
-            await ctx.send("Usá: `!usar <id_carta> [@alguien]` (el ID sale en `!miscartas`).")
+            await ctx.send("Usá: `?usar <id_carta> [@alguien]` (el ID sale en `?miscartas`).")
             return
         cid = int(carta_id)
         user_id = ctx.author.id
@@ -347,30 +347,30 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         e0 = embeds[0]
         extra = discord.Embed(title="📋 Ver qué te falta y reclamar", color=discord.Color.blurple())
         extra.description = (
-            "**En este canal (todos lo ven):** `!progreso` · `!diaria` · `!semanal` · `!inicial` · `!reclamar`\n"
+            "**En este canal (todos lo ven):** `?progreso` · `?diaria` · `?semanal` · `?inicial` · `?reclamar`\n"
             "**Por slash (también sirve en #general):** `/aat_progreso_iniciacion` · `/aat_progreso_diaria` · "
             "`/aat_progreso_semanal` · `/aat_reclamar`\n\n"
             "Tip: si querés reclamar **solo** un tipo con slash, usá `/aat_reclamar` eligiendo "
             "`inicial` / `diaria` / `semanal` / `semanal_especial` / `semanal_minijuegos`.\n"
-            "Guía completa en embeds: `!ayuda` / `!guia`. Interactiva (solo vos): `/aat_ayuda`."
+            "Guía completa en embeds: `?ayuda` / `?guia` / `/aat_guia`. Interactiva (solo vos): `/aat_ayuda`."
         )
         await ctx.send(embeds=[e0, extra])
 
     @commands.command(name="guia")
     async def guia(self, ctx: commands.Context):
-        """Misma guía larga que `!ayuda` (embeds); `/aat_ayuda` sigue siendo la versión con botones."""
+        """Guía larga (embeds): puntos, recompensas, tienda, cartas, comandos. También: `/aat_guia`; con botones: `/aat_ayuda`."""
         await self._send_full_guia_embeds(ctx)
 
     @usar.error
     async def usar_err(self, ctx: commands.Context, error):
         if isinstance(error, commands.CommandOnCooldown):
-            await ctx.send(f"Esperá {error.retry_after:.0f}s antes de volver a usar `!usar`.", delete_after=8)
+            await ctx.send(f"Esperá {error.retry_after:.0f}s antes de volver a usar `?usar`.", delete_after=8)
 
     @impostor.error
     async def impostor_err(self, ctx: commands.Context, error):
         if isinstance(error, commands.CommandOnCooldown):
             await ctx.send(
-                f"Este canal ya tuvo un `!impostor` hace poco. Probá en {error.retry_after:.0f}s o usá la cartelera.",
+                f"Este canal ya tuvo un `?impostor` hace poco. Probá en {error.retry_after:.0f}s o usá la cartelera.",
                 delete_after=10,
             )
 

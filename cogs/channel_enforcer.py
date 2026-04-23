@@ -4,7 +4,7 @@ from discord.ext import commands
 import os
 import asyncio
 
-# Comandos ! permitidos en #general (primer token tras "!")
+# Comandos ? permitidos en #general (primer token tras "?")
 PUBLIC_GENERAL_PREFIX_COMMANDS = frozenset(
     {
         "comandos",
@@ -79,9 +79,8 @@ class ChannelEnforcerCog(commands.Cog, name="Limpieza de Chat"):
 
         # Si estamos en el canal General
         if message.channel.id == self.general_id:
-            
             # Verificar si es un comando de prefijo
-            if message.content.startswith("!") and len(message.content) > 1 and not message.content.startswith("! "):
+            if message.content.startswith("?") and len(message.content) > 1 and not message.content.startswith("? "):
                 first = message.content[1:].split()[0].lower()
                 if first in PUBLIC_GENERAL_PREFIX_COMMANDS:
                     return
@@ -94,8 +93,8 @@ class ChannelEnforcerCog(commands.Cog, name="Limpieza de Chat"):
                 # 2. Enviar Embed al CANAL (no DM)
                 embed = discord.Embed(
                     description=(
-                        f"🚫 **{message.author.mention}, en #general no se usan comandos con `!`.**\n"
-                        f"Usá los **comandos /** en <#{self.bot_channel_id}> o donde el staff indique "
+                        f"🚫 **{message.author.mention}, en #general no se usan comandos con `?` (salvo los permitidos).**\n"
+                        f"Guía completa: **`?guia`** o **`/aat_guia`**. Slash en <#{self.bot_channel_id}> "
                         f"(economía: `/aat_ayuda`, cartas: `/usar`)."
                     ),
                     color=discord.Color.red()

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from typing import Optional
 
 import discord
@@ -33,7 +34,9 @@ class GuiaCanalCog(commands.Cog, name="Guía canal fijo"):
     @commands.Cog.listener()
     async def on_guild_join(self, guild: discord.Guild) -> None:
         tc = getattr(self.bot, "task_config", None) or {}
-        ch_id = int((tc.get("channels") or {}).get("guia_bot") or 0)
+        bot_channel_id = int(os.getenv("BOT_CHANNEL_ID") or 0)
+        guia_channel_id = int((tc.get("channels") or {}).get("guia_bot") or 0)
+        ch_id = bot_channel_id or guia_channel_id
         if ch_id <= 0:
             return
         if guild.get_channel(ch_id) is not None:
@@ -52,9 +55,13 @@ class GuiaCanalCog(commands.Cog, name="Guía canal fijo"):
 
     async def _sync_guia_message_unlocked(self, reason: str) -> None:
         tc = getattr(self.bot, "task_config", None) or {}
-        ch_id = int((tc.get("channels") or {}).get("guia_bot") or 0)
+        # Publicar SIEMPRE en el canal del bot (canal de comandos), porque es donde la gente lo usa.
+        # Si no está configurado, caer al canal guía dedicado (si existe).
+        bot_channel_id = int(os.getenv("BOT_CHANNEL_ID") or 0)
+        guia_channel_id = int((tc.get("channels") or {}).get("guia_bot") or 0)
+        ch_id = bot_channel_id or guia_channel_id
         if ch_id <= 0:
-            log.debug("BOT_GUIA_CHANNEL_ID no configurado (canal aparte solo para la guía); se omite.")
+            log.debug("No hay canal configurado para publicar la guía (BOT_CHANNEL_ID / BOT_GUIA_CHANNEL_ID).")
             return
 
         channel = self.bot.get_channel(ch_id)

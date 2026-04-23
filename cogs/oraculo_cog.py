@@ -185,7 +185,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
         embed.set_footer(
             text=(
                 f"Tipo: {cat} · dado {dado}/100 · cuenta diaria · "
-                f"formas: @bot + pregunta · !pregunta · /aat_consulta"
+                f"formas: @bot + pregunta · ?pregunta · /aat_consulta"
             )
         )
         return embed
@@ -193,7 +193,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
     @commands.command(name="pregunta", aliases=["consulta", "8ball", "bola", "oraculo"])
     async def pregunta_prefijo(self, ctx: commands.Context, *, texto: str = None):
         if not texto or not str(texto).strip():
-            await ctx.send("Usá: `!pregunta ¿va a salir bien el stream?` (escribí la pregunta después del comando).")
+            await ctx.send("Usá: `?pregunta ¿va a salir bien el stream?` (escribí la pregunta después del comando).")
             return
         wait = self._oracle_cooldown_retry_after(ctx.author.id)
         if wait > 0:
@@ -211,7 +211,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
 
     @app_commands.command(
         name="aat_consulta",
-        description="Preguntá al oráculo (sí / no / %). También: @bot + pregunta en el canal o !pregunta.",
+        description="Preguntá al oráculo (sí / no / %). También: @bot + pregunta en el canal o ?pregunta.",
     )
     @app_commands.describe(pregunta="Lo que querés preguntar (sí / no / a veces un porcentaje).")
     async def consulta_slash(self, interaction: discord.Interaction, pregunta: str):
@@ -257,7 +257,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             return
         # Evitar doble respuesta si usaron comando con prefijo (el propio handler ya contestó / falló).
         raw = (message.content or "").lstrip()
-        if raw.startswith("!"):
+        if raw.startswith("?"):
             return
 
         pregunta = self._strip_mentions_for_question(message.content)
@@ -265,7 +265,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             try:
                 await message.reply(
                     "Escribí la **pregunta** en el mismo mensaje donde me arrobás "
-                    f"(ej. {me.mention} ¿va a llover mañana?). También podés usar `!pregunta …` o `/aat_consulta`.",
+                    f"(ej. {me.mention} ¿va a llover mañana?). También podés usar `?pregunta …` o `/aat_consulta`.",
                     mention_author=False,
                 )
             except discord.HTTPException:

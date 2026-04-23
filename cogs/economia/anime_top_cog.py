@@ -119,7 +119,7 @@ class AnimeTopCog(commands.Cog, name="Anime top"):
             "• Si querés, completá hasta **30** con el resto de favoritos.\n"
             "• Podés **cambiar** cualquier posición cuando quieras con `/aat_anime_top_set`.\n"
             "• `/aat_anime_top_quitar` deja vacía una casilla.\n"
-            f"• **Bonos únicos** (si el staff los dejó en `.env`): top 10 completo → **{b10}** pts; top 30 completo → **{b30}** pts extra.\n"
+            f"• **Bonos únicos**: top 10 completo → **{b10}** pts; top 30 completo → **{b30}** pts extra.\n"
             "• Ver el de otro: `/aat_anime_top_ver` eligiendo usuario (mensaje público)."
         )
         await interaction.response.send_message(embed=emb, ephemeral=True)

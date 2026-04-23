@@ -15,7 +15,7 @@ class InfoPublicaCog(commands.Cog, name="Economía info pública"):
     async def aat_canjes(self, interaction: discord.Interaction):
         embeds = build_guia_embeds(self.bot)
         e = embeds[1]
-        e.set_footer(text="Tip: para la guía completa usá /aat_ayuda (se puede usar en #general).")
+        e.set_footer(text="Tip: guía completa con /aat_guia o ?guia; interactiva: /aat_ayuda.")
         await interaction.response.send_message(embed=e)
 
     @app_commands.command(name="aat_ganar_puntos", description="Cómo ganar puntos + cómo ver qué te falta (público).")
@@ -24,13 +24,21 @@ class InfoPublicaCog(commands.Cog, name="Economía info pública"):
         e0 = embeds[0]
         extra = discord.Embed(title="📋 Ver qué te falta y reclamar", color=discord.Color.blurple())
         extra.description = (
-            "**Público:** `!progreso` · `!diaria` · `!semanal` · `!inicial` · `!reclamar`\n"
+            "**Público:** `?progreso` · `?diaria` · `?semanal` · `?inicial` · `?reclamar`\n"
             "**Privado (slash):** `/aat_progreso_iniciacion` · `/aat_progreso_diaria` · `/aat_progreso_semanal` · `/aat_reclamar`\n\n"
             "Si querés reclamar **solo** una categoría: `/aat_reclamar` eligiendo "
             "`inicial` / `diaria` / `semanal` / `semanal_especial` / `semanal_minijuegos`.\n"
-            "Guía completa: `/aat_ayuda`."
+            "Guía completa (embeds): `/aat_guia` · `?guia`. Interactiva: `/aat_ayuda`."
         )
         await interaction.response.send_message(embeds=[e0, extra])
+
+    @app_commands.command(
+        name="aat_guia",
+        description="Guía completa del bot: recompensas, tienda, cartas y lista de comandos (público).",
+    )
+    async def aat_guia(self, interaction: discord.Interaction):
+        embeds = build_guia_embeds(self.bot)[:10]
+        await interaction.response.send_message(embeds=embeds)
 
 
 async def setup(bot: commands.Bot) -> None:

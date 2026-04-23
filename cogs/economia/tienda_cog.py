@@ -49,7 +49,7 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
         embed = discord.Embed(
             title="🏪 Tienda Anime al Toque",
             description=(
-                "Gastá **puntos** 🪙 en recompensas. Los precios salen del `.env` del bot.\n"
+                "Gastá **puntos** 🪙 en recompensas. Los precios dependen del servidor.\n"
                 f"**Tu saldo:** `{eco['puntos_actuales']}` pts · **Créditos pin:** `{eco.get('creditos_pin', 0)}`"
             ),
             color=discord.Color.from_rgb(88, 101, 242),
@@ -103,7 +103,7 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
         if poll > 0 and vch > 0:
             extra = f"**Encuesta en canal votación** — **{poll}** pts → `/aat_tienda_encuesta`\n"
         elif poll > 0 and vch <= 0:
-            extra = "_Encuesta tienda:_ falta `VOTACION_CHANNEL_ID` (o `VOTING_CHANNEL_ID`) en el `.env`.\n"
+            extra = "_Encuesta tienda:_ esta opción no está disponible en este servidor.\n"
         if ptr > 0:
             extra += f"**Rol personal 30 días** — **{ptr}** pts → `/aat_tienda_rol_temporal`\n"
         if extra:
@@ -255,7 +255,7 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
         await interaction.response.defer(ephemeral=True)
         precio = self._cfg("price_pin_general", 0)
         if precio <= 0:
-            await interaction.followup.send("Esta opción no está habilitada (`SHOP_PRICE_PIN_GENERAL`).", ephemeral=True)
+            await interaction.followup.send("Esta opción no está disponible en este servidor.", ephemeral=True)
             return
         gid = self._general_channel_id()
         if not gid or not interaction.guild:
@@ -332,10 +332,7 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
         precio = self._cfg("price_poll_tienda", 0)
         cid = self._cfg("votacion_channel_id", 0)
         if precio <= 0 or cid <= 0:
-            await interaction.followup.send(
-                "No habilitado: definí `SHOP_PRICE_POLL_TIENDA` (>0) y `VOTACION_CHANNEL_ID` (o `VOTING_CHANNEL_ID`) en el `.env`.",
-                ephemeral=True,
-            )
+            await interaction.followup.send("Esta opción no está disponible en este servidor.", ephemeral=True)
             return
         if not interaction.guild:
             await interaction.followup.send("Solo en servidor.", ephemeral=True)
@@ -407,7 +404,7 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
         raw_days = int(self.config.get("temp_role_days", 30) if self.config else 30)
         days = max(1, min(30, raw_days))
         if precio <= 0:
-            await interaction.followup.send("No habilitado (`SHOP_PRICE_TEMP_ROLE`).", ephemeral=True)
+            await interaction.followup.send("Esta opción no está disponible en este servidor.", ephemeral=True)
             return
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             await interaction.followup.send("Solo en servidor.", ephemeral=True)

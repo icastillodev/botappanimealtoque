@@ -65,7 +65,7 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
             f"{self._check_task(msg_n, 10)} Enviar **10** mensajes en el servidor (cualquier canal de texto) — {msg_n}/10\n"
             f"{self._check_task(rx_n, 3)} Añadir **3** reacciones en el servidor — {rx_n}/3\n"
             f"{'✅' if tr_ok else '❌'} **Trampa:** contra alguien (`/usar`+objetivo) **o** 2× trampa sin objetivo — Dirigida: {tr}/1 · Casual: {ts}/2\n"
-            f"{'✅' if or_ok else '❌'} **Oráculo:** 1 pregunta al bot (`!pregunta` o `/aat_consulta`) — {or_n}/1\n\n"
+            f"{'✅' if or_ok else '❌'} **Oráculo:** 1 pregunta al bot (`?pregunta` o `/aat_consulta`) — {or_n}/1\n\n"
         )
         if prog_dia['completado'] == 1:
             desc_dia += "✅ **¡Ya reclamaste la recompensa de hoy!**"

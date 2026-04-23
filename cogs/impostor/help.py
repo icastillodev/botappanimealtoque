@@ -56,8 +56,8 @@ EMBED_COMANDOS = discord.Embed(
 )
 EMBED_COMANDOS.add_field(
     name="Generales",
-    value="`/helpimpostor` - Muestra esta ayuda.\n"
-          "`/crearsimpostor nombre: …` — `jugadores` es **opcional** (cupo máx.; por defecto usa el .env).\n"
+    value="`/helpimpostor` o `/ayudaimpostor` - Muestra esta ayuda.\n"
+          "`/crearsimpostor nombre: …` — `jugadores` es **opcional** (cupo máx. del lobby).\n"
           "`/entrar nombre: [nombre]` - Te une a un lobby abierto.\n"
           "En la **cartelera** hay un botón para darte o quitarte el rol de avisos de partidas.",
     inline=False
@@ -65,7 +65,7 @@ EMBED_COMANDOS.add_field(
 EMBED_COMANDOS.add_field(
     name="Dentro del Lobby",
     value="`/leave` o `/salir` - Abandona el lobby (solo antes de empezar).\n"
-          "`/ready` - Te marca como listo para empezar.\n"
+          "`/ready` o `/listo` - Te marca como listo para empezar.\n"
           "`/addbot` - (Host) Añade un bot.\n"
           "`/removebot` - (Host) Quita un bot.",
     inline=False
@@ -139,6 +139,10 @@ class ImpostorHelpCog(commands.Cog, name="ImpostorHelp"):
             view=HelpView(interaction.user),
             ephemeral=True # Se envía oculto
         )
+
+    @app_commands.command(name="ayudaimpostor", description="(Alias) Muestra la ayuda del modo Impostor.")
+    async def ayudaimpostor(self, interaction: discord.Interaction):
+        await self.helpimpostor.callback(self, interaction)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(ImpostorHelpCog(bot))

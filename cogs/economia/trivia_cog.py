@@ -1,5 +1,5 @@
 # Trivia anime: 2 sorteos al día entre 12:00 y 22:00 (America/Montevideo), 30 s para responder.
-# Primera respuesta correcta con !respuestapregunta gana puntos (REWARD_TRIVIA_WIN_POINTS).
+# Primera respuesta correcta con ?respuestapregunta gana puntos (REWARD_TRIVIA_WIN_POINTS).
 from __future__ import annotations
 
 import asyncio
@@ -258,7 +258,7 @@ class AnimeTriviaCog(commands.Cog, name="Trivia anime"):
             description=f"{q}",
             color=discord.Color.orange(),
         )
-        emb.set_footer(text="Respondé con `!respuestapregunta` + tu respuesta")
+        emb.set_footer(text="Respondé con `?respuestapregunta` + tu respuesta")
 
         try:
             await channel.send(embed=emb)
@@ -317,7 +317,7 @@ class AnimeTriviaCog(commands.Cog, name="Trivia anime"):
                 return
             guess = (texto or "").strip()
             if not guess:
-                await ctx.reply("Usá: `!respuestapregunta` seguido de tu respuesta.", mention_author=False)
+                await ctx.reply("Usá: `?respuestapregunta` seguido de tu respuesta.", mention_author=False)
                 return
 
             g_norm = _norm_answer(guess)

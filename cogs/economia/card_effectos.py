@@ -134,7 +134,7 @@ async def _efecto_rol_trampa_24h(
     role = guild.get_role(role_id)
     if not role:
         if hasattr(channel, "send"):
-            await channel.send("No encuentro ese rol en el servidor (revisá el ID en `.env`).", delete_after=20)
+            await channel.send("No encuentro ese rol en el servidor (configuración del servidor).", delete_after=20)
         return
     if not _role_assignable(role, me):
         if hasattr(channel, "send"):

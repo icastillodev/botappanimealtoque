@@ -79,7 +79,8 @@ class MiBot(commands.Bot):
         intents.messages = True     
         intents.reactions = True    
         
-        super().__init__(command_prefix="!", intents=intents)
+        # Prefijo de comandos de texto (por convivencia con otros bots del servidor)
+        super().__init__(command_prefix="?", intents=intents)
         
         self.log = logging.getLogger(self.__class__.__name__)
 

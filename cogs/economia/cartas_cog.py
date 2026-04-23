@@ -135,7 +135,7 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
         embed.add_field(name="🪙 Puntos Actuales", value=f"{eco_data['puntos_actuales']}", inline=True)
         embed.add_field(name="📌 Créditos para Fijar", value=f"{eco_data['creditos_pin']}", inline=True)
         
-        blister_desc = "No tienes blisters.\n¡Gana más con `/aat_reclamar diaria`!"
+        blister_desc = "No tenés blisters.\n¡Conseguí más con `/aat_reclamar diaria`!"
         if blisters:
             blister_desc = ""
             for b in blisters:
@@ -208,7 +208,7 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
         cartas_inv = self.economia_db.get_cards_in_inventory(interaction.user.id)
         embed = discord.Embed(title=f"Inventario de Cartas de {interaction.user.display_name}", color=discord.Color.blue())
         if not cartas_inv:
-            embed.description = "No tienes ninguna carta. ¡Gana blisters con `/aat_reclamar diaria`!"
+            embed.description = "No tenés ninguna carta. ¡Conseguí blisters con `/aat_reclamar diaria`!"
             await interaction.followup.send(embed=embed, ephemeral=True)
             return
         desc = ""

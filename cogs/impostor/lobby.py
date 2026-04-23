@@ -659,7 +659,7 @@ class ImpostorLobbyCog(commands.Cog, name="ImpostorLobby"):
     @app_commands.command(name="crearsimpostor", description="Crea un nuevo lobby para el juego Impostor.")
     @app_commands.describe(
         nombre="Nombre para tu lobby (ej: 'Pros Only')",
-        jugadores="Opcional: cupo máximo (humanos+bots). Si lo omitís, se usa `IMPOSTOR_DEFAULT_SLOTS` o el techo del .env.",
+        jugadores="Opcional: cupo máximo (humanos+bots). Si lo omitís, se usa el cupo por defecto del servidor.",
     )
     @app_commands.choices(tipo=[
         app_commands.Choice(name="Abierto (Cualquiera puede unirse)", value="abierto"),
@@ -681,7 +681,7 @@ class ImpostorLobbyCog(commands.Cog, name="ImpostorLobby"):
             return await interaction.followup.send(
                 f"❌ El cupo debe estar entre **{min_p}** y **{ceiling}** "
                 f"(o omití `jugadores` para usar el valor por defecto). "
-                f"Ajustá `IMPOSTOR_MAX_PLAYERS` / `IMPOSTOR_DEFAULT_SLOTS` en el .env.",
+                "El cupo máximo de este servidor no permite ese número.",
                 ephemeral=True,
             )
         
@@ -866,6 +866,10 @@ class ImpostorLobbyCog(commands.Cog, name="ImpostorLobby"):
         if not player or player.is_bot: return await interaction.response.send_message("❌ No eres un jugador humano aquí.", ephemeral=True)
         await _handle_ready(interaction, self.bot, lobby, player)
         await queue_hud_update(lobby.channel_id) 
+
+    @app_commands.command(name="listo", description="(Alias) Marca tu estado como Listo/No Listo en el lobby.")
+    async def listo(self, interaction: discord.Interaction):
+        await self.ready_command.callback(self, interaction)
 
     @app_commands.command(name="abrirlobby", description="[Host] Abre tu lobby actual.")
     async def abrirlobby(self, interaction: discord.Interaction):

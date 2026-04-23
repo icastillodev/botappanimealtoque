@@ -1,4 +1,4 @@
-# Contenido del mensaje fijo del canal guía (BOT_GUIA_CHANNEL_ID).
+# Contenido del mensaje fijo de guía (se publica en el canal del bot).
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
@@ -17,36 +17,37 @@ def _linea_precio(nombre: str, precio: int) -> Optional[str]:
 
 
 def build_comandos_ref_embeds() -> List[discord.Embed]:
-    """Lista compacta de todos los comandos ! y / (para canal guía y `!ayuda`)."""
+    """Lista compacta de todos los comandos ? y / (para canal guía y `?ayuda`)."""
     r0 = discord.Embed(
-        title="📋 Comandos con prefijo !",
+        title="📋 Comandos con prefijo ?",
         description=(
-            "En **#general** solo funcionan los `!` que el bot permite ahí (lista del staff). "
-            "En el **canal de comandos del bot** (`BOT_CHANNEL_ID`) podés usar el resto de `!` sin que los borre el filtro.\n\n"
+            "En **#general** solo funcionan los `?` que el bot permite ahí (lista del staff). "
+            "En el **canal del bot** podés usar el resto de `?` sin que los borre el filtro.\n\n"
             "**Economía y cartas**\n"
-            "• `!puntos` — tus puntos · `!inventario` — puntos, pins y blisters\n"
-            "• `!top` · `!rank` · `!ranking` — top 5 del servidor\n"
-            "• `!reclamar` — cobrar recompensas listas\n"
-            "• `!progreso` — resumen iniciación + diaria + semanal\n"
-            "• `!diaria` · `!daily` · `!semanal` · `!weekly` · `!inicial` · `!starter` · `!iniciacion` — ver qué falta\n"
-            "• `!abrir` — abrir blister (público en el canal)\n"
-            "• `!miscartas` — lista de cartas (**visible para todos** en ese canal)\n"
-            "• `!catalogo` — todas las cartas del juego\n"
-            "• `!usar` · `!usarcarta` — usar carta trampa (`!usar <id> [@alguien]`)\n\n"
+            "• `?puntos` — tus puntos · `?inventario` — puntos, pins y blisters\n"
+            "• `?top` · `?rank` · `?ranking` — top 5 del servidor\n"
+            "• `?reclamar` — cobrar recompensas listas\n"
+            "• `?progreso` — resumen iniciación + diaria + semanal\n"
+            "• `?diaria` · `?daily` · `?semanal` · `?weekly` · `?inicial` · `?starter` · `?iniciacion` — ver qué falta\n"
+            "• `?abrir` — abrir blister (público en el canal)\n"
+            "• `?miscartas` — lista de cartas (**visible para todos** en ese canal)\n"
+            "• `?catalogo` — todas las cartas del juego\n"
+            "• `?usar` · `?usarcarta` — usar carta trampa (`?usar <id> [@alguien]`)\n\n"
             "**Resúmenes y guía en el chat**\n"
-            "• `!comandos` · `!aat` · `!cmds` · `!cmd` · `!ayudabot` — resumen corto\n"
-            "• `!ayuda` · `!guia` — **esta guía completa** en varios embeds\n"
-            "• `!canjes` · `!tienda` · `!recompensas` — embed de tienda y canjes\n"
-            "• `!ganarpuntos` · `!comoganar` — cómo ganar puntos + reclamar\n"
-            "• `!roll` — dado casual entre dos números\n\n"
+            "• `?comandos` · `?aat` · `?cmds` · `?cmd` · `?ayudabot` — resumen corto\n"
+            "• `?ayuda` · `?guia` — **esta guía completa** en varios embeds\n"
+            "• `/aat_guia` — la misma guía completa con slash (todos la ven en el canal)\n"
+            "• `?canjes` · `?tienda` · `?recompensas` — embed de tienda y canjes\n"
+            "• `?ganarpuntos` · `?comoganar` — cómo ganar puntos + reclamar\n"
+            "• `?roll` — dado casual entre dos números\n\n"
             "**Impostor**\n"
-            "• `!impostor` · `!buscoimpostor` · `!busco` · `!lobbys` · `!cartelera` — aviso de busca / cartelera\n\n"
+            "• `?impostor` · `?buscoimpostor` · `?busco` · `?lobbys` · `?cartelera` — aviso de busca / cartelera\n\n"
             "**Oráculo (diaria)**\n"
-            "• `!pregunta` · `!consulta` · `!8ball` · `!bola` · `!oraculo` — pregunta sí/no (también @mención al bot)\n\n"
+            "• `?pregunta` · `?consulta` · `?8ball` · `?bola` · `?oraculo` — pregunta sí/no (también @mención al bot)\n\n"
             "**Trivia (pregunta en #general)**\n"
-            "• `!respuestapregunta` · `!triviaresp` · `!rtrivia` + tu respuesta\n\n"
+            "• `?respuestapregunta` · `?triviaresp` · `?rtrivia` + tu respuesta\n\n"
             "**Top anime**\n"
-            "• `!animetop` · `!animetop @usuario`"
+            "• `?animetop` · `?animetop @usuario`"
         ),
         color=discord.Color.light_grey(),
     )
@@ -61,10 +62,11 @@ def build_comandos_ref_embeds() -> List[discord.Embed]:
             "**Tienda:** `/aat_tienda_ver` · `/aat_tienda_canjear` · `/aat_tienda_fijar` · `/aat_tienda_pin_general` · "
             "`/aat_tienda_encuesta` · `/aat_tienda_rol_temporal`\n"
             "**Público en el canal:** `/aat_canjes` · `/aat_ganar_puntos`\n"
+            "**Guía completa (todos la ven):** `/aat_guia`\n"
             "**Guía interactiva (solo vos):** `/aat_ayuda`\n"
             "**Minijuegos y encuesta del servidor:** `/aat_roll` · `/aat_roll_retar` · `/aat_roll_aceptar` · "
             "`/aat_voto_semanal`\n"
-            "**Duelos con cartas** (si el staff los activa en `.env`): `/aat_duelo_retar` · `/aat_duelo_aceptar`"
+            "**Duelos con cartas** (si están habilitados): `/aat_duelo_retar` · `/aat_duelo_aceptar`"
         ),
         color=discord.Color.blue(),
     )
@@ -83,7 +85,7 @@ def build_comandos_ref_embeds() -> List[discord.Embed]:
     r3 = discord.Embed(
         title="⚙️ Slash — Impostor, VERSUS y votaciones",
         description=(
-            "**Impostor:** `/crearsimpostor` · `/entrar` · `/leave` · `/salir` · `/invitar` · `/ready` · `/abrirlobby` · `/cerrarlobby` · `/helpimpostor`\n"
+            "**Impostor:** `/crearsimpostor` · `/entrar` · `/leave` · `/salir` · `/invitar` · `/ready` · `/listo` · `/abrirlobby` · `/cerrarlobby` · `/helpimpostor` · `/ayudaimpostor`\n"
             "**VERSUS semanal:** `/aat_versus_votos` — quién votó en la encuesta actual\n\n"
             "**Votaciones del servidor**\n"
             "• `/crear_votacion` — encuesta simple (usuario)\n"
@@ -107,11 +109,9 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
     e0 = discord.Embed(
         title="📌 Guía del bot — Anime al Toque",
         description=(
-            "Este **canal** es solo para esta **guía fija** (comandos, reclamos, tienda, qué podés hacer). "
-            "**No es** el canal de #general, **no es** donde escribís los `/` del bot (`BOT_CHANNEL_ID` en el `.env`) "
-            "ni el de votaciones: el staff elige **otro canal aparte** y pone su ID en **`BOT_GUIA_CHANNEL_ID`** "
-            "para que el bot **solo** cree/edite acá este mensaje al reiniciar.\n\n"
-            "Abajo: primero lo que **ven todos** con `!`, después lo **solo vos** con slash (*ephemeral*), cuando aplique."
+            "Acá tenés una guía rápida de **todo lo que podés hacer** con el bot: "
+            "puntos, recompensas, cartas, tienda, Impostor, votaciones y más.\n\n"
+            "Abajo: primero lo que **ven todos** con `?`, después lo que es **solo para vos** con slash (*ephemeral*), cuando aplique."
         ),
         color=discord.Color.blurple(),
     )
@@ -121,7 +121,7 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
             f"• **Iniciación** (una vez): {_fmt_pts(int(rw.get('inicial') or 0))} + blisters — "
             "`/aat_progreso_iniciacion` (solo vos).\n"
             f"• **Diaria**: {_fmt_pts(int(rw.get('diaria') or 0))} + blister — mensajes, reacciones, **Trampa** y **oráculo**.\n"
-            f"  · **Todos:** arrobá al **bot** + tu pregunta en el mismo mensaje (responde en hilo) · `!pregunta` + texto.\n"
+            f"  · **Todos:** arrobá al **bot** + tu pregunta en el mismo mensaje (responde en hilo) · `?pregunta` + texto.\n"
             f"  · **Slash:** `/aat_consulta` (la respuesta del oráculo va al canal; la ven quienes estén ahí).\n"
             f"  · Puntos extra oráculo: hasta {int(rw.get('oracle_max_preguntas_con_puntos') or 5)} preguntas/día a "
             f"{_fmt_pts(int(rw.get('oracle_pregunta_points') or 0))} c/u.\n"
@@ -129,19 +129,17 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
             f"• **Especial semanal (Impostor)**: {_fmt_pts(int(rw.get('especial_semanal') or 0))} + blisters.\n"
             f"• **Minijuegos semanal**: {_fmt_pts(int(rw.get('minijuegos_semanal') or 0))} + blisters.\n"
             "• **Top anime (bonos únicos):** completar 10 y 30 posiciones — ver embed *Top anime*.\n"
-            "• **Colección de blisters (bono, `.env`):** lista de tipos en `BLISTER_COLLECTION_TYPES` + puntos en "
-            "`REWARD_BLISTER_COLLECTION_POINTS`; al sumar blisters y cumplir la meta se acredita solo (subí "
-            "`REWARD_BLISTER_COLLECTION_VERSION` cuando agregues tipos nuevos)."
+            "• **Colección de blisters (bono):** si completás la colección, el bot te da un premio automático."
         ),
         inline=False,
     )
     e0.add_field(
         name="Progreso y reclamar",
         value=(
-            "**Todos en el canal:** `!progreso` · `!diaria` · `!semanal` · `!inicial` "
+            "**Todos en el canal:** `?progreso` · `?diaria` · `?semanal` · `?inicial` "
             "(donde el staff permita, p. ej. #general).\n"
             "**Solo vos:** `/aat_progreso_iniciacion` · `/aat_progreso_diaria` · `/aat_progreso_semanal`\n\n"
-            "**Todos:** `!reclamar`\n"
+            "**Todos:** `?reclamar`\n"
             "**Solo vos:** `/aat_reclamar` (sin tipo reclama todo lo listo, o elegí `inicial` / `diaria` / `semanal` / "
             "`semanal_especial` / `semanal_minijuegos`)."
         ),
@@ -149,7 +147,7 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
     )
     e0.add_field(
         name="Puntos rápidos",
-        value="**Todos:** `!puntos`\n**Solo vos:** `/aat_puntos`",
+        value="**Todos:** `?puntos`\n**Solo vos:** `/aat_puntos`",
         inline=False,
     )
 
@@ -169,7 +167,7 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
 
     e1 = discord.Embed(title="🏪 Tienda y canjes", color=discord.Color.gold())
     e1.description = (
-        "**No hay comandos `!` de tienda.** Todo es slash y la respuesta es **solo para vos** "
+        "**No hay comandos `?` de tienda.** Todo es slash y la respuesta es **solo para vos** "
         "(nadie más ve tu saldo ni el canje).\n"
         "**Solo vos:** `/aat_tienda_ver` (precios y saldo) · `/aat_tienda_canjear` · `/aat_tienda_fijar` · "
         "`/aat_tienda_pin_general` · `/aat_tienda_encuesta` · `/aat_tienda_rol_temporal`"
@@ -178,14 +176,14 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
         name="Canjes típicos (`/aat_tienda_canjear`)",
         value=(
             "**akatsuki** / **jonin** / **pin** / **blister_trampa**\n"
-            "• **pin** suma 1 crédito; después `/aat_tienda_fijar` con la **ID** del mensaje en ese canal.\n"
-            "• **blister_trampa** → abrís con `/aat_abrirblister` (privado) o `!abrir` (todos ven el resultado en el canal)."
+            "• **pin** suma 1 crédito; después `/aat_tienda_fijar` y elegís el mensaje a fijar.\n"
+            "• **blister_trampa** → abrís con `/aat_abrirblister` (privado) o `?abrir` (todos ven el resultado en el canal)."
         ),
         inline=False,
     )
     e1.add_field(
-        name="Precios (si > 0 en .env)",
-        value="\n".join(lineas_tienda) or "*(Sin precios > 0 en env; el staff puede activarlos.)*",
+        name="Precios (según el servidor)",
+        value="\n".join(lineas_tienda) or "*(La tienda no está activa ahora o no tiene precios cargados.)*",
         inline=False,
     )
 
@@ -194,8 +192,8 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
     e2 = discord.Embed(title="🎌 Top de anime / manga (hasta 30)", color=discord.Color.dark_teal())
     e2.description = (
         "Armá **tu ranking** (posiciones **1 a 30**); podés cambiar títulos cuando quieras.\n"
-        f"Bonos únicos (si están en `.env`): **10** primeras → {_fmt_pts(b10)} · **30** → {_fmt_pts(b30)}.\n\n"
-        "**Todos en el canal:** `!animetop` · `!animetop @usuario` (se ve el listado en el chat).\n"
+        f"Bonos únicos: **10** primeras → {_fmt_pts(b10)} · **30** → {_fmt_pts(b30)}.\n\n"
+        "**Todos en el canal:** `?animetop` · `?animetop @usuario` (se ve el listado en el chat).\n"
         "**Solo vos:** `/aat_anime_top_set` · `/aat_anime_top_quitar` · `/aat_anime_top_guia` · "
         "`/aat_anime_top_ver` **sin** elegir a nadie (tu top en privado). "
         "Si en el slash elegís **otro usuario**, la respuesta puede ser **pública** en el canal."
@@ -204,7 +202,7 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
     e3 = discord.Embed(title="🃏 Cartas", color=discord.Color.dark_red())
     e3.add_field(
         name="Inventario (puntos, pins, blisters)",
-        value="**Todos:** `!inventario`\n**Solo vos:** `/aat_inventario`",
+        value="**Todos:** `?inventario`\n**Solo vos:** `/aat_inventario`",
         inline=False,
     )
     e3.add_field(
@@ -213,14 +211,14 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
             "**Para que solo vos veas tu colección:** usá **`/aat_miscartas`** "
             "(en el canal de comandos del bot). Discord muestra la respuesta como **solo para vos** "
             "(mensaje privado / *ephemeral*; el resto del servidor no ve qué cartas tenés).\n"
-            "**Ojo:** **`!miscartas`** deja el embed **en el canal** → **lo ven todos**; usalo solo si te da igual mostrar la lista."
+            "**Ojo:** **`?miscartas`** deja el embed **en el canal** → **lo ven todos**; usalo solo si te da igual mostrar la lista."
         ),
         inline=False,
     )
     e3.add_field(
         name="Abrir sobres · catálogo · detalle · usar",
         value=(
-            "**Todos:** `!abrir` · `!catalogo` · `!usar <id> [@alguien]`\n"
+            "**Todos:** `?abrir` · `?catalogo` · `?usar <id> [@alguien]`\n"
             "**Solo vos:** `/aat_abrirblister` · `/aat_catalogo` · `/vercarta` · `/usar` "
             "(el aviso *¡Carta usada!* es privado; el **embed del efecto** se publica en el canal para que se vea la jugada)."
         ),
@@ -231,22 +229,23 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
     e4.add_field(
         name="Impostor",
         value=(
-            "**Todos:** `!impostor` (aviso en el canal; buscan jugadores).\n"
+            "**Todos:** `?impostor` (aviso en el canal; buscan jugadores).\n"
             "**Slash:** `/crearsimpostor` · `/entrar` (según lo que muestre Discord al escribir)."
         ),
         inline=False,
     )
     e4.add_field(
         name="Ranking de puntos del servidor",
-        value="**Todos:** `!top` / `!ranking`\n**Slash:** `/aat_ranking_top` (la tabla suele verse en el canal).",
+        value="**Todos:** `?top` / `?ranking`\n**Slash:** `/aat_ranking_top` (la tabla suele verse en el canal).",
         inline=False,
     )
     e4.add_field(
         name="Lista de comandos y ayuda",
         value=(
-            "**En este canal:** los embeds siguientes listan **todos** los `!` y `/` del bot.\n"
-            "**En el chat:** `!ayuda` o `!guia` (donde el staff lo permita) repite la misma guía en embeds.\n"
-            "**Resumen corto:** `!comandos`\n"
+            "**En este canal:** los embeds siguientes listan **todos** los `?` y `/` del bot.\n"
+            "**En el chat:** `?ayuda` · `?guia` (donde el staff lo permita) repite la misma guía en embeds.\n"
+            "**Slash público:** `/aat_guia`\n"
+            "**Resumen corto:** `?comandos`\n"
             "**Solo vos:** `/aat_ayuda` (guía interactiva con botones, *ephemeral*)."
         ),
         inline=False,
