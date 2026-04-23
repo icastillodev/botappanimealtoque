@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import ast
+import logging
 import math
 import os
 import random
@@ -21,6 +22,18 @@ from discord import app_commands
 from discord.ext import commands
 
 from cogs.oracle_llm import oracle_local_reply, oracle_local_reply_followup
+
+log = logging.getLogger(__name__)
+
+
+def _message_pings_bot(message: discord.Message, me: discord.abc.User) -> bool:
+    """Algunos clientes no rellenan `mentions` igual; `raw_mentions` sale del texto `<@…>`."""
+    if me in message.mentions:
+        return True
+    try:
+        return me.id in (message.raw_mentions or ())
+    except Exception:
+        return False
 
 
 # Preguntas que no son un sí/no claro: mejor “charla” que un porcentaje místico.
@@ -690,7 +703,26 @@ class OraculoCog(commands.Cog, name="Oráculo"):
         assert self.db is not None
         self.db.ensure_user_exists(author_id)
         pq = pregunta.strip()
-        if _is_open_ended_question(pq):
+        # Cuenta resuelta en el bot primero (rápido): evita que una regex “abierta” fuerce IA antes que `2+2`.
+        if _is_simple_arithmetic_question(pq):
+            expr = _extract_arithmetic_expression_for_eval(pq)
+            val = _safe_eval_arithmetic(expr) if expr else None
+            if val is not None:
+                body, response_kind = _format_math_answer_body(expr, val), "math"
+            else:
+                llm = await oracle_local_reply(pq)
+                if llm:
+                    body, response_kind = llm, "llm"
+                elif _is_open_ended_question(pq):
+                    kind, body, _ = _roll_oracle_for_question(pq)
+                    response_kind = "open" if kind == "open" else "yesno"
+                else:
+                    body = (
+                        "No pude resolver esa cuenta tal cual está; "
+                        "probá con `+ - * / % ^ ( )` y números simples."
+                    )
+                    response_kind = "open"
+        elif _is_open_ended_question(pq):
             llm = await oracle_local_reply(pq)
             if llm:
                 body, response_kind = llm, "llm"
@@ -706,21 +738,6 @@ class OraculoCog(commands.Cog, name="Oráculo"):
                 else:
                     kind, body, _ = _roll_oracle_for_question(pq)
                     response_kind = "open" if kind == "open" else "yesno"
-        elif _is_simple_arithmetic_question(pq):
-            expr = _extract_arithmetic_expression_for_eval(pq)
-            val = _safe_eval_arithmetic(expr) if expr else None
-            if val is not None:
-                body, response_kind = _format_math_answer_body(expr, val), "math"
-            else:
-                llm = await oracle_local_reply(pq)
-                if llm:
-                    body, response_kind = llm, "llm"
-                else:
-                    body = (
-                        "No pude resolver esa cuenta tal cual está; "
-                        "probá con `+ - * / % ^ ( )` y números simples."
-                    )
-                    response_kind = "open"
         else:
             kind, body, _ = _roll_oracle_for_question(pq)
             response_kind = "open" if kind == "open" else "yesno"
@@ -746,12 +763,22 @@ class OraculoCog(commands.Cog, name="Oráculo"):
         if not self.db:
             await channel.send("Economía no disponible.", reference=reference, mention_author=False)
             return None
-        embed, body, response_kind = await self._build_oracle_embed(
-            nombre_visible=nombre_visible,
-            mencion=author.mention,
-            pregunta=pregunta.strip(),
-            author_id=author.id,
-        )
+        typing_fn = getattr(channel, "typing", None)
+        if callable(typing_fn):
+            async with typing_fn():
+                embed, body, response_kind = await self._build_oracle_embed(
+                    nombre_visible=nombre_visible,
+                    mencion=author.mention,
+                    pregunta=pregunta.strip(),
+                    author_id=author.id,
+                )
+        else:
+            embed, body, response_kind = await self._build_oracle_embed(
+                nombre_visible=nombre_visible,
+                mencion=author.mention,
+                pregunta=pregunta.strip(),
+                author_id=author.id,
+            )
         sent = await channel.send(embed=embed, reference=reference, mention_author=False)
         if isinstance(sent, discord.Message) and sent.guild:
             self._register_oracle_pending(
@@ -1141,7 +1168,16 @@ class OraculoCog(commands.Cog, name="Oráculo"):
 
             await message.reply(random.choice(_ORACLE_QUIP_NOT_ORACLE), mention_author=False)
             return True
-        except discord.HTTPException:
+        except discord.HTTPException as e:
+            log.warning("Oráculo hilo/reply: Discord HTTP (%s): %s", type(e).__name__, e)
+            try:
+                await message.reply(
+                    "No pude enviar la respuesta del oráculo (Discord rechazó el envío). Probá de nuevo en unos segundos.",
+                    mention_author=False,
+                    delete_after=14,
+                )
+            except discord.HTTPException:
+                pass
             return True
 
     @commands.Cog.listener()
@@ -1156,7 +1192,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             if await self._maybe_handle_oracle_thread_reply(message):
                 return
 
-        if me not in message.mentions:
+        if not _message_pings_bot(message, me):
             return
         # Evitar doble respuesta si usaron comando con prefijo (el propio handler ya contestó / falló).
         raw = (message.content or "").lstrip()
@@ -1200,8 +1236,16 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             self._oracle_mark_use(message.author.id)
         except discord.Forbidden:
             pass
-        except discord.HTTPException:
-            pass
+        except discord.HTTPException as e:
+            log.warning("Oráculo @mención: Discord HTTP (%s): %s", type(e).__name__, e)
+            try:
+                await message.reply(
+                    "No pude publicar la consulta al oráculo (Discord). Reintentá en unos segundos o usá `?pregunta …`.",
+                    mention_author=False,
+                    delete_after=16,
+                )
+            except discord.HTTPException:
+                pass
 
 
 async def setup(bot: commands.Bot):
