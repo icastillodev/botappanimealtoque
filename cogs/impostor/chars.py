@@ -15,6 +15,65 @@ class Character(TypedDict):
     """Estructura esperada del JSON de cada personaje."""
     name: str
     slug: str
+    anime: NotRequired[str]
+
+
+_ANILIST_GQL_URL = "https://graphql.anilist.co"
+_anilist_cache: dict[str, Optional[str]] = {}
+_anilist_lock = asyncio.Lock()
+
+
+def _pick_best_title(title_obj: object) -> Optional[str]:
+    if not isinstance(title_obj, dict):
+        return None
+    for k in ("romaji", "english", "native"):
+        v = title_obj.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return None
+
+
+async def resolve_anime_for_character(name: str) -> Optional[str]:
+    """
+    Busca en AniList el anime más probable de un personaje.
+    Cachea por nombre para no spamear requests.
+    """
+    n = (name or "").strip()
+    if not n:
+        return None
+    async with _anilist_lock:
+        if n in _anilist_cache:
+            return _anilist_cache[n]
+
+    query = """
+    query ($search: String) {
+      Character(search: $search) {
+        media(perPage: 1, sort: POPULARITY_DESC) {
+          nodes { title { romaji english native } }
+        }
+      }
+    }
+    """
+    payload = {"query": query, "variables": {"search": n}}
+    out: Optional[str] = None
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(_ANILIST_GQL_URL, json=payload, timeout=8) as resp:
+                if resp.status != 200:
+                    out = None
+                else:
+                    data = await resp.json()
+                    char = (data or {}).get("data", {}).get("Character", {})
+                    media = (char or {}).get("media", {})
+                    nodes = (media or {}).get("nodes", []) or []
+                    if nodes and isinstance(nodes, list) and isinstance(nodes[0], dict):
+                        out = _pick_best_title(nodes[0].get("title"))
+    except Exception:
+        out = None
+
+    async with _anilist_lock:
+        _anilist_cache[n] = out
+    return out
 
 # --- Configuración y Fallback ---
 
@@ -618,7 +677,7 @@ async def fetch_characters() -> List[Character]:
                 if response.status == 200:
                     data = await response.json()
                     
-                    # Validación simple del formato (lista de dicts con 'name' y 'slug')
+                    # Validación simple del formato (lista de dicts con 'name' y 'slug'; 'anime' es opcional)
                     if isinstance(data, list) and all(
                         isinstance(item, dict) and 'name' in item and 'slug' in item for item in data
                     ):

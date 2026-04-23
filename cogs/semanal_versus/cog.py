@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 import random
+import urllib.parse
 from datetime import date, datetime, time as dtime, timedelta
 from typing import List, Optional, Tuple
 
@@ -12,7 +13,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 from zoneinfo import ZoneInfo
 
-from cogs.impostor.chars import fetch_characters
+from cogs.impostor.chars import fetch_characters, resolve_anime_for_character
 
 from .db import VersusDB
 
@@ -60,11 +61,33 @@ def _parse_custom_id(cid: str) -> Optional[Tuple[str, int]]:
 async def _pick_pair_from_api() -> Tuple[str, str]:
     """Personajes desde la misma fuente JSON que Impostor (IMPOSTOR_CHAR_SOURCE)."""
     chars = await fetch_characters()
-    pool = [str(c.get("name") or "").strip() for c in chars if str(c.get("name") or "").strip()]
-    pool = list(dict.fromkeys(pool))
+    pool = [c for c in chars if str(c.get("name") or "").strip()]
     if len(pool) < 2:
-        pool = ["Personaje A", "Personaje B"]
-    return random.sample(pool, 2)
+        return "Personaje A (Anime)", "Personaje B (Anime)"
+
+    picked = random.sample(pool, 2)
+    out: List[str] = []
+    for ch in picked:
+        name = str(ch.get("name") or "").strip()
+        anime = str(ch.get("anime") or "").strip() if isinstance(ch, dict) else ""
+        if not anime:
+            anime = (await resolve_anime_for_character(name)) or ""
+        label = f"{name} ({anime})" if anime else name
+        out.append(label)
+    return out[0], out[1]
+
+
+def _anilist_character_search_url(name: str) -> str:
+    q = urllib.parse.quote_plus((name or "").strip())
+    return f"https://anilist.co/search/characters?search={q}"
+
+
+def _link_char(name: str) -> str:
+    n = (name or "").strip()
+    if not n:
+        return "—"
+    url = _anilist_character_search_url(n)
+    return f"[{discord.utils.escape_markdown(n)}]({url})"
 
 
 class VersusVoteView(discord.ui.View):
@@ -94,8 +117,19 @@ class VersusVoteView(discord.ui.View):
         cog.db.set_vote(week, interaction.user.id, side)
         counts = cog._count_sides(week)
         label = self.label_a if side == 0 else self.label_b
+        total = max(1, counts[0] + counts[1])
+        p0 = (counts[0] / total) * 100
+        p1 = (counts[1] / total) * 100
+        if counts[0] == counts[1]:
+            lead = f"Empate — {self.label_a}: **{p0:.1f}%** · {self.label_b}: **{p1:.1f}%**"
+        else:
+            lead_side = self.label_a if counts[0] > counts[1] else self.label_b
+            lead_pct = p0 if counts[0] > counts[1] else p1
+            lead = f"Va ganando: **{lead_side}** (**{lead_pct:.1f}%**)"
         await interaction.response.send_message(
-            f"✅ Voto: **{label}**\nMarcador — {self.label_a}: **{counts[0]}** · {self.label_b}: **{counts[1]}**",
+            f"✅ Voto: **{label}**\n"
+            f"Marcador — {self.label_a}: **{counts[0]}** ({p0:.1f}%) · {self.label_b}: **{counts[1]}** ({p1:.1f}%)\n"
+            f"{lead}",
             ephemeral=True,
         )
 
@@ -123,7 +157,8 @@ def _versus_embed(week_key: str, a: str, b: str, end: datetime) -> discord.Embed
     return discord.Embed(
         title=f"⚔️ VERSUS semanal `{week_key}`",
         description=(
-            f"**{a}** vs **{b}**\n\n"
+            f"**{_link_char(a)}** vs **{_link_char(b)}**\n"
+            f"Links: [AniList A]({_anilist_character_search_url(a)}) · [AniList B]({_anilist_character_search_url(b)})\n\n"
             "Votá con los botones (podés cambiar votando el otro).\n"
             f"Cierre: **domingo 21:00** ({os.getenv('VERSUS_TIMEZONE', 'Europe/Madrid')}) · <t:{end_ts}:F>\n"
             "Staff: `/aat_versus_votos` para ver quién votó qué."
@@ -328,6 +363,23 @@ class SemanalVersusCog(commands.Cog, name="SemanalVersus"):
                 pass
             return
         self.bot.add_view(view)
+
+        # Aviso en #general (si está configurado y es distinto del canal de versus)
+        if self.general_announce_id and self.general_announce_id != ch.id:
+            try:
+                gch = self.bot.get_channel(self.general_announce_id)
+                if gch is None:
+                    gch = await self.bot.fetch_channel(self.general_announce_id)
+                if isinstance(gch, discord.TextChannel):
+                    end_ts = int(end.timestamp())
+                    await gch.send(
+                        f"🗳️ **¡Hay una votación nueva semanal!**\n"
+                        f"**{a}** vs **{b}**\n"
+                        f"Tenés tiempo de votar hasta: <t:{end_ts}:F> (cierra <t:{end_ts}:R>).\n"
+                        f"Votá acá: {ch.mention}"
+                    )
+            except Exception:
+                self.log.debug("No se pudo anunciar el nuevo versus en #general", exc_info=True)
 
     def _is_staff(self, member: discord.Member) -> bool:
         if member.guild_permissions.administrator or member.guild_permissions.manage_guild:

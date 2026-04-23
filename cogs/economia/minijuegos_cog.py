@@ -49,6 +49,10 @@ class MinijuegosCog(commands.Cog, name="Economia Minijuegos"):
     def _rw(self) -> dict:
         return self.task_config.get("rewards", {})
 
+    def _duelos_enabled(self) -> bool:
+        raw = (os.getenv("ENABLE_DUELOS", "0") or "").strip().lower()
+        return raw in {"1", "true", "yes", "on"}
+
     # --- Roll casual (marca tarea semanal una vez) ---
     @app_commands.command(name="aat_roll", description="Tira dados entre dos números (casual). Cuenta 1 vez por semana para la tarea de minijuegos.")
     @app_commands.describe(minimo="Mínimo inclusive", maximo="Máximo inclusive")
@@ -61,7 +65,7 @@ class MinijuegosCog(commands.Cog, name="Economia Minijuegos"):
         prog = self.db.get_progress_semanal(interaction.user.id)
         if int(prog.get("mg_roll_casual") or 0) == 0:
             self.db.mark_minijuego_semanal(interaction.user.id, "mg_roll_casual")
-        await interaction.response.send_message(f"🎲 **{interaction.user.display_name}** sacó **{r}** ({minimo}–{maximo}).", ephemeral=True)
+        await interaction.response.send_message(f"🎲 **{interaction.user.display_name}** sacó **{r}** ({minimo}–{maximo}).")
 
     # --- Apuesta por roll 1–100 ---
     @app_commands.command(name="aat_roll_retar", description="Retá a alguien: ambos pagan puntos; quien saque más en 1–100 gana el pozo.")
@@ -146,6 +150,8 @@ class MinijuegosCog(commands.Cog, name="Economia Minijuegos"):
         carta_id: str,
         prediccion: Literal["mayor", "menor"],
     ):
+        if not self._duelos_enabled():
+            return await interaction.response.send_message("⚠️ Los **duelos** están desactivados por el staff.", ephemeral=True)
         if not interaction.guild or not carta_id.isdigit():
             return await interaction.response.send_message("Uso inválido.", ephemeral=True)
         if apuesta < 1 or apuesta > 5000 or oponente.bot or oponente.id == interaction.user.id:
@@ -182,6 +188,8 @@ class MinijuegosCog(commands.Cog, name="Economia Minijuegos"):
     @app_commands.command(name="aat_duelo_aceptar", description="Aceptás un duelo pendiente con tu carta.")
     @app_commands.describe(carta_id="ID de tu carta en inventario")
     async def aat_duelo_aceptar(self, interaction: discord.Interaction, carta_id: str):
+        if not self._duelos_enabled():
+            return await interaction.response.send_message("⚠️ Los **duelos** están desactivados por el staff.", ephemeral=True)
         if not interaction.guild or not carta_id.isdigit():
             return await interaction.response.send_message("Solo en servidor / ID inválido.", ephemeral=True)
         row = self.db.minijuego_invite_pending_for_target(interaction.user.id)

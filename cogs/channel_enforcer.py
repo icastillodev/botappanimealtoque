@@ -43,6 +43,18 @@ PUBLIC_GENERAL_PREFIX_COMMANDS = frozenset(
         "bola",
         "oraculo",
         "animetop",
+        # Trivia (en #general)
+        "respuestapregunta",
+        "triviaresp",
+        "rtrivia",
+        # Rolls + guías públicas
+        "roll",
+        "canjes",
+        "tienda",
+        "recompensas",
+        "ganarpuntos",
+        "comoganar",
+        "guia",
     }
 )
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import random
 from typing import List, Optional
 
 import discord
@@ -14,6 +15,7 @@ from cogs.economia.cartas_cog import StockCatalogView
 from cogs.economia import card_effectos
 from cogs.economia.reclamar_service import reclaim_rewards
 from cogs.economia.anime_top_cog import _embed_top_for
+from cogs.economia.guia_contenido import build_guia_embeds
 from cogs.impostor import core as impostor_core
 from cogs.impostor import feed as impostor_feed
 from cogs.impostor import notify as impostor_notify
@@ -72,6 +74,16 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
             color=discord.Color.dark_green(),
         )
         await ctx.send(embed=embed)
+
+    @commands.command(name="roll")
+    async def roll_cmd(self, ctx: commands.Context, minimo: int = 1, maximo: int = 100):
+        """Roll público simple para #general."""
+        if minimo >= maximo:
+            return await ctx.send("El máximo debe ser mayor que el mínimo.", delete_after=8)
+        if maximo - minimo > 500:
+            return await ctx.send("Rango máximo 500.", delete_after=8)
+        r = random.randint(minimo, maximo)
+        await ctx.send(f"🎲 **{ctx.author.display_name}** sacó **{r}** ({minimo}–{maximo}).")
 
     @commands.command()
     async def animetop(self, ctx: commands.Context, quien: Optional[discord.Member] = None):
@@ -311,6 +323,33 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         else:
             embed.set_footer(text="Falta el rol de avisos (IMPOSTOR_NOTIFY_ROLE_ID) o no existe en el servidor.")
             await ctx.send(embed=embed)
+
+    @commands.command(name="canjes", aliases=["tienda", "recompensas"])
+    async def canjes(self, ctx: commands.Context):
+        """Resumen público de qué podés canjear con puntos y con qué comandos."""
+        embeds = build_guia_embeds(self.bot)
+        await ctx.send(embed=embeds[1])
+
+    @commands.command(name="ganarpuntos", aliases=["comoganar"])
+    async def ganar_puntos(self, ctx: commands.Context):
+        """Resumen público: cómo se consiguen puntos + cómo ver lo que falta y qué reclamar."""
+        embeds = build_guia_embeds(self.bot)
+        e0 = embeds[0]
+        extra = discord.Embed(title="📋 Ver qué te falta y reclamar", color=discord.Color.blurple())
+        extra.description = (
+            "**En este canal (todos lo ven):** `!progreso` · `!diaria` · `!semanal` · `!inicial` · `!reclamar`\n"
+            "**Por slash (también sirve en #general):** `/aat_progreso_iniciacion` · `/aat_progreso_diaria` · "
+            "`/aat_progreso_semanal` · `/aat_reclamar`\n\n"
+            "Tip: si querés reclamar **solo** un tipo con slash, usá `/aat_reclamar` eligiendo "
+            "`inicial` / `diaria` / `semanal` / `semanal_especial` / `semanal_minijuegos`.\n"
+            "Guía completa: `!guia` o `/aat_ayuda`."
+        )
+        await ctx.send(embeds=[e0, extra])
+
+    @commands.command(name="guia")
+    async def guia(self, ctx: commands.Context):
+        """Atajo público a la guía completa."""
+        await ctx.send("📌 Guía completa: usá `/aat_ayuda` (también se puede usar en #general).")
 
     @usar.error
     async def usar_err(self, ctx: commands.Context, error):

@@ -65,6 +65,16 @@ def create_poll_embed(
             is_tie = True
 
     display_format = poll_data.get('formato_votos', 'ambos') 
+    # Mostrar quién va ganando (si no está oculto)
+    if is_active and display_format != 'oculto' and total_votes > 0 and max_votes_count > 0:
+        winners_list = [opt.get('label', 'N/A') for opt in options if opt.get('vote_count', 0) == max_votes_count]
+        pct = (max_votes_count / total_votes) * 100 if total_votes > 0 else 0.0
+        if not winners_list:
+            pass
+        elif is_tie:
+            embed.description += f"\n\n**Van empatados:** {', '.join(winners_list)} (**{pct:.1f}%** c/u)"
+        else:
+            embed.description += f"\n\n**Va ganando:** **{winners_list[0]}** (**{pct:.1f}%**)"
     
     if display_format == 'oculto' and is_active:
         for option in options:

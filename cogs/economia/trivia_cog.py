@@ -254,12 +254,11 @@ class AnimeTriviaCog(commands.Cog, name="Trivia anime"):
         pts = self._win_points()
 
         emb = discord.Embed(
-            title=f"Trivia anime — {sec} segundos",
-            description=f"{q}\n\nEscribí: `!respuestapregunta` + tu respuesta\n"
-            f"Primer acierto: **+{pts}** pts",
+            title="Trivia anime",
+            description=f"{q}",
             color=discord.Color.orange(),
         )
-        emb.set_footer(text="#general · America/Montevideo · primera respuesta correcta")
+        emb.set_footer(text="Respondé con `!respuestapregunta` + tu respuesta")
 
         try:
             await channel.send(embed=emb)
@@ -335,10 +334,7 @@ class AnimeTriviaCog(commands.Cog, name="Trivia anime"):
                 self._timeout_task = None
             self._round = None
 
-        await ctx.send(
-            f"✅ **{ctx.author.mention}** respondió bien primero."
-            + (f" +**{pts}** puntos." if pts > 0 else "")
-        )
+        await ctx.send(f"✅ **{ctx.author.mention}** respondió bien primero.")
 
 
 async def setup(bot: commands.Bot) -> None:
