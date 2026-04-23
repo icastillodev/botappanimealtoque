@@ -144,12 +144,8 @@ def _ollama_options(*, num_predict: int) -> Dict[str, Any]:
     except ValueError:
         num_ctx = 1024
     num_ctx = max(256, min(8192, num_ctx))
-    np = num_predict
-    try:
-        np = int((os.getenv("ORACLE_NUM_PREDICT") or str(num_predict)).strip())
-    except ValueError:
-        np = num_predict
-    np = max(16, min(160, np))
+    # num_predict lo fija cada caller (consulta vs seguimiento); no pisar con ORACLE_NUM_PREDICT acá.
+    np = max(16, min(160, int(num_predict)))
     opts: Dict[str, Any] = {
         "temperature": temperature,
         "num_predict": np,
@@ -173,7 +169,9 @@ def _ollama_keep_alive() -> Optional[str]:
 
 
 async def _ollama_post_generate(url: str, payload: Dict[str, Any], timeout_sec: float) -> Optional[Dict[str, Any]]:
-    timeout = aiohttp.ClientTimeout(total=max(3.0, timeout_sec))
+    # total + sock_read: evita colgarse si Ollama tarda más de lo esperado.
+    t = max(5.0, float(timeout_sec))
+    timeout = aiohttp.ClientTimeout(total=t + 4.0, connect=8.0, sock_read=t + 3.0)
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(url, json=payload) as resp:
@@ -194,6 +192,21 @@ async def _ollama_post_generate(url: str, payload: Dict[str, Any], timeout_sec: 
         return None
     except Exception:
         log.exception("Oracle LLM: error inesperado")
+        return None
+
+
+async def _ollama_post_generate_guarded(
+    url: str, payload: Dict[str, Any], timeout_sec: float
+) -> Optional[Dict[str, Any]]:
+    """Capa extra: nunca dejamos colgado el event loop más de timeout+6s."""
+    cap = max(12.0, float(timeout_sec) + 6.0)
+    try:
+        return await asyncio.wait_for(
+            _ollama_post_generate(url, payload, timeout_sec),
+            timeout=cap,
+        )
+    except asyncio.TimeoutError:
+        log.warning("Oracle LLM: cortado por wait_for (>%ss)", cap)
         return None
 
 
@@ -218,9 +231,10 @@ async def oracle_local_reply(user_question: str) -> Optional[str]:
     mw = oracle_max_words_primary()
     mc = oracle_max_chars_primary()
     try:
-        num_pred = int((os.getenv("ORACLE_NUM_PREDICT") or "72").strip())
+        num_pred = int((os.getenv("ORACLE_NUM_PREDICT") or "48").strip())
     except ValueError:
-        num_pred = 72
+        num_pred = 48
+    num_pred = max(16, min(96, num_pred))
     # `prompt` = solo la consulta; reglas en `system` (API Ollama) para menos eco y menos tokens.
     system = _SYSTEM_ORACLE.format(max_words=mw)
     payload: Dict[str, Any] = {
@@ -234,7 +248,7 @@ async def oracle_local_reply(user_question: str) -> Optional[str]:
     if ka:
         payload["keep_alive"] = ka
 
-    data = await _ollama_post_generate(url, payload, timeout_sec)
+    data = await _ollama_post_generate_guarded(url, payload, timeout_sec)
     if not isinstance(data, dict):
         return None
 
@@ -288,6 +302,7 @@ async def oracle_local_reply_followup(
         num_pred = int((os.getenv("ORACLE_NUM_PREDICT_FOLLOWUP") or "40").strip())
     except ValueError:
         num_pred = 40
+    num_pred = max(16, min(72, num_pred))
     payload: Dict[str, Any] = {
         "model": model,
         "system": system,
@@ -299,7 +314,7 @@ async def oracle_local_reply_followup(
     if ka:
         payload["keep_alive"] = ka
 
-    data = await _ollama_post_generate(url, payload, timeout_sec)
+    data = await _ollama_post_generate_guarded(url, payload, timeout_sec)
     if not isinstance(data, dict):
         return None
 
