@@ -13,6 +13,8 @@ SUB_COGS = [
     "tienda_cog",
     "ranking_cog",
     "ayuda_cog",
+    "anime_top_cog",
+    "guia_canal_cog",
 ]
 
 log = logging.getLogger(__name__)

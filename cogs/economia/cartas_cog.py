@@ -170,7 +170,7 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
             await interaction.followup.send(f"Solo tienes {blister_a_abrir['cantidad']} blister(s) de tipo '{tipo}', no puedes abrir {cantidad_a_abrir}.", ephemeral=True)
             return
         
-        self.economia_db.modify_blisters(user_id, tipo, -cantidad_a_abrir)
+        _, _ = self.economia_db.modify_blisters(user_id, tipo, -cantidad_a_abrir)
         
         cartas_obtenidas = []
         for _ in range(cantidad_a_abrir * 3):
@@ -183,8 +183,11 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
                 cartas_obtenidas.append(carta)
 
         if not cartas_obtenidas:
-            self.economia_db.modify_blisters(user_id, tipo, cantidad_a_abrir)
-            await interaction.followup.send(f"¡Error! No hay cartas en el stock para el tipo de blister '{tipo}'. Contacta a un admin. (Tus blisters han sido devueltos).", ephemeral=True)
+            _, bref = self.economia_db.modify_blisters(user_id, tipo, cantidad_a_abrir)
+            err_txt = f"¡Error! No hay cartas en el stock para el tipo de blister '{tipo}'. Contacta a un admin. (Tus blisters han sido devueltos)."
+            if bref:
+                err_txt += "\n\n" + "\n".join(bref)
+            await interaction.followup.send(err_txt, ephemeral=True)
             return
 
         embed = discord.Embed(title=f"¡Has abierto {cantidad_a_abrir} Blister(s) de {tipo.capitalize()}!", color=discord.Color.purple())

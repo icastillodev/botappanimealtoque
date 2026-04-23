@@ -194,9 +194,10 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
                 ephemeral=True,
             )
         elif item_id == "blister_trampa":
-            self.economia_db.modify_blisters(interaction.user.id, "trampa", 1)
+            _, bcol = self.economia_db.modify_blisters(interaction.user.id, "trampa", 1)
+            extra = ("\n\n" + "\n".join(bcol)) if bcol else ""
             await interaction.followup.send(
-                "✅ **+1 sobre Trampa.** Abrilo con `/aat_abrirblister` eligiendo tipo **trampa**.",
+                "✅ **+1 sobre Trampa.** Abrilo con `/aat_abrirblister` eligiendo tipo **trampa**." + extra,
                 ephemeral=True,
             )
 

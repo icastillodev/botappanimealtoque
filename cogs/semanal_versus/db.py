@@ -83,3 +83,14 @@ class VersusDB:
     def mark_closed(self, week_key: str) -> None:
         with self._conn() as c:
             c.execute("UPDATE versus_polls SET closed = 1 WHERE week_key = ?", (week_key,))
+
+    def update_poll_message(self, week_key: str, message_id: int, channel_id: Optional[int] = None) -> None:
+        """Tras reinicio: mismo versus pero nuevo message_id (ej. mensaje borrado)."""
+        with self._conn() as c:
+            if channel_id is not None:
+                c.execute(
+                    "UPDATE versus_polls SET message_id = ?, channel_id = ? WHERE week_key = ?",
+                    (message_id, channel_id, week_key),
+                )
+            else:
+                c.execute("UPDATE versus_polls SET message_id = ? WHERE week_key = ?", (message_id, week_key))

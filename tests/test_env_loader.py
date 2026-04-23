@@ -59,6 +59,9 @@ class TestLoadTaskAndShop(unittest.TestCase):
         self.assertEqual(s["price_akatsuki"], 0)
         self.assertEqual(s["votacion_channel_id"], 100)
         self.assertEqual(s["trampa_carta_rol_24h_id"], 0)
+        self.assertEqual(t["channels"]["guia_bot"], 0)
+        self.assertEqual(t["rewards"]["anime_top10_bonus"], 200)
+        self.assertEqual(t["rewards"]["anime_top30_bonus"], 500)
 
 
 if __name__ == "__main__":

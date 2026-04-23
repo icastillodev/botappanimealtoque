@@ -2,7 +2,7 @@
 import sqlite3
 import time
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import datetime
 
 DB_FILE = Path(__file__).parent / "economia.db"
@@ -111,6 +111,17 @@ class EconomiaDBManagerV2:
                 if 'reclamado_rol_creador' not in columns:
                     cursor.execute("ALTER TABLE economia_usuarios ADD COLUMN reclamado_rol_creador INTEGER DEFAULT 0")
                     print("DATABASE MIGRATED: Added 'reclamado_rol_creador' column to economia_usuarios.")
+                for col, sql in [
+                    ("anime_bonus_top10", "ALTER TABLE economia_usuarios ADD COLUMN anime_bonus_top10 INTEGER DEFAULT 0"),
+                    ("anime_bonus_top30", "ALTER TABLE economia_usuarios ADD COLUMN anime_bonus_top30 INTEGER DEFAULT 0"),
+                    (
+                        "blister_collector_version_claimed",
+                        "ALTER TABLE economia_usuarios ADD COLUMN blister_collector_version_claimed INTEGER DEFAULT 0",
+                    ),
+                ]:
+                    if col not in columns:
+                        cursor.execute(sql)
+                        print(f"DATABASE MIGRATED: Added '{col}' to economia_usuarios.")
 
                 cursor.execute("PRAGMA table_info(tareas_diarias)")
                 dcols = [c[1] for c in cursor.fetchall()]
@@ -119,6 +130,7 @@ class EconomiaDBManagerV2:
                     ("reacciones_servidor", "ALTER TABLE tareas_diarias ADD COLUMN reacciones_servidor INTEGER DEFAULT 0"),
                     ("trampa_enviada", "ALTER TABLE tareas_diarias ADD COLUMN trampa_enviada INTEGER DEFAULT 0"),
                     ("trampa_sin_objetivo", "ALTER TABLE tareas_diarias ADD COLUMN trampa_sin_objetivo INTEGER DEFAULT 0"),
+                    ("oraculo_preguntas", "ALTER TABLE tareas_diarias ADD COLUMN oraculo_preguntas INTEGER DEFAULT 0"),
                 ]:
                     if col not in dcols:
                         cursor.execute(sql)
@@ -178,6 +190,27 @@ class EconomiaDBManagerV2:
 
                 cursor.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS anime_top_entries (
+                        user_id INTEGER NOT NULL,
+                        pos INTEGER NOT NULL,
+                        title TEXT NOT NULL,
+                        updated_ts INTEGER NOT NULL,
+                        PRIMARY KEY (user_id, pos),
+                        FOREIGN KEY (user_id) REFERENCES economia_usuarios (user_id) ON DELETE CASCADE
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS bot_meta (
+                        k TEXT PRIMARY KEY,
+                        v TEXT NOT NULL
+                    )
+                    """
+                )
+
+                cursor.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS minijuego_invite (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         kind TEXT NOT NULL,
@@ -227,7 +260,7 @@ class EconomiaDBManagerV2:
             cursor.execute("SELECT puntos_actuales FROM economia_usuarios WHERE user_id = ?", (user_id,))
             return cursor.fetchone()[0]
 
-    def modify_blisters(self, user_id: int, blister_tipo: str, cantidad: int) -> int:
+    def modify_blisters(self, user_id: int, blister_tipo: str, cantidad: int) -> Tuple[int, List[str]]:
         self.ensure_user_exists(user_id)
         blister_tipo = blister_tipo.lower().strip()
         with self._get_connection() as conn:
@@ -236,7 +269,60 @@ class EconomiaDBManagerV2:
             conn.commit()
             cursor.execute("SELECT cantidad FROM inventario_blisters WHERE user_id = ? AND blister_tipo = ?", (user_id, blister_tipo))
             result = cursor.fetchone()
-            return result[0] if result else 0
+            out = int(result[0]) if result else 0
+        bonus_msgs: List[str] = []
+        if cantidad > 0:
+            try:
+                from cogs.economia.blister_collection_reward import try_grant_after_inventory_change
+
+                bonus_msgs = try_grant_after_inventory_change(self, user_id)
+            except Exception:
+                pass
+        return out, bonus_msgs
+
+    def blister_collector_inventory_complete(self, user_id: int, types_norm: List[str], min_single: int) -> bool:
+        """Si hay 2+ tipos: al menos 1 de cada. Si hay 1 solo tipo: cantidad >= min_single."""
+        if not types_norm:
+            return False
+        rows = self.get_blisters_for_user(user_id)
+        by_t = {str(r["blister_tipo"]).lower(): int(r["cantidad"] or 0) for r in rows}
+        if len(types_norm) >= 2:
+            return all(by_t.get(t, 0) >= 1 for t in types_norm)
+        need = max(1, int(min_single))
+        return by_t.get(types_norm[0], 0) >= need
+
+    def apply_blister_collector_bonus(self, user_id: int, types: List[str], min_single: int, points: int, version: int) -> List[str]:
+        """Otorga bono de colección si cumple meta y aún no reclamó esta versión."""
+        if points <= 0 or not types or version < 1:
+            return []
+        self.ensure_user_exists(user_id)
+        types_norm = [t.lower().strip() for t in types if str(t).strip()]
+        if not types_norm:
+            return []
+        if not self.blister_collector_inventory_complete(user_id, types_norm, min_single):
+            return []
+        msgs: List[str] = []
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                UPDATE economia_usuarios
+                SET puntos_actuales = puntos_actuales + ?,
+                    puntos_conseguidos = puntos_conseguidos + ?,
+                    blister_collector_version_claimed = ?
+                WHERE user_id = ? AND IFNULL(blister_collector_version_claimed, 0) < ?
+                """,
+                (points, points, version, user_id, version),
+            )
+            if cur.rowcount:
+                msgs.append(
+                    f"📦 **¡Colección de blisters completa!** +**{points}** puntos "
+                    f"(meta versión **{version}**; subí `REWARD_BLISTER_COLLECTION_VERSION` cuando agregues tipos nuevos)."
+                )
+                conn.commit()
+            else:
+                conn.commit()
+        return msgs
 
     def set_credits(self, user_id: int, cantidad: int) -> int:
         self.ensure_user_exists(user_id)
@@ -594,4 +680,129 @@ class EconomiaDBManagerV2:
     def delete_temp_shop_role_row(self, row_id: int) -> None:
         with self._get_connection() as conn:
             conn.cursor().execute("DELETE FROM temp_roles_shop WHERE id = ?", (row_id,))
+            conn.commit()
+
+    # --- Anime top (1-30) ---
+    def anime_top_list(self, user_id: int) -> List[Dict[str, Any]]:
+        self.ensure_user_exists(user_id)
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT pos, title FROM anime_top_entries WHERE user_id = ? ORDER BY pos ASC",
+                (user_id,),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+    def anime_top_count_filled(self, user_id: int, hasta: int) -> int:
+        self.ensure_user_exists(user_id)
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT COUNT(*) FROM anime_top_entries
+                WHERE user_id = ? AND pos BETWEEN 1 AND ? AND TRIM(title) != ''
+                """,
+                (user_id, hasta),
+            )
+            row = cur.fetchone()
+            return int(row[0] or 0)
+
+    def anime_top_set(self, user_id: int, pos: int, title: str) -> None:
+        self.ensure_user_exists(user_id)
+        t = (title or "").strip()[:200]
+        if not t:
+            raise ValueError("El título no puede estar vacío.")
+        if pos < 1 or pos > 30:
+            raise ValueError("La posición debe ser entre 1 y 30.")
+
+        ts = int(time.time())
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO anime_top_entries (user_id, pos, title, updated_ts)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, pos) DO UPDATE SET title = excluded.title, updated_ts = excluded.updated_ts
+                """,
+                (user_id, pos, t, ts),
+            )
+            conn.commit()
+
+    def anime_top_remove(self, user_id: int, pos: int) -> None:
+        self.ensure_user_exists(user_id)
+        with self._get_connection() as conn:
+            conn.cursor().execute(
+                "DELETE FROM anime_top_entries WHERE user_id = ? AND pos = ?",
+                (user_id, pos),
+            )
+            conn.commit()
+
+    def get_anime_bonus_flags(self, user_id: int) -> Dict[str, int]:
+        self.ensure_user_exists(user_id)
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT anime_bonus_top10, anime_bonus_top30 FROM economia_usuarios WHERE user_id = ?",
+                (user_id,),
+            )
+            r = cur.fetchone()
+            if not r:
+                return {"anime_bonus_top10": 0, "anime_bonus_top30": 0}
+            return {"anime_bonus_top10": int(r["anime_bonus_top10"] or 0), "anime_bonus_top30": int(r["anime_bonus_top30"] or 0)}
+
+    def apply_anime_milestones(self, user_id: int, bonus_top10: int, bonus_top30: int) -> List[str]:
+        """Otorga bonos una sola vez si completó top 10 / top 30. Devuelve mensajes para mostrar al usuario."""
+        self.ensure_user_exists(user_id)
+        msgs: List[str] = []
+        c10 = self.anime_top_count_filled(user_id, 10)
+        c30 = self.anime_top_count_filled(user_id, 30)
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            if c10 >= 10 and bonus_top10 > 0:
+                cur.execute(
+                    """
+                    UPDATE economia_usuarios
+                    SET puntos_actuales = puntos_actuales + ?,
+                        puntos_conseguidos = puntos_conseguidos + ?,
+                        anime_bonus_top10 = 1
+                    WHERE user_id = ? AND IFNULL(anime_bonus_top10, 0) = 0
+                    """,
+                    (bonus_top10, bonus_top10, user_id),
+                )
+                if cur.rowcount:
+                    msgs.append(f"🎌 **¡Top 10 completo!** +**{bonus_top10}** puntos (bono único).")
+            if c30 >= 30 and bonus_top30 > 0:
+                cur.execute(
+                    """
+                    UPDATE economia_usuarios
+                    SET puntos_actuales = puntos_actuales + ?,
+                        puntos_conseguidos = puntos_conseguidos + ?,
+                        anime_bonus_top30 = 1
+                    WHERE user_id = ? AND IFNULL(anime_bonus_top30, 0) = 0
+                    """,
+                    (bonus_top30, bonus_top30, user_id),
+                )
+                if cur.rowcount:
+                    msgs.append(f"🏆 **¡Top 30 completo!** +**{bonus_top30}** puntos (bono único).")
+            if msgs:
+                conn.commit()
+        return msgs
+
+    # --- Mensaje fijo guía del bot (canal BOT_GUIA_CHANNEL_ID) ---
+    def bot_meta_get(self, key: str) -> Optional[str]:
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT v FROM bot_meta WHERE k = ?", (key,))
+            row = cur.fetchone()
+            return row[0] if row else None
+
+    def bot_meta_set(self, key: str, value: str) -> None:
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO bot_meta (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+                (key, value),
+            )
             conn.commit()

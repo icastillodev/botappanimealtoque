@@ -52,6 +52,7 @@ def load_task_and_shop_config(log: logging.Logger) -> Tuple[Optional[Dict[str, A
                 "anime_debate": _int("ANIMEDEBATE_CHANNEL_ID", 0),
                 "manga_debate": _int("MANGA_CHANNEL_ID", 0),
                 "contenido_comunidad": _int("ID_CANAL_CONTENIDOCOMUNIDAD", 0),
+                "guia_bot": _int("BOT_GUIA_CHANNEL_ID", 0),
             },
             "messages": {
                 "rol": _int("ROL_COMENTARIO_ID", 0),
@@ -65,6 +66,11 @@ def load_task_and_shop_config(log: logging.Logger) -> Tuple[Optional[Dict[str, A
                 "especial_semanal_blisters": _int("REWARD_ESPECIAL_SEMANAL_BLISTERS", 2),
                 "minijuegos_semanal": _int("REWARD_MINIJUEGOS_SEMANAL_POINTS", 150),
                 "minijuegos_semanal_blisters": _int("REWARD_MINIJUEGOS_SEMANAL_BLISTERS", 1),
+                # Oráculo: puntos por pregunta (hasta N preguntas/día con puntos; igual cuenta para la diaria)
+                "oracle_pregunta_points": _int("REWARD_ORACLE_PREGUNTA_POINTS", 3),
+                "oracle_max_preguntas_con_puntos": _int("REWARD_ORACLE_MAX_PREGUNTAS_CON_PUNTOS", 5),
+                "anime_top10_bonus": _int("REWARD_ANIME_TOP10_POINTS", 200),
+                "anime_top30_bonus": _int("REWARD_ANIME_TOP30_POINTS", 500),
             },
         }
 

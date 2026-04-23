@@ -64,6 +64,8 @@ INITIAL_EXTENSIONS = [
     "cogs.creador",
     "cogs.reaction_limiter",
     "cogs.check_tareas",
+    "cogs.comandos_prefijo",
+    "cogs.oraculo_cog",
     "cogs.channel_enforcer",
     "cogs.semanal_versus",
 ]
@@ -119,15 +121,16 @@ class MiBot(commands.Bot):
             except Exception as e:
                 self.log.exception(f"❌ Error cargando {ext}: {e}")
 
+        # Slash: una sola vez al arrancar (evita re-sync en cada on_ready → duplicados / ruido en el cliente)
+        try:
+            synced = await self.tree.sync()
+            self.log.info(f"Sincronizados {len(synced)} comandos (/) globalmente (setup_hook).")
+        except Exception as e:
+            self.log.exception(f"Error al sincronizar comandos: {e}")
+
     async def on_ready(self):
         self.log.info(f"Conectado como {self.user} (ID {self.user.id})")
         self.log.info("Bot listo y operativo.")
-        
-        try:
-            synced = await self.tree.sync()
-            self.log.info(f"Sincronizados {len(synced)} comandos (/) globalmente.")
-        except Exception as e:
-            self.log.exception(f"Error al sincronizar comandos: {e}")
 
 async def main():
     bot = MiBot()

@@ -4,6 +4,49 @@ from discord.ext import commands
 import os
 import asyncio
 
+# Comandos ! permitidos en #general (primer token tras "!")
+PUBLIC_GENERAL_PREFIX_COMMANDS = frozenset(
+    {
+        "comandos",
+        "aat",
+        "cmds",
+        "cmd",
+        "ayudabot",
+        "ayuda",
+        "puntos",
+        "inventario",
+        "top",
+        "rank",
+        "ranking",
+        "reclamar",
+        "progreso",
+        "diaria",
+        "daily",
+        "semanal",
+        "weekly",
+        "inicial",
+        "starter",
+        "iniciacion",
+        "abrir",
+        "miscartas",
+        "catalogo",
+        "usar",
+        "usarcarta",
+        "impostor",
+        "buscoimpostor",
+        "busco",
+        "lobbys",
+        "cartelera",
+        "pregunta",
+        "consulta",
+        "8ball",
+        "bola",
+        "oraculo",
+        "animetop",
+    }
+)
+
+
 class ChannelEnforcerCog(commands.Cog, name="Limpieza de Chat"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -27,6 +70,9 @@ class ChannelEnforcerCog(commands.Cog, name="Limpieza de Chat"):
             
             # Verificar si es un comando de prefijo
             if message.content.startswith("!") and len(message.content) > 1 and not message.content.startswith("! "):
+                first = message.content[1:].split()[0].lower()
+                if first in PUBLIC_GENERAL_PREFIX_COMMANDS:
+                    return
                 # 1. Borrar el mensaje del usuario
                 try:
                     await message.delete()

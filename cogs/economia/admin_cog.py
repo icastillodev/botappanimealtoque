@@ -138,8 +138,12 @@ class AdminCog(commands.Cog, name="Economia Admin"):
             await interaction.response.send_message("La cantidad debe ser positiva.", ephemeral=True)
             return
         tipo_blister = tipo_blister.lower().strip()
-        nuevo_total = self.economia_db.modify_blisters(usuario.id, tipo_blister, cantidad)
-        await interaction.response.send_message(f"🎁 Se dieron {cantidad} blister(s) de tipo '{tipo_blister}' a {usuario.mention}. Ahora tiene {nuevo_total} de ese tipo.", ephemeral=True)
+        nuevo_total, bcol = self.economia_db.modify_blisters(usuario.id, tipo_blister, cantidad)
+        extra = ("\n" + "\n".join(bcol)) if bcol else ""
+        await interaction.response.send_message(
+            f"🎁 Se dieron {cantidad} blister(s) de tipo '{tipo_blister}' a {usuario.mention}. Ahora tiene {nuevo_total} de ese tipo.{extra}",
+            ephemeral=True,
+        )
         try:
             await usuario.send(f"¡Has recibido **{cantidad} Blister(s) de tipo '{tipo_blister}'** de un administrador!")
         except discord.Forbidden: pass

@@ -32,7 +32,8 @@ def reclaim_rewards(
             if all(prog[key] >= 1 for key in ["presentacion", "reaccion_pais", "reaccion_rol", "reaccion_social", "reaccion_reglas", "general_mensaje"]):
                 recompensa = task_config["rewards"]["inicial"]
                 db.modify_points(user_id, recompensa)
-                db.modify_blisters(user_id, "trampa", 3)
+                _, bcol = db.modify_blisters(user_id, "trampa", 3)
+                mensajes_exito.extend(bcol)
                 db.claim_reward(user_id, "inicial")
                 mensajes_exito.append(f"**Inicial:** {recompensa} Puntos + 3 Blisters 🃏")
                 reclamado_algo = True
@@ -52,10 +53,13 @@ def reclaim_rewards(
             tr = int(prog.get("trampa_enviada") or 0)
             ts = int(prog.get("trampa_sin_objetivo") or 0)
             tr_ok = tr >= 1 or ts >= 2
-            if msg_n >= 10 and rx_n >= 3 and tr_ok:
+            or_n = int(prog.get("oraculo_preguntas") or 0)
+            or_ok = or_n >= 1
+            if msg_n >= 10 and rx_n >= 3 and tr_ok and or_ok:
                 recompensa = task_config["rewards"]["diaria"]
                 db.modify_points(user_id, recompensa)
-                db.modify_blisters(user_id, "trampa", 1)
+                _, bcol = db.modify_blisters(user_id, "trampa", 1)
+                mensajes_exito.extend(bcol)
                 db.claim_reward(user_id, "diaria")
                 mensajes_exito.append(f"**Diaria:** {recompensa} Puntos + 1 Blister 🃏")
                 reclamado_algo = True
@@ -73,7 +77,8 @@ def reclaim_rewards(
             if prog["debate_post"] >= 1 and prog["videos_reaccion"] >= 1 and prog["media_escrito"] >= 1:
                 recompensa = task_config["rewards"]["semanal"]
                 db.modify_points(user_id, recompensa)
-                db.modify_blisters(user_id, "trampa", 1)
+                _, bcol = db.modify_blisters(user_id, "trampa", 1)
+                mensajes_exito.extend(bcol)
                 db.claim_reward(user_id, "semanal")
                 mensajes_exito.append(f"**Semanal:** {recompensa} Puntos + 1 Blister 🃏")
                 reclamado_algo = True
@@ -94,7 +99,8 @@ def reclaim_rewards(
                 pts = int(rw.get("especial_semanal", 400))
                 bl = int(rw.get("especial_semanal_blisters", 2))
                 db.modify_points(user_id, pts)
-                db.modify_blisters(user_id, "trampa", bl)
+                _, bcol = db.modify_blisters(user_id, "trampa", bl)
+                mensajes_exito.extend(bcol)
                 db.claim_reward(user_id, "semanal_especial")
                 mensajes_exito.append(f"**Especial semanal:** {pts} Puntos + {bl} Blisters 🃏")
                 reclamado_algo = True
@@ -118,7 +124,8 @@ def reclaim_rewards(
                 pts = int(rw.get("minijuegos_semanal", 150))
                 bl = int(rw.get("minijuegos_semanal_blisters", 1))
                 db.modify_points(user_id, pts)
-                db.modify_blisters(user_id, "trampa", bl)
+                _, bcol = db.modify_blisters(user_id, "trampa", bl)
+                mensajes_exito.extend(bcol)
                 db.claim_reward(user_id, "semanal_minijuegos")
                 mensajes_exito.append(f"**Minijuegos semanal:** {pts} Puntos + {bl} Blister(s) 🃏")
                 reclamado_algo = True

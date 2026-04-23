@@ -12,7 +12,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 from zoneinfo import ZoneInfo
 
-from cogs.impostor.chars import _SECRET_PERSONAJES
+from cogs.impostor.chars import fetch_characters
 
 from .db import VersusDB
 
@@ -57,8 +57,13 @@ def _parse_custom_id(cid: str) -> Optional[Tuple[str, int]]:
         return None
 
 
-def _pick_pair() -> Tuple[str, str]:
-    pool = [c["name"] for c in _SECRET_PERSONAJES]
+async def _pick_pair_from_api() -> Tuple[str, str]:
+    """Personajes desde la misma fuente JSON que Impostor (IMPOSTOR_CHAR_SOURCE)."""
+    chars = await fetch_characters()
+    pool = [str(c.get("name") or "").strip() for c in chars if str(c.get("name") or "").strip()]
+    pool = list(dict.fromkeys(pool))
+    if len(pool) < 2:
+        pool = ["Personaje A", "Personaje B"]
     return random.sample(pool, 2)
 
 
@@ -78,7 +83,7 @@ class VersusVoteView(discord.ui.View):
         await self._vote(interaction, button, 1)
 
     async def _vote(self, interaction: discord.Interaction, button: discord.Button, side: int) -> None:
-        cog = interaction.client.get_cog("SemanalVersusCog")
+        cog = interaction.client.get_cog("SemanalVersus")
         if not cog:
             return await interaction.response.send_message("Módulo VERSUS no disponible.", ephemeral=True)
         parsed = _parse_custom_id(button.custom_id)
@@ -104,13 +109,41 @@ def _make_view(week_key: str, a: str, b: str) -> VersusVoteView:
     return v
 
 
+def _week_end_from_key(week_key: str) -> Optional[datetime]:
+    try:
+        y_str, w_str = week_key.split("-W")
+        y, w = int(y_str), int(w_str)
+        return _close_dt_for_iso_week(y, w, _tz())
+    except Exception:
+        return None
+
+
+def _versus_embed(week_key: str, a: str, b: str, end: datetime) -> discord.Embed:
+    end_ts = int(end.timestamp())
+    return discord.Embed(
+        title=f"⚔️ VERSUS semanal `{week_key}`",
+        description=(
+            f"**{a}** vs **{b}**\n\n"
+            "Votá con los botones (podés cambiar votando el otro).\n"
+            f"Cierre: **domingo 21:00** ({os.getenv('VERSUS_TIMEZONE', 'Europe/Madrid')}) · <t:{end_ts}:F>\n"
+            "Staff: `/aat_versus_votos` para ver quién votó qué."
+        ),
+        color=discord.Color.gold(),
+    )
+
+
 class SemanalVersusCog(commands.Cog, name="SemanalVersus"):
     """VERSUS semanal; cierra domingo 21:00 (VERSUS_TIMEZONE)."""
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.db = VersusDB()
-        self.channel_id = int(os.getenv("VERSUS_WEEKLY_CHANNEL_ID", "0"))
+        self.channel_id = (
+            int(os.getenv("VERSUS_WEEKLY_CHANNEL_ID", "0") or 0)
+            or int(os.getenv("VOTACION_CHANNEL_ID", "0") or 0)
+            or int(os.getenv("VOTING_CHANNEL_ID", "0") or 0)
+        )
+        self.general_announce_id = int(os.getenv("GENERAL_CHANNEL_ID", "0") or 0)
         self.log = logging.getLogger(self.__class__.__name__)
 
     def cog_unload(self):
@@ -122,12 +155,66 @@ class SemanalVersusCog(commands.Cog, name="SemanalVersus"):
         c1 = len(rows) - c0
         return c0, c1
 
+    def _register_view_safe(self, view: discord.ui.View) -> None:
+        try:
+            self.bot.add_view(view)
+        except Exception:
+            log.debug("add_view versus (posible duplicado)", exc_info=True)
+
+    async def _sync_open_poll_after_restart(self, week_key: str, poll: dict) -> None:
+        """
+        Tras apagar/prender el bot: vuelve a registrar la vista persistente.
+        Si el mensaje de Discord ya no existe, republica la misma pareja en el canal configurado.
+        """
+        if not self.channel_id:
+            return
+        ch_out = self.bot.get_channel(self.channel_id)
+        if not isinstance(ch_out, discord.TextChannel):
+            return
+
+        stored_ch = int(poll.get("channel_id") or 0)
+        msg_id = int(poll.get("message_id") or 0)
+        ch = self.bot.get_channel(stored_ch) if stored_ch else None
+        if not isinstance(ch, discord.TextChannel):
+            try:
+                fetched = await self.bot.fetch_channel(stored_ch)
+                ch = fetched if isinstance(fetched, discord.TextChannel) else ch_out
+            except Exception:
+                ch = ch_out
+
+        msg_ok = False
+        if isinstance(ch, discord.TextChannel) and msg_id:
+            try:
+                await ch.fetch_message(msg_id)
+                msg_ok = True
+            except (discord.NotFound, discord.Forbidden):
+                msg_ok = False
+            except Exception:
+                msg_ok = False
+
+        end = _week_end_from_key(week_key)
+        if end is None:
+            return
+        a, b = poll["char_a"], poll["char_b"]
+
+        if msg_ok:
+            self._register_view_safe(_make_view(week_key, a, b))
+            return
+
+        embed = _versus_embed(week_key, a, b, end)
+        view = _make_view(week_key, a, b)
+        try:
+            msg = await ch_out.send(embed=embed, view=view)
+        except Exception:
+            self.log.exception("No se pudo repostear el versus %s", week_key)
+            return
+        self.db.update_poll_message(week_key, msg.id, ch_out.id)
+        self._register_view_safe(view)
+        self.log.warning("Versus %s: mensaje %s no encontrado; reposteado como %s", week_key, msg_id, msg.id)
+
     async def _register_persistent_views(self) -> None:
         for p in self.db.get_open_polls():
-            try:
-                self.bot.add_view(_make_view(p["week_key"], p["char_a"], p["char_b"]))
-            except Exception:
-                log.debug("add_view versus omitido (posible duplicado)", exc_info=True)
+            await self._sync_open_poll_after_restart(p["week_key"], p)
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -176,25 +263,45 @@ class SemanalVersusCog(commands.Cog, name="SemanalVersus"):
             except Exception:
                 pass
         c0, c1 = self._count_sides(week_key)
-        winner = "Empate" if c0 == c1 else (poll["char_a"] if c0 > c1 else poll["char_b"])
+        char_a, char_b = poll["char_a"], poll["char_b"]
+        if c0 == c1:
+            winner, win_votes, loser_name, lose_votes = "Empate", c0, char_b, c1
+            resumen = f"**Empate** entre **{char_a}** y **{char_b}** — **{c0}** votos cada uno."
+        elif c0 > c1:
+            winner, win_votes, loser_name, lose_votes = char_a, c0, char_b, c1
+            resumen = f"El ganador de la votación fue **{winner}** con **{win_votes}** votos frente a **{lose_votes}** de **{loser_name}**."
+        else:
+            winner, win_votes, loser_name, lose_votes = char_b, c1, char_a, c0
+            resumen = f"El ganador de la votación fue **{winner}** con **{win_votes}** votos frente a **{lose_votes}** de **{loser_name}**."
         self.db.mark_closed(week_key)
         if msg:
             try:
                 await msg.edit(view=None)
                 embed = msg.embeds[0] if msg.embeds else discord.Embed(title="VERSUS")
                 embed.color = discord.Color.dark_gray()
-                embed.set_footer(text=f"Cerrado — Ganador: {winner} · {poll['char_a']}: {c0} · {poll['char_b']}: {c1}")
+                embed.set_footer(text=f"Cerrado — {char_a}: {c0} · {char_b}: {c1}")
                 await msg.edit(embed=embed)
             except Exception:
                 pass
+        linea_canal = (
+            f"🏁 **VERSUS semanal** `{week_key}` — cierre domingo **21:00** ({os.getenv('VERSUS_TIMEZONE', 'Europe/Madrid')}).\n"
+            f"{resumen}\n"
+            f"Marcador final: **{char_a}** {c0} — **{char_b}** {c1}"
+        )
         try:
             if isinstance(ch, discord.TextChannel):
-                await ch.send(
-                    f"🏁 **VERSUS** `{week_key}` cerrado (domingo 21:00). **Ganador:** {winner} — "
-                    f"{poll['char_a']}: {c0} · {poll['char_b']}: {c1}"
-                )
+                await ch.send(linea_canal)
         except Exception:
             pass
+        if self.general_announce_id and self.general_announce_id != getattr(ch, "id", 0):
+            try:
+                gch = self.bot.get_channel(self.general_announce_id)
+                if gch is None:
+                    gch = await self.bot.fetch_channel(self.general_announce_id)
+                if isinstance(gch, discord.TextChannel):
+                    await gch.send(linea_canal)
+            except Exception:
+                self.log.debug("No se pudo anunciar el versus en #general", exc_info=True)
 
     async def _ensure_current_poll(self) -> None:
         if not self.channel_id:
@@ -204,22 +311,13 @@ class SemanalVersusCog(commands.Cog, name="SemanalVersus"):
         week_key, end = _active_week_and_close(now)
         row = self.db.get_poll(week_key)
         if row and not int(row.get("closed") or 0):
+            await self._sync_open_poll_after_restart(week_key, row)
             return
         ch = self.bot.get_channel(self.channel_id)
         if not ch or not isinstance(ch, discord.TextChannel):
             return
-        a, b = _pick_pair()
-        end_ts = int(end.timestamp())
-        embed = discord.Embed(
-            title=f"⚔️ VERSUS semanal `{week_key}`",
-            description=(
-                f"**{a}** vs **{b}**\n\n"
-                "Votá con los botones (podés cambiar votando el otro).\n"
-                f"Cierre: **domingo 21:00** ({os.getenv('VERSUS_TIMEZONE', 'Europe/Madrid')}) · <t:{end_ts}:F>\n"
-                "Staff: `/aat_versus_votos` para ver quién votó qué."
-            ),
-            color=discord.Color.gold(),
-        )
+        a, b = await _pick_pair_from_api()
+        embed = _versus_embed(week_key, a, b, end)
         view = _make_view(week_key, a, b)
         msg = await ch.send(embed=embed, view=view)
         inserted = self.db.insert_poll_new(week_key, msg.id, ch.id, a, b)

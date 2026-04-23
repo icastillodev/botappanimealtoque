@@ -7,6 +7,7 @@ from cogs.economia.reclamar_service import reclaim_rewards
 class TestReclaimRewards(unittest.TestCase):
     def test_inicial_claim(self):
         db = MagicMock()
+        db.modify_blisters.return_value = (3, [])
         db.get_progress_inicial.return_value = {
             "completado": 0,
             "presentacion": 1,

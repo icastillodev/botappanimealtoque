@@ -35,9 +35,10 @@ class EconomiaHelpView(discord.ui.View):
         embed.add_field(name="¿Qué es esto?", value="Puntos, blisters, cartas trampa, tienda y ranking del servidor.", inline=False)
         embed.add_field(name="Tareas (Comandos)", value=(
             "`/aat_progreso_iniciacion` - Muestra tus misiones de bienvenida.\n"
-            "`/aat_progreso_diaria` - Diaria: 10 mensajes + 3 reacciones + **Trampa**: a alguien **o** 2× sin objetivo.\n"
+            "`/aat_progreso_diaria` - Diaria: 10 mensajes + 3 reacciones + **Trampa** + **1× oráculo** (@bot + pregunta · `!pregunta` · `/aat_consulta`).\n"
             "`/aat_progreso_semanal` - Semanal, especial Impostor y **minijuegos** (ver página 5).\n"
-            "`/aat_reclamar [tipo]` - `inicial`, `diaria`, `semanal`, `semanal_especial`, `semanal_minijuegos`."
+            "`/aat_reclamar [tipo]` - `inicial`, `diaria`, `semanal`, `semanal_especial`, `semanal_minijuegos`.\n"
+            "**Top anime (hasta 30):** `/aat_anime_top_set` · `/aat_anime_top_ver` · `!animetop` — bonos únicos al completar 10 y 30 (`.env`)."
         ), inline=False)
         embed.set_footer(text="Usa los botones para navegar.")
         return embed
