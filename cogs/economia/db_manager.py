@@ -226,6 +226,43 @@ class EconomiaDBManagerV2:
                     )
                     """
                 )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS user_wishlist_entries (
+                        user_id INTEGER NOT NULL,
+                        pos INTEGER NOT NULL,
+                        title TEXT NOT NULL,
+                        updated_ts INTEGER NOT NULL,
+                        PRIMARY KEY (user_id, pos),
+                        FOREIGN KEY (user_id) REFERENCES economia_usuarios (user_id) ON DELETE CASCADE
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS user_anime_hated_entries (
+                        user_id INTEGER NOT NULL,
+                        pos INTEGER NOT NULL,
+                        title TEXT NOT NULL,
+                        updated_ts INTEGER NOT NULL,
+                        PRIMARY KEY (user_id, pos),
+                        FOREIGN KEY (user_id) REFERENCES economia_usuarios (user_id) ON DELETE CASCADE
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS user_fav_char_entries (
+                        user_id INTEGER NOT NULL,
+                        pos INTEGER NOT NULL,
+                        char_name TEXT NOT NULL,
+                        anime_title TEXT NOT NULL,
+                        updated_ts INTEGER NOT NULL,
+                        PRIMARY KEY (user_id, pos),
+                        FOREIGN KEY (user_id) REFERENCES economia_usuarios (user_id) ON DELETE CASCADE
+                    )
+                    """
+                )
 
                 conn.commit()
             except Exception as e:
@@ -804,5 +841,132 @@ class EconomiaDBManagerV2:
             cur.execute(
                 "INSERT INTO bot_meta (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
                 (key, value),
+            )
+            conn.commit()
+
+    # --- Wishlist anime (1–30, público) ---
+    def wishlist_list(self, user_id: int) -> List[Dict[str, Any]]:
+        self.ensure_user_exists(user_id)
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT pos, title FROM user_wishlist_entries WHERE user_id = ? ORDER BY pos ASC",
+                (user_id,),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+    def wishlist_set(self, user_id: int, pos: int, title: str) -> None:
+        self.ensure_user_exists(user_id)
+        t = (title or "").strip()[:200]
+        if not t:
+            raise ValueError("El título no puede estar vacío.")
+        if pos < 1 or pos > 30:
+            raise ValueError("La posición debe ser entre 1 y 30.")
+        ts = int(time.time())
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO user_wishlist_entries (user_id, pos, title, updated_ts)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, pos) DO UPDATE SET title = excluded.title, updated_ts = excluded.updated_ts
+                """,
+                (user_id, pos, t, ts),
+            )
+            conn.commit()
+
+    def wishlist_remove(self, user_id: int, pos: int) -> None:
+        self.ensure_user_exists(user_id)
+        with self._get_connection() as conn:
+            conn.cursor().execute(
+                "DELETE FROM user_wishlist_entries WHERE user_id = ? AND pos = ?",
+                (user_id, pos),
+            )
+            conn.commit()
+
+    # --- Animes odiados (1–10) ---
+    def hated_list(self, user_id: int) -> List[Dict[str, Any]]:
+        self.ensure_user_exists(user_id)
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT pos, title FROM user_anime_hated_entries WHERE user_id = ? ORDER BY pos ASC",
+                (user_id,),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+    def hated_set(self, user_id: int, pos: int, title: str) -> None:
+        self.ensure_user_exists(user_id)
+        t = (title or "").strip()[:200]
+        if not t:
+            raise ValueError("El título no puede estar vacío.")
+        if pos < 1 or pos > 10:
+            raise ValueError("La posición debe ser entre 1 y 10.")
+        ts = int(time.time())
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO user_anime_hated_entries (user_id, pos, title, updated_ts)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, pos) DO UPDATE SET title = excluded.title, updated_ts = excluded.updated_ts
+                """,
+                (user_id, pos, t, ts),
+            )
+            conn.commit()
+
+    def hated_remove(self, user_id: int, pos: int) -> None:
+        self.ensure_user_exists(user_id)
+        with self._get_connection() as conn:
+            conn.cursor().execute(
+                "DELETE FROM user_anime_hated_entries WHERE user_id = ? AND pos = ?",
+                (user_id, pos),
+            )
+            conn.commit()
+
+    # --- Personajes favoritos (1–10: nombre + anime) ---
+    def fav_char_list(self, user_id: int) -> List[Dict[str, Any]]:
+        self.ensure_user_exists(user_id)
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT pos, char_name, anime_title FROM user_fav_char_entries WHERE user_id = ? ORDER BY pos ASC",
+                (user_id,),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+    def fav_char_set(self, user_id: int, pos: int, char_name: str, anime_title: str) -> None:
+        self.ensure_user_exists(user_id)
+        cn = (char_name or "").strip()[:120]
+        an = (anime_title or "").strip()[:200]
+        if not cn or not an:
+            raise ValueError("Personaje y anime no pueden estar vacíos.")
+        if pos < 1 or pos > 10:
+            raise ValueError("La posición debe ser entre 1 y 10.")
+        ts = int(time.time())
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO user_fav_char_entries (user_id, pos, char_name, anime_title, updated_ts)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, pos) DO UPDATE SET
+                    char_name = excluded.char_name,
+                    anime_title = excluded.anime_title,
+                    updated_ts = excluded.updated_ts
+                """,
+                (user_id, pos, cn, an, ts),
+            )
+            conn.commit()
+
+    def fav_char_remove(self, user_id: int, pos: int) -> None:
+        self.ensure_user_exists(user_id)
+        with self._get_connection() as conn:
+            conn.cursor().execute(
+                "DELETE FROM user_fav_char_entries WHERE user_id = ? AND pos = ?",
+                (user_id, pos),
             )
             conn.commit()

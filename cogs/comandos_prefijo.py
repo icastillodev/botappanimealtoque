@@ -41,6 +41,8 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
                 "**Impostor:** `!impostor` — avisá que buscás gente / ver lobbies abiertos.\n"
                 "**Oráculo:** arrobá al bot + tu pregunta en el mismo mensaje · `!pregunta` + texto · `/aat_consulta` — sí / no / a veces %. Cuenta para la **diaria** y puntos extra (ver `.env`).\n"
                 "**Top anime:** `!animetop` · `!animetop @usuario` — slash: `/aat_anime_top_*`\n"
+                "**Perfil:** `/aat_wishlist_*` · `/aat_hated_*` · `/aat_chars_*` (wishlist 1–30, odiados 1–10, personajes 1–10).\n"
+                "**Trivia anime:** el bot publica en **#general**; respondé ahí con `!respuestapregunta` + respuesta.\n"
                 "**Slash útiles:** `/aat_ayuda` · `/crearsimpostor` · `/entrar` · `/aat_tienda_ver`"
             ),
             color=discord.Color.blurple(),

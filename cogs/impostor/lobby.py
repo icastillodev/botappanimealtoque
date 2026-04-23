@@ -737,6 +737,27 @@ class ImpostorLobbyCog(commands.Cog, name="ImpostorLobby"):
             log.exception(f"Error al publicar HUD en C:{channel.id}: {e}")
             
         await feed.update_feed(self.bot)
+
+        # Aviso opcional en #general (IMPOSTOR_ANNOUNCE_GENERAL=1 por defecto)
+        try:
+            flag = (os.getenv("IMPOSTOR_ANNOUNCE_GENERAL", "1") or "").strip().lower()
+            if flag not in {"0", "false", "no", "off"}:
+                gen_id = int(os.getenv("GENERAL_CHANNEL_ID", "0") or 0)
+                if gen_id and interaction.guild:
+                    gen_ch = interaction.guild.get_channel(gen_id)
+                    if gen_ch and isinstance(gen_ch, discord.abc.Messageable):
+                        tipo_txt = "**abierto**" if is_open else "**cerrado (solo invitación del host)**"
+                        await gen_ch.send(
+                            f"🎭 **Nueva sala Impostor** — **{discord.utils.escape_markdown(nombre)}** ({tipo_txt}).\n"
+                            f"**Canal:** {channel.mention}\n"
+                            f"**Host:** {interaction.user.mention}\n"
+                            f"**Cómo entrar:** usá `/entrar` con el nombre del lobby"
+                            f"{' (si está abierto)' if is_open else ' (el host te tiene que dar acceso al canal)'}"
+                            f". También podés ver lobbies en el feed de Impostor si lo tenés configurado."
+                        )
+        except Exception as e:
+            log.warning("No se pudo publicar el aviso de Impostor en #general: %s", e)
+
         await interaction.followup.send(f"✅ Lobby **{nombre}** creado: <#{channel.id}>", ephemeral=True)
 
     @app_commands.command(name="entrar", description="Únete a un lobby de Impostor abierto.")

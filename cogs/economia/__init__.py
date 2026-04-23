@@ -14,6 +14,8 @@ SUB_COGS = [
     "ranking_cog",
     "ayuda_cog",
     "anime_top_cog",
+    "perfil_anime_cog",
+    "trivia_cog",
     "guia_canal_cog",
 ]
 
