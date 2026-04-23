@@ -7,6 +7,54 @@ from .toque_labels import fmt_toque_sentence
 
 TipoReclamo = Optional[Literal["inicial", "diaria", "semanal", "semanal_especial", "semanal_minijuegos"]]
 
+_CANONICAL_TIPOS = frozenset({"inicial", "diaria", "semanal", "semanal_especial", "semanal_minijuegos"})
+
+# Alias → nombre interno de `claim_reward` / slash.
+_RECLAMO_ALIASES: Dict[str, str] = {
+    "inicial": "inicial",
+    "starter": "inicial",
+    "iniciacion": "inicial",
+    "onboarding": "inicial",
+    "diaria": "diaria",
+    "diario": "diaria",
+    "daily": "diaria",
+    "semanal": "semanal",
+    "weekly": "semanal",
+    "semanal_especial": "semanal_especial",
+    "especial": "semanal_especial",
+    "impostor": "semanal_especial",
+    "special": "semanal_especial",
+    "weekly_special": "semanal_especial",
+    "semanal_minijuegos": "semanal_minijuegos",
+    "minijuegos": "semanal_minijuegos",
+    "minigames": "semanal_minijuegos",
+    "weekly_minigames": "semanal_minijuegos",
+}
+
+
+RECLAMO_TIPOS_AYUDA = (
+    "Sin argumento = intenta **todo** lo listo. O un solo tipo: "
+    "`inicial` · `diaria` / `diario` / `daily` · `semanal` / `weekly` · "
+    "`especial` / `semanal_especial` · `minijuegos` / `semanal_minijuegos` · "
+    "`all` / `todo` (= todo)."
+)
+
+
+def is_reclamar_all_keyword(token: str) -> bool:
+    return token.strip().lower() in ("all", "todo", "todos", "everything")
+
+
+def map_reclamo_token_to_tipo(token: str) -> Optional[str]:
+    """Primer token de `?reclamar …` → nombre canónico, o None si no existe."""
+    k = str(token).strip().lower().replace("-", "_")
+    if not k:
+        return None
+    mapped = _RECLAMO_ALIASES.get(k, k)
+    if mapped in _CANONICAL_TIPOS:
+        return mapped
+    return None
+
+
 # Aviso al reclamar: progreso de iniciación + historial si ya cumplieron Discord antes.
 MSG_TIP_INICIACION_AL_RECLAMAR = (
     "Para ver **iniciación** (Discord + perfil): **`/aat-progreso-iniciacion`** o **`?inicial`**. "
@@ -44,6 +92,61 @@ def _inicial_profile_counts(db: Any, user_id: int) -> Tuple[int, int, int]:
 def inicial_profile_ready(db: Any, user_id: int) -> bool:
     wl, top, hat = _inicial_profile_counts(db, user_id)
     return wl >= INICIAL_WISHLIST_MIN and top >= INICIAL_TOP_MIN and hat >= INICIAL_HATED_MIN
+
+
+def _diaria_prog_ready(prog: Dict[str, Any]) -> bool:
+    msg_n = int(prog.get("mensajes_servidor") or 0)
+    rx_n = int(prog.get("reacciones_servidor") or 0)
+    tr = int(prog.get("trampa_enviada") or 0)
+    ts = int(prog.get("trampa_sin_objetivo") or 0)
+    tr_ok = tr >= 1 or ts >= 1
+    or_n = int(prog.get("oraculo_preguntas") or 0)
+    return msg_n >= 10 and rx_n >= 3 and tr_ok and or_n >= 1
+
+
+def build_reclaim_status_block(db: Any, _task_config: Dict[str, Any], user_id: int) -> str:
+    """Resumen legible de las 5 recompensas: ya reclamado / listo / falta."""
+    lines: List[str] = []
+    pi = db.get_progress_inicial(user_id)
+    if int(pi.get("completado") or 0) == 1:
+        lines.append("✅ **Inicial** — ya reclamado.")
+    elif _inicial_discord_done(pi) and inicial_profile_ready(db, user_id):
+        lines.append("☑ **Inicial** — listo · `?reclamar inicial`")
+    else:
+        lines.append("☐ **Inicial** — incompleto (`?inicial`).")
+    pd = db.get_progress_diaria(user_id)
+    if int(pd.get("completado") or 0) == 1:
+        lines.append("✅ **Diario** (*daily*) — ya reclamado hoy.")
+    elif _diaria_prog_ready(pd):
+        lines.append("☑ **Diario** — listo · `?reclamar diaria`")
+    else:
+        lines.append("☐ **Diario** — incompleto (`?diaria`).")
+    ps = db.get_progress_semanal(user_id)
+    if int(ps.get("completado") or 0) == 1:
+        lines.append("✅ **Semanal base** (*weekly*) — ya reclamado.")
+    elif int(ps.get("debate_post") or 0) >= 1 and int(ps.get("videos_reaccion") or 0) >= 1 and int(ps.get("media_escrito") or 0) >= 1:
+        lines.append("☑ **Semanal base** — listo · `?reclamar semanal`")
+    else:
+        lines.append("☐ **Semanal base** — incompleto (`?semanal`).")
+    if int(ps.get("completado_especial") or 0) == 1:
+        lines.append("✅ **Especial Impostor** — ya reclamado.")
+    elif int(ps.get("impostor_partidas") or 0) >= 3 and int(ps.get("impostor_victorias") or 0) >= 1:
+        lines.append("☑ **Especial Impostor** — listo · `?reclamar especial`")
+    else:
+        lines.append("☐ **Especial Impostor** — incompleto.")
+    mg_ok = (
+        int(ps.get("mg_ret_roll_apuesta") or 0) >= 1
+        and int(ps.get("mg_roll_casual") or 0) >= 1
+        and int(ps.get("mg_duelo") or 0) >= 1
+        and int(ps.get("mg_voto_dom") or 0) >= 1
+    )
+    if int(ps.get("completado_minijuegos") or 0) == 1:
+        lines.append("✅ **Minijuegos semanal** — ya reclamado.")
+    elif mg_ok:
+        lines.append("☑ **Minijuegos semanal** — listo · `?reclamar minijuegos`")
+    else:
+        lines.append("☐ **Minijuegos semanal** — incompleto.")
+    return "\n".join(lines)
 
 
 def build_inicial_reclaim_hint(db: Any, user_id: int) -> Optional[str]:

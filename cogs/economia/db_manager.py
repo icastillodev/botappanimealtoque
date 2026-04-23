@@ -648,15 +648,28 @@ class EconomiaDBManagerV2:
             cursor.execute("SELECT * FROM historial_cartas WHERE user_id = ? AND timestamp > ?", (user_id, time_limit))
             return [dict(row) for row in cursor.fetchall()]
             
-    def get_top_users(self, ranking_type: str, limit: int = 10) -> List[Dict[str, Any]]:
+    def get_top_users(self, ranking_type: str, limit: int = 10, offset: int = 0) -> List[Dict[str, Any]]:
         column_map = {"actual": "puntos_actuales", "conseguidos": "puntos_conseguidos", "gastados": "puntos_gastados"}
         column_name = column_map.get(ranking_type, "puntos_actuales")
+        off = max(0, int(offset))
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            query = f"SELECT user_id, {column_name} FROM economia_usuarios WHERE {column_name} > 0 ORDER BY {column_name} DESC LIMIT ?"
-            cursor.execute(query, (limit,))
+            query = (
+                f"SELECT user_id, {column_name} FROM economia_usuarios WHERE {column_name} > 0 "
+                f"ORDER BY {column_name} DESC LIMIT ? OFFSET ?"
+            )
+            cursor.execute(query, (limit, off))
             return [dict(row) for row in cursor.fetchall()]
+
+    def count_ranked_users(self, ranking_type: str) -> int:
+        """Usuarios con puntaje > 0 en la columna del ranking (misma regla que get_top_users)."""
+        column_map = {"actual": "puntos_actuales", "conseguidos": "puntos_conseguidos", "gastados": "puntos_gastados"}
+        column_name = column_map.get(ranking_type, "puntos_actuales")
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(f"SELECT COUNT(*) FROM economia_usuarios WHERE {column_name} > 0")
+            return int(cur.fetchone()[0] or 0)
 
     def get_user_rank_info(self, user_id: int, ranking_type: str) -> Dict[str, Any]:
         """Posición (1 = mejor) según columna de ranking; `value` es el puntaje del usuario."""

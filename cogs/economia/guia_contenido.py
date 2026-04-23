@@ -103,7 +103,108 @@ def _normalize_guia_embed_list(embeds: List[discord.Embed]) -> List[discord.Embe
     flat: List[discord.Embed] = []
     for emb in embeds:
         flat.extend(_normalize_embed_for_discord_limits(emb))
-    return flat[:25]
+    return flat[:50]
+
+
+def flatten_guia_embeds_to_sections(embeds: List[discord.Embed]) -> List[discord.Embed]:
+    """
+    Convierte cada embed «denso» (descripción + varios fields) en varias páginas:
+    una con la descripción (si hay) y una por cada field (título = embed + nombre del field).
+    """
+    out: List[discord.Embed] = []
+    for emb in embeds:
+        title = (emb.title or "Guía")[:256]
+        color = emb.color if emb.color is not None else discord.Color.blurple()
+        footer_text = (emb.footer.text[:2048] if emb.footer and emb.footer.text else None)
+        desc = (emb.description or "").strip()
+        fields = list(emb.fields)
+        if desc:
+            e = discord.Embed(title=title[:256], description=desc[:_MAX_DESCRIPTION_LEN], color=color)
+            if footer_text:
+                e.set_footer(text=footer_text)
+            out.append(e)
+        for f in fields:
+            name = (f.name or "—")[:256]
+            val = (f.value or "").strip() or "*(sin texto)*"
+            subt = f"{title} — {name}"[:256]
+            e = discord.Embed(title=subt, description=val[:_MAX_DESCRIPTION_LEN], color=color)
+            out.append(e)
+        if not desc and not fields and (emb.title or emb.description):
+            e = discord.Embed(
+                title=emb.title[:256] if emb.title else None,
+                description=(emb.description or "")[:_MAX_DESCRIPTION_LEN] or None,
+                color=color,
+            )
+            if footer_text:
+                e.set_footer(text=footer_text)
+            out.append(e)
+    return out
+
+
+class GuiaEmbedsPaginator(discord.ui.View):
+    """Paginador Anterior/Siguiente; solo el usuario que abrió la guía puede tocar los botones."""
+
+    def __init__(self, author_id: int, pages: List[List[discord.Embed]], *, label: str):
+        super().__init__(timeout=420)
+        self.author_id = author_id
+        self.pages = pages
+        self.label = label
+        self.idx = 0
+        self._sync_buttons()
+
+    def _sync_buttons(self) -> None:
+        prev_b = discord.utils.get(self.children, label="Anterior")
+        next_b = discord.utils.get(self.children, label="Siguiente")
+        if isinstance(prev_b, discord.ui.Button):
+            prev_b.disabled = self.idx <= 0
+        if isinstance(next_b, discord.ui.Button):
+            next_b.disabled = self.idx >= len(self.pages) - 1
+
+    def header(self) -> Optional[str]:
+        if len(self.pages) <= 1:
+            return None
+        return f"{self.label} · **{self.idx + 1}/{len(self.pages)}** — **Anterior** / **Siguiente**"
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message(
+                "Solo quien abrió la guía puede paginar. Ejecutá el mismo comando vos.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    @discord.ui.button(label="Anterior", style=discord.ButtonStyle.secondary, emoji="⬅️", row=0)
+    async def prev_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self.idx > 0:
+            self.idx -= 1
+        self._sync_buttons()
+        await interaction.response.edit_message(content=self.header(), embeds=self.pages[self.idx], view=self)
+
+    @discord.ui.button(label="Siguiente", style=discord.ButtonStyle.primary, emoji="➡️", row=0)
+    async def next_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self.idx < len(self.pages) - 1:
+            self.idx += 1
+        self._sync_buttons()
+        await interaction.response.edit_message(content=self.header(), embeds=self.pages[self.idx], view=self)
+
+
+async def send_guia_pages_interaction(
+    interaction: discord.Interaction,
+    pages: List[List[discord.Embed]],
+    *,
+    label: str,
+) -> None:
+    """Tras `defer()`, envía la guía en un solo mensaje con paginación (si hay más de una página)."""
+    clean = [p for p in pages if p]
+    if not clean:
+        await interaction.followup.send("Nada para mostrar.", ephemeral=True)
+        return
+    if len(clean) == 1:
+        await interaction.followup.send(embeds=clean[0])
+        return
+    view = GuiaEmbedsPaginator(interaction.user.id, clean, label=label)
+    await interaction.followup.send(content=view.header(), embeds=clean[0], view=view)
 
 
 def guia_fixed_channel_id(bot: Any) -> int:
@@ -121,53 +222,19 @@ def guia_fixed_channel_blurb(bot: Any) -> str:
     if gid <= 0:
         return ""
     return (
-        f"**Guía fija del servidor:** <#{gid}> — ahí el bot deja varios mensajes/embeds con **toda** la guía "
+        f"**Guía fija del servidor:** <#{gid}> — ahí el bot deja **un mensaje por sección** con **toda** la guía "
         f"(para qué sirve cada cosa). También podés usar `?guia` o `/aat-guia` donde lo permita el staff.\n\n"
     )
 
 
-# Discord: la suma de caracteres de *todos* los embeds de un mismo mensaje no puede pasar de 6000.
-# Además hay máximo 10 embeds por mensaje. Troceamos por presupuesto de caracteres + ese tope.
-_GUIDE_MAX_EMBEDS_PER_MESSAGE = 10
-_GUIDE_MAX_CHARS_PER_MESSAGE = 5400
-
-
-def _embed_char_count(embed: discord.Embed) -> int:
-    n = 0
-    if embed.title:
-        n += len(embed.title)
-    if embed.description:
-        n += len(embed.description)
-    if embed.footer and embed.footer.text:
-        n += len(embed.footer.text)
-    if embed.author and embed.author.name:
-        n += len(embed.author.name)
-    for f in embed.fields:
-        n += len(f.name) + len(f.value)
-    return n
-
-
 def chunk_guia_embeds_for_send(bot: Any) -> List[List[discord.Embed]]:
-    """Parte la guía respetando el límite combinado de ~6000 caracteres y ≤10 embeds por mensaje."""
-    embeds = _normalize_guia_embed_list(build_guia_embeds(bot)[:10])
+    """Un embed por página (paginador `?guia` / slash): cada sección = un paso Anterior/Siguiente."""
+    raw = build_guia_embeds(bot)
+    flattened = flatten_guia_embeds_to_sections(raw)
+    embeds = _normalize_guia_embed_list(flattened)
     if not embeds:
         return []
-    chunks: List[List[discord.Embed]] = []
-    cur: List[discord.Embed] = []
-    cur_chars = 0
-    for e in embeds:
-        sz = _embed_char_count(e)
-        overflow_chars = cur and (cur_chars + sz > _GUIDE_MAX_CHARS_PER_MESSAGE)
-        overflow_count = cur and (len(cur) >= _GUIDE_MAX_EMBEDS_PER_MESSAGE)
-        if cur and (overflow_chars or overflow_count):
-            chunks.append(cur)
-            cur = []
-            cur_chars = 0
-        cur.append(e)
-        cur_chars += sz
-    if cur:
-        chunks.append(cur)
-    return chunks
+    return [[e] for e in embeds]
 
 
 def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
@@ -178,18 +245,19 @@ def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
         if gid > 0
         else "En el **canal del bot** podés usar el resto de `?` sin que los borre el filtro.\n\n"
     )
-    r0 = discord.Embed(
-        title="📋 Comandos con prefijo ?",
+    r0a = discord.Embed(
+        title="📋 Comandos con prefijo ? (1/2)",
         description=(
             "**En #general** solo: `?roll` · `?rollp` / `?rollc` / `?rollpaceptar` · `?abrir` · `?usar` / `?usarcarta` · oráculo (`?pregunta`… o @bot) · "
-            "trivia (`?respuestapregunta`…) · `?impostor` · `?animetop` · `?comandos` (lista corta).\n"
+            "trivia (`?respuestapregunta`…) · `?impostor` · `?animetop` · `?comandos` (**lista corta**; distinto de la guía larga).\n"
             "**No en #general:** reclamar, progreso, diaria/semanal/inicial, puntos, inventario, tops, tienda, guía larga… "
             f"usalos en el canal del bot o con slash.\n\n"
             f"{canal_prefijo}"
             "**Economía y cartas (canal del bot o donde el staff indique)**\n"
             "• `?puntos` — tus Toque points · `?inventario` — saldo, pins y blisters\n"
             "• `?mi` — saldo, posición en tops, cartas e histórico ganado\n"
-            "• `?top` · `?rank` · `?ranking` — top 5 por **saldo actual**\n"
+            "• `?top` · `?rank` — top 5 rápido por **saldo actual**\n"
+            "• `?ranking` · `?tablas` — tablas **paginadas** (saldo / histórico / gastado) + botones (trivia, `?mi`, anime top)\n"
             "• `?tophist` · `?histtop` — top 5 por **total ganado** (histórico)\n"
             "• `?reclamar` — cobrar recompensas listas\n"
             "• `?progreso` — resumen iniciación + diaria + semanal\n"
@@ -199,14 +267,20 @@ def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
             "• `?miscartas` — lista de cartas (**visible para todos** en ese canal)\n"
             "• `?catalogo` — todas las cartas del juego\n"
             "• `?usar` · `?usarcarta` — usar carta trampa (`?usar <id> [@alguien]`)\n\n"
-            "**Resúmenes y guía**\n"
-            "• `?comandos` · `?aat` · `?cmds` · `?cmd` · `?ayudabot` — resumen corto\n"
-            "• `?ayuda` · `?guia` — **esta guía completa** en varios embeds\n"
-            "• `/aat-guia` — la misma guía completa con slash (todos la ven en el canal)\n"
+            "**Resúmenes y guía larga**\n"
+            "• `?comandos` · `?aat` · `?cmds` · `?cmd` · `?ayudabot` — **resumen corto** (no pagina por sección)\n"
+            "• `?ayuda` · `?guia` — guía larga: **una sección por página** (Anterior / Siguiente)\n"
+            "• `/aat-guia` — lo mismo con slash (un mensaje con paginación)\n"
             "• `?canjes` · `?tienda` · `?recompensas` — embed de tienda y canjes\n"
             "• `?ganarpuntos` · `?comoganar` — cómo ganar Toque points + reclamar\n"
             "• `?roll` — dado casual (rango)\n"
-            "• `?rollp @usuario` — reto roll 1–100 **sin** puntos · `?rollc @usuario <pts>` — **con** apuesta · `?rollpaceptar` — aceptar\n\n"
+            "• `?rollp @usuario` — reto roll 1–100 **sin** puntos · `?rollc @usuario <pts>` — **con** apuesta · `?rollpaceptar` — aceptar (**5 min**)"
+        ),
+        color=discord.Color.light_grey(),
+    )
+    r0b = discord.Embed(
+        title="📋 Comandos con prefijo ? (2/2)",
+        description=(
             "**Impostor**\n"
             "• `?impostor` · `?buscoimpostor` · `?busco` · `?lobbys` · `?cartelera` — aviso de busca / cartelera\n\n"
             "**Oráculo (cuenta para la diaria)**\n"
@@ -265,11 +339,11 @@ def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
         color=discord.Color.dark_purple(),
     )
 
-    return [r0, r1, r2, r3]
+    return [r0a, r0b, r1, r2, r3]
 
 
 def build_guia_embeds(bot: Any) -> List[discord.Embed]:
-    """Arma hasta 10 embeds (límite Discord) con resumen de economía, tienda y extras."""
+    """Embeds base de la guía (economía, tienda, cartas, comandos); el paginador parte cada sección en páginas."""
     tc: Dict[str, Any] = bot.task_config or {}
     sc: Dict[str, Any] = bot.shop_config or {}
     rw = tc.get("rewards") or {}
@@ -299,7 +373,7 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
             f"  · Toque extra oráculo: hasta {int(rw.get('oracle_max_preguntas_con_puntos') or 5)} preguntas/día a "
             f"{_fmt_pts(int(rw.get('oracle_pregunta_points') or 0))} c/u.\n"
             f"• **Semanal** (un premio base): {_fmt_pts(int(rw.get('semanal') or 0))} — **media** (memes / fanart u otros canales de creación) **aparte** de "
-            f"**Foro** (un hilo con tu mensaje) + **#videos** (una reacción); **Impostor** es recompensa aparte — `/aat-progreso-semanal`.\n"
+            f"**Foro** (un hilo con tu mensaje) + **#videos-nuevos** (una reacción; `VIDEOS_CHANNEL_ID`); **Impostor** es recompensa aparte — `/aat-progreso-semanal`.\n"
             f"• **Especial semanal (Impostor)**: {_fmt_pts(int(rw.get('especial_semanal') or 0))} + blisters.\n"
             f"• **Minijuegos semanal**: {_fmt_pts(int(rw.get('minijuegos_semanal') or 0))} + blisters.\n"
             "• **Top anime (bonos únicos en Toque points):** completar 10 y 30 posiciones — ver embed *Top anime*.\n"
@@ -435,5 +509,4 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
         inline=False,
     )
 
-    out: List[discord.Embed] = [e0, e1, e2, e3, e4] + build_comandos_ref_embeds(bot)
-    return out[:10]
+    return [e0, e1, e2, e3, e4] + build_comandos_ref_embeds(bot)

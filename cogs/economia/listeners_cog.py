@@ -90,6 +90,7 @@ class EconomiaListenersCog(commands.Cog):
         if channel_id == self._get_channel_id("reglas"):
             self.db.update_task_inicial(user_id, "reaccion_reglas")
 
+        # Canal semanal “videos” en env = **#videos-nuevos** (VIDEOS_CHANNEL_ID).
         if channel_id == self._get_channel_id("videos"):
             self.db.update_task_semanal(user_id, "videos_reaccion", semana, 1)
 

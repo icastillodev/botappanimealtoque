@@ -48,6 +48,7 @@ def load_task_and_shop_config(log: logging.Logger) -> Tuple[Optional[Dict[str, A
                 "fanarts": _int("FANARTS_CHANNEL_ID", 0),
                 "cosplays": _int("COSPLAYS_CHANNEL_ID", 0),
                 "memes": _int("MEMES_CHANNEL_ID", 0),
+                # Semanal: una reacción en el canal configurado (AaT: #videos-nuevos).
                 "videos": _int("VIDEOS_CHANNEL_ID", 0),
                 "anime_debate": _int("ANIMEDEBATE_CHANNEL_ID", 0),
                 "manga_debate": _int("MANGA_CHANNEL_ID", 0),

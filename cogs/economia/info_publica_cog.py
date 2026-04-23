@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from .guia_contenido import build_guia_embeds, chunk_guia_embeds_for_send
+from .guia_contenido import build_guia_embeds, chunk_guia_embeds_for_send, send_guia_pages_interaction
 
 log = logging.getLogger(__name__)
 
@@ -59,11 +59,12 @@ class InfoPublicaCog(commands.Cog, name="Economía info pública"):
                 ephemeral=True,
             )
             return
-        n = len(chunks)
         try:
-            for i, part in enumerate(chunks):
-                head = f"📚 **Guía ({i + 1}/{n})**" if n > 1 else None
-                await interaction.followup.send(content=head, embeds=part, ephemeral=False)
+            await send_guia_pages_interaction(
+                interaction,
+                chunks,
+                label="📚 **Guía del bot**",
+            )
         except discord.HTTPException as e:
             log.warning("aat-guia: envío falló: %s", e)
             hint = ""

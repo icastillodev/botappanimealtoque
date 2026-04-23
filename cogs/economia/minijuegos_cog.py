@@ -5,13 +5,17 @@ import json
 import logging
 import os
 import random
-from typing import Literal, Optional, Tuple
+from typing import Any, Dict, Literal, Optional, Tuple
 
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
 log = logging.getLogger(__name__)
+
+# Tiempo máximo para que el retado acepte (roll o duelo); al vencer se devuelve la apuesta y se avisa en el canal.
+RETO_ACCEPT_MINUTES = 5
+RETO_ACCEPT_TTL_SEC = RETO_ACCEPT_MINUTES * 60
 
 
 class MinijuegosCog(commands.Cog, name="Economia Minijuegos"):
@@ -39,12 +43,73 @@ class MinijuegosCog(commands.Cog, name="Economia Minijuegos"):
             for row in self.db.minijuego_fetch_expired_pending():
                 self.db.modify_points(int(row["p1_id"]), int(row["stake"]), gastar=False)
                 self.db.minijuego_invite_resolve(int(row["id"]), "expired")
+                await self._post_reto_expired_message(row)
         except Exception:
             log.exception("expire minijuegos")
 
     @_expire_loop.before_loop
     async def _expire_before(self):
         await self.bot.wait_until_ready()
+
+    async def _display_name_uid(self, user_id: int) -> str:
+        u = self.bot.get_user(user_id)
+        if u is None:
+            try:
+                u = await self.bot.fetch_user(user_id)
+            except (discord.NotFound, discord.HTTPException):
+                return f"ID {user_id}"
+        return u.display_name
+
+    async def _post_reto_expired_message(self, row: Dict[str, Any]) -> None:
+        """Aviso público en el canal donde se lanzó el reto (el retado no aceptó a tiempo)."""
+        gid = int(row["guild_id"])
+        cid = int(row["channel_id"])
+        guild = self.bot.get_guild(gid)
+        if guild is None:
+            return
+        ch = guild.get_channel(cid)
+        if ch is None:
+            try:
+                ch = await guild.fetch_channel(cid)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                return
+        if not isinstance(ch, discord.abc.Messageable):
+            return
+
+        p1, p2 = int(row["p1_id"]), int(row["p2_id"])
+        n1 = discord.utils.escape_markdown(await self._display_name_uid(p1))
+        n2 = discord.utils.escape_markdown(await self._display_name_uid(p2))
+        kind = str(row.get("kind") or "")
+        stake = int(row.get("stake") or 0)
+        mins = RETO_ACCEPT_MINUTES
+
+        if kind == "roll_casual":
+            body = (
+                f"⌛ **{n2}** no aceptó el reto roll **sin apuesta** de **{n1}** a tiempo (**{mins} min**). "
+                f"*Se canceló; nadie gana ni pierde nada.*"
+            )
+        elif kind == "roll_bet":
+            body = (
+                f"⌛ **{n2}** no aceptó el reto roll con apuesta de **{n1}** a tiempo (**{mins} min**). "
+                f"La apuesta (**{stake}** pts) ya quedó **devuelta** al retador."
+            )
+        elif kind == "duel":
+            body = (
+                f"⌛ **{n2}** no aceptó el **duelo** de **{n1}** a tiempo (**{mins} min**). "
+                f"La apuesta (**{stake}** pts) ya quedó **devuelta** al retador."
+            )
+        else:
+            body = (
+                f"⌛ **{n2}** no respondió a tiempo al reto de **{n1}** (**{mins} min**). Invitación cancelada."
+            )
+
+        try:
+            await ch.send(
+                body,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except (discord.Forbidden, discord.HTTPException):
+            log.warning("No se pudo publicar aviso de reto expirado (canal %s)", cid)
 
     def _rw(self) -> dict:
         return self.task_config.get("rewards", {})
@@ -87,7 +152,7 @@ class MinijuegosCog(commands.Cog, name="Economia Minijuegos"):
             p2_id,
             apuesta,
             json.dumps({}),
-            ttl_sec=420,
+            ttl_sec=RETO_ACCEPT_TTL_SEC,
         )
 
     async def _roll_aceptar_resolver(self, row: dict, accepter: discord.Member) -> Tuple[bool, str]:
@@ -151,13 +216,13 @@ class MinijuegosCog(commands.Cog, name="Economia Minijuegos"):
             txt = (
                 f"🎲 Reto **sin apuesta** a {oponente.mention}: el mayor en 1–100 gana (solo honor).\n"
                 f"{oponente.mention}: **`/aat-roll-aceptar`** o **`?rollpaceptar`** "
-                f"(si no aceptás, el reto expira sin costo)."
+                f"— **{RETO_ACCEPT_MINUTES} min** para aceptar; si no, se cancela."
             )
         else:
             txt = (
                 f"🎲 Reto a {oponente.mention}: apuesta **{apuesta}** pts c/u en un roll 1–100.\n"
                 f"{oponente.mention}: **`/aat-roll-aceptar`** o **`?rollpaceptar`** "
-                f"(o ignorá: expira y se devuelve la apuesta del retador)."
+                f"— **{RETO_ACCEPT_MINUTES} min**; si no aceptás, se devuelve la apuesta al retador."
             )
         await ctx.send(
             txt,
@@ -228,13 +293,13 @@ class MinijuegosCog(commands.Cog, name="Economia Minijuegos"):
             txt = (
                 f"🎲 Reto **sin apuesta** a {oponente.mention}: el mayor en 1–100 gana (solo honor).\n"
                 f"{oponente.mention}: **`/aat-roll-aceptar`** o **`?rollpaceptar`** "
-                f"(si no aceptás, el reto expira sin costo)."
+                f"— **{RETO_ACCEPT_MINUTES} min** para aceptar; si no, se cancela."
             )
         else:
             txt = (
                 f"🎲 Reto a {oponente.mention}: apuesta **{a}** pts c/u en un roll 1–100.\n"
                 f"{oponente.mention}: **`/aat-roll-aceptar`** o **`?rollpaceptar`** "
-                f"(o ignorá: expira y se devuelve la apuesta del retador)."
+                f"— **{RETO_ACCEPT_MINUTES} min**; si no aceptás, se devuelve la apuesta al retador."
             )
         await interaction.response.send_message(
             txt,
@@ -306,11 +371,11 @@ class MinijuegosCog(commands.Cog, name="Economia Minijuegos"):
             oponente.id,
             apuesta,
             payload,
-            ttl_sec=600,
+            ttl_sec=RETO_ACCEPT_TTL_SEC,
         )
         await interaction.response.send_message(
             f"⚔️ {oponente.mention}: **duelo** por **{apuesta}** pts. Predicción del retador: **{prediccion}**.\n"
-            f"Usá **`/aat-duelo-aceptar`** con tu `carta_id`.",
+            f"Usá **`/aat-duelo-aceptar`** con tu `carta_id` (**{RETO_ACCEPT_MINUTES} min** o se cancela y se devuelve la apuesta).",
             allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
         )
 

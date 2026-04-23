@@ -13,6 +13,26 @@ from discord import app_commands
 from discord.ext import commands
 
 
+def _oracle_echo_flavor(pregunta: str) -> str:
+    """
+    «Mini personalidad» sin API externa: devuelve una línea que nombra un recorte de la pregunta (o vacío).
+    No interpreta de verdad; solo flavor para roleplay.
+    """
+    q = re.sub(r"\s+", " ", (pregunta or "").strip())
+    if len(q) < 4:
+        return ""
+    clip = q[:100] + ("…" if len(q) > 100 else "")
+    return random.choice(
+        [
+            f"_El eco de «{clip}» vibra un instante y se disuelve._",
+            f"_Los astros archivan «{clip}» en un cajón sin etiqueta._",
+            f"_Sobre «{clip}», el oráculo no firma cheques: solo tira el dado._",
+            f"_Tu «{clip}» quedó registrada en el libro de las preguntas ruidosas._",
+            f"_Ni el bot entiende del todo «{clip}», pero hace como que sí._",
+        ]
+    )
+
+
 def _roll_oracle() -> Tuple[str, str, int]:
     """
     Devuelve (categoría, texto_respuesta, dado 1-100 usado).
@@ -148,11 +168,16 @@ class OraculoCog(commands.Cog, name="Oráculo"):
         body: str,
     ) -> discord.Embed:
         q = (pregunta or "").strip()[:900] or "*(silencio místico)*"
+        flavor = _oracle_echo_flavor(pregunta)
         desc = (
             f"{mencion} **({nombre_visible})** preguntó:\n"
             f"> {q}\n\n"
             f"**La respuesta es:** {body}"
         )
+        if flavor:
+            desc = f"{desc}\n\n{flavor}"
+        if len(desc) > 4090:
+            desc = desc[:4087] + "…"
         return discord.Embed(
             title="🔮 Consulta al oráculo",
             description=desc,

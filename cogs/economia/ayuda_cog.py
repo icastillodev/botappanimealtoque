@@ -49,7 +49,7 @@ class EconomiaHelpView(discord.ui.View):
         embed.add_field(name="Tareas (Comandos)", value=(
             "`/aat-progreso-iniciacion` - Discord + perfil (wishlist/top/odiados) para la bienvenida.\n"
             "`/aat-progreso-diaria` - Diaria en **dos partes**: (1) 10 mensajes + 3 reacciones + 1× oráculo · (2) Trampa aparte.\n"
-            "`/aat-progreso-semanal` - **Media**, **foro/#videos**, **Impostor** y **minijuegos** en bloques separados.\n"
+            "`/aat-progreso-semanal` - **Media**, **foro/#videos-nuevos**, **Impostor** y **minijuegos** en bloques separados.\n"
             "`/aat-reclamar [tipo]` - `inicial`, `diaria`, `semanal`, `semanal_especial`, `semanal_minijuegos`.\n"
             "**Top anime (hasta 33 casillas):** `/aat-anime-top-set` · `/aat-anime-top-ver` · `?animetop` — bonos únicos al completar 10 y 30."
         ), inline=False)
@@ -144,7 +144,7 @@ class EconomiaHelpView(discord.ui.View):
         )
         embed.add_field(
             name="Notas",
-            value="No podés retar a alguien que ya tenga un reto pendiente. Las invitaciones expiran y se devuelve la apuesta del retador si no responden.",
+            value="No podés retar a alguien que ya tenga un reto pendiente. Tenés **5 minutos** para aceptar; si no, se cancela y el bot avisa en el canal (la apuesta del retador se devuelve).",
             inline=False,
         )
         return embed
