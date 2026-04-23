@@ -5,12 +5,14 @@ from discord import app_commands
 import logging
 from typing import List
 
+from .guia_contenido import guia_fixed_channel_blurb
 from .toque_labels import guia_toque_explicacion, toque_emote
 
 class EconomiaHelpView(discord.ui.View):
-    def __init__(self, author_id: int):
+    def __init__(self, author_id: int, bot: commands.Bot):
         super().__init__(timeout=180)
         self.author_id = author_id
+        self.bot = bot
         self.current_page = 0
         self.embeds: List[discord.Embed] = [
             self._create_page_1(),
@@ -31,7 +33,9 @@ class EconomiaHelpView(discord.ui.View):
     def _create_page_1(self) -> discord.Embed:
         tq = toque_emote()
         embed = discord.Embed(title=f"Ayuda de Economía {tq} (Página 1/6)", color=discord.Color.blue())
+        guia_ch = guia_fixed_channel_blurb(self.bot)
         embed.description = (
+            f"{guia_ch}"
             f"Con las tareas sumás **{tq} Toque points** (moneda del canal) y **sobres**; "
             "gastás **Toque points** en la **tienda** y minijuegos.\n"
             "**Flujo:** tareas → `/aat-reclamar` → saldo → `/aat-tienda-ver` (u otras tiendas) → disfrutás.\n\n"
@@ -77,7 +81,7 @@ class EconomiaHelpView(discord.ui.View):
         embed.add_field(
             name="`/usar`",
             value=(
-                "Consume una carta (solo **slash**). **Diaria (Trampa):** 1 uso **contra un miembro** **o** 2 usos **sin objetivo**. "
+                "Consume una carta (solo **slash**). **Diaria (Trampa):** **un** uso **con** mención **o** **sin** objetivo (sola). "
                 "Cartas **Rara/Legendaria** pueden tener efectos extra (mute breve, broma, etc.) según el campo `efecto` en la DB. "
                 "Efecto **`ROLE_TRAMPA_24H`**: asigna al objetivo el rol configurado en `TRAMPA_CARTA_ROL_24H_ROLE_ID` por "
                 "`TRAMPA_CARTA_ROL_24H_HOURS` horas (máx. 168); el bot lo quita solo al vencer."
@@ -203,7 +207,7 @@ class AyudaCog(commands.Cog, name="Economia Ayuda"):
 
     @app_commands.command(name="aat-ayuda", description="Muestra una guía interactiva de los comandos de economía.")
     async def ayuda(self, interaction: discord.Interaction):
-        view = EconomiaHelpView(interaction.user.id)
+        view = EconomiaHelpView(interaction.user.id, self.bot)
         embed = view.embeds[0]
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 

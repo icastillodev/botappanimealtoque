@@ -17,6 +17,7 @@ from cogs.economia.reclamar_service import (
     INICIAL_HATED_MIN,
     INICIAL_TOP_MIN,
     INICIAL_WISHLIST_MIN,
+    MSG_TIP_INICIACION_AL_RECLAMAR,
     PERFIL_HATED_CAP,
     PERFIL_TOP_CAP,
     PERFIL_WISHLIST_CAP,
@@ -166,7 +167,7 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         rx_n = int(prog.get("reacciones_servidor") or 0)
         tr = int(prog.get("trampa_enviada") or 0)
         ts = int(prog.get("trampa_sin_objetivo") or 0)
-        tr_ok = tr >= 1 or ts >= 2
+        tr_ok = tr >= 1 or ts >= 1
         or_n = int(prog.get("oraculo_preguntas") or 0)
         or_ok = or_n >= 1
         rw = self.task_config["rewards"]["diaria"]
@@ -185,9 +186,9 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         e_tr = discord.Embed(
             title=f"Diaria — trampa ({fecha})",
             description=(
-                "**Trampa:** carta **dirigida** a alguien (`?usar` con mención) **o** **2** trampas **sin** objetivo.\n"
-                f"• Dirigida: **{tr}/1**\n"
-                f"• Sin objetivo (hacen falta 2): **{ts}/2**\n"
+                "**Trampa:** **una** carta — **dirigida** (`?usar` + mención) **o** **sin** objetivo (sola).\n"
+                f"• Con objetivo: **{tr}/1**\n"
+                f"• Sin objetivo: **{ts}/1**\n"
                 f"• Estado trampa: **{'OK' if tr_ok else 'pendiente'}**\n\n"
                 f"_{premio_txt}_"
             ),
@@ -216,10 +217,13 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
             ),
             color=discord.Color.purple(),
         )
+        df = int(prog.get("debate_post") or 0)
+        dv = int(prog.get("videos_reaccion") or 0)
         e2 = discord.Embed(
             title=f"Semanal — foro y #videos (sem. {sl})",
             description=(
-                f"**Foro:** {int(prog.get('debate_post') or 0)}/1 · **#videos:** {int(prog.get('videos_reaccion') or 0)}/1\n\n"
+                f"**Foro:** escribir en el foro — **abrí un hilo** en debate (anime o manga). **{df}/1**\n"
+                f"**#videos:** reaccionar a **un** mensaje en **#videos**. **{dv}/1**\n\n"
                 f"_{pie_sem}_"
             ),
             color=discord.Color.dark_purple(),
@@ -252,19 +256,31 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
             description=f"Presentación, autorol, redes, reglas y 1× #general.\n\n_{pie}_",
             color=discord.Color.blue(),
         )
+        top_cap = int(self.db.anime_top_count_filled(uid, PERFIL_TOP_CAP))
+        wl_show = min(wl, PERFIL_WISHLIST_CAP)
+        hat_show = min(hat, PERFIL_HATED_CAP)
         e2 = discord.Embed(
-            title="Iniciación — perfil",
+            title="Iniciación — perfil (mínimo para reclamar)",
             description=(
                 f"• Wishlist: **{wl}/{INICIAL_WISHLIST_MIN}**\n"
                 f"• Top favoritos (pos. 1–{INICIAL_TOP_MIN}): **{top10}/{INICIAL_TOP_MIN}**\n"
                 f"• Odiados: **{hat}/{INICIAL_HATED_MIN}**\n\n"
-                f"Máx. opcional: wishlist **{min(wl, PERFIL_WISHLIST_CAP)}/{PERFIL_WISHLIST_CAP}**, top "
-                f"**{int(self.db.anime_top_count_filled(uid, PERFIL_TOP_CAP))}/{PERFIL_TOP_CAP}**, "
-                f"odiados **{min(hat, PERFIL_HATED_CAP)}/{PERFIL_HATED_CAP}**.\n\n_{pie}_"
+                f"_{pie}_"
             ),
             color=discord.Color.dark_blue(),
         )
-        await ctx.send(embeds=[e1, e2])
+        e3 = discord.Embed(
+            title="Perfil ampliado (opcional)",
+            description=(
+                f"Solo **progreso** hacia el tope del perfil; **no suma otra misión** aparte del mínimo de arriba.\n\n"
+                f"• Wishlist: **{wl_show}/{PERFIL_WISHLIST_CAP}**\n"
+                f"• Top anime: **{top_cap}/{PERFIL_TOP_CAP}**\n"
+                f"• Odiados: **{hat_show}/{PERFIL_HATED_CAP}**\n\n"
+                "_Bonos del top 10 / 30: `/aat-anime-top-guia`._"
+            ),
+            color=discord.Color.teal(),
+        )
+        await ctx.send(embeds=[e1, e2, e3])
 
     @commands.command()
     async def progreso(self, ctx: commands.Context):
@@ -277,12 +293,19 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         ok, ok_msgs, err_msgs = reclaim_rewards(self.db, self.task_config, ctx.author.id, None)
         if ok:
             embed = discord.Embed(title="Recompensas", description="\n".join(ok_msgs), color=discord.Color.green())
+            prog_ini = self.db.get_progress_inicial(ctx.author.id)
+            if int(prog_ini.get("completado") or 0) != 1:
+                embed.set_footer(text=MSG_TIP_INICIACION_AL_RECLAMAR)
             await ctx.send(embed=embed)
         elif err_msgs:
             await ctx.send("\n".join(err_msgs))
         else:
             hint = build_inicial_reclaim_hint(self.db, ctx.author.id)
-            msg = "Nada para reclamar ahora. `?progreso` · `/aat-progreso-diaria`."
+            msg = (
+                "Nada para reclamar ahora.\n\n"
+                f"{MSG_TIP_INICIACION_AL_RECLAMAR}\n\n"
+                "Para **diaria** / **semanal**: `?diaria` · `?semanal` · `?progreso` o los slash `/aat-progreso-*`."
+            )
             if hint:
                 msg = f"{msg}\n\n{hint}"
             await ctx.send(msg)

@@ -7,6 +7,12 @@ from .toque_labels import fmt_toque_sentence
 
 TipoReclamo = Optional[Literal["inicial", "diaria", "semanal", "semanal_especial", "semanal_minijuegos"]]
 
+# Aviso al reclamar: progreso de iniciación + historial si ya cumplieron Discord antes.
+MSG_TIP_INICIACION_AL_RECLAMAR = (
+    "Para ver **iniciación** (Discord + perfil): **`/aat-progreso-iniciacion`** o **`?inicial`**. "
+    "Si **ya** habías hecho pasos de Discord **antes** y el bot no los cuenta, usá **`/aat-verificar-antiguas`**."
+)
+
 # Iniciación: tareas de Discord + perfil (wishlist / top favoritos / odiados).
 INICIAL_DISCORD_KEYS = [
     "presentacion",
@@ -117,7 +123,10 @@ def reclaim_rewards(
                             f"perfil: wishlist {wl_i}/{INICIAL_WISHLIST_MIN}, top {top_i}/{INICIAL_TOP_MIN}, "
                             f"odiados {hat_i}/{INICIAL_HATED_MIN}"
                         )
-                    mensajes_error.append("Inicial: incompleto — " + " · ".join(partes) + ".")
+                    err_ini = "Inicial: incompleto — " + " · ".join(partes) + "."
+                    if not _inicial_discord_done(prog):
+                        err_ini += " " + MSG_TIP_INICIACION_AL_RECLAMAR
+                    mensajes_error.append(err_ini)
 
         elif objetivo == "diaria":
             prog = db.get_progress_diaria(user_id)
@@ -130,7 +139,7 @@ def reclaim_rewards(
             rx_n = int(prog.get("reacciones_servidor") or 0)
             tr = int(prog.get("trampa_enviada") or 0)
             ts = int(prog.get("trampa_sin_objetivo") or 0)
-            tr_ok = tr >= 1 or ts >= 2
+            tr_ok = tr >= 1 or ts >= 1
             or_n = int(prog.get("oraculo_preguntas") or 0)
             or_ok = or_n >= 1
             if msg_n >= 10 and rx_n >= 3 and tr_ok and or_ok:

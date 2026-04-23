@@ -13,6 +13,7 @@ from .reclamar_service import (
     INICIAL_HATED_MIN,
     INICIAL_TOP_MIN,
     INICIAL_WISHLIST_MIN,
+    MSG_TIP_INICIACION_AL_RECLAMAR,
     PERFIL_HATED_CAP,
     PERFIL_TOP_CAP,
     PERFIL_WISHLIST_CAP,
@@ -98,7 +99,7 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
         rx_n = int(prog_dia.get("reacciones_servidor") or 0)
         tr = int(prog_dia.get("trampa_enviada") or 0)
         ts = int(prog_dia.get("trampa_sin_objetivo") or 0)
-        tr_ok = tr >= 1 or ts >= 2
+        tr_ok = tr >= 1 or ts >= 1
         or_n = int(prog_dia.get("oraculo_preguntas") or 0)
         or_ok = or_n >= 1
         rw_pts = self.task_config["rewards"]["diaria"]
@@ -120,9 +121,9 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
         e_tr = discord.Embed(
             title=f"Diaria — trampa ({fecha})",
             description=(
-                f"{'✅' if tr_ok else '❌'} **Trampa:** carta **con** objetivo (`?usar` / `/usar` + mención) **o** **2** sin objetivo.\n"
-                f"• Dirigida: **{tr}/1**\n"
-                f"• Sin objetivo: **{ts}/2**\n\n"
+                f"{'✅' if tr_ok else '❌'} **Trampa:** **una** carta trampa — **con** mención (a alguien) **o** **sin** objetivo (sola).\n"
+                f"• Con objetivo: **{tr}/1**\n"
+                f"• Sin objetivo: **{ts}/1**\n\n"
                 f"{pie}"
             ),
             color=discord.Color.dark_orange(),
@@ -154,13 +155,14 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
             ),
             color=discord.Color.purple(),
         )
+        df = int(prog_sem.get("debate_post") or 0)
+        dv = int(prog_sem.get("videos_reaccion") or 0)
         e_foro = discord.Embed(
             title=f"Semanal — foro y #videos (sem. {sem_label})",
             description=(
-                f"{self._check_task(prog_sem['debate_post'])} **Foro:** crear un **hilo** o participar en el foro de debate anime/manga "
-                f"— **{int(prog_sem.get('debate_post') or 0)}/1**\n"
-                f"{self._check_task(prog_sem['videos_reaccion'])} **#videos:** dejar una **reacción** — "
-                f"**{int(prog_sem.get('videos_reaccion') or 0)}/1**\n\n"
+                f"{self._check_task(prog_sem['debate_post'])} **Foro:** escribir en el foro — **abrí un hilo** en debate "
+                f"(anime o manga). **{df}/1**\n"
+                f"{self._check_task(prog_sem['videos_reaccion'])} **#videos:** reaccionar a **un** mensaje en **#videos**. **{dv}/1**\n\n"
                 f"_{pie_sem}_"
             ),
             color=discord.Color.dark_purple(),
@@ -222,6 +224,9 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
         if reclamado_algo:
             embed = discord.Embed(title="🎉 ¡Recompensas Reclamadas!", color=discord.Color.green())
             embed.description = "\n".join(mensajes_exito)
+            prog_ini = self.db.get_progress_inicial(user_id)
+            if int(prog_ini.get("completado") or 0) != 1:
+                embed.set_footer(text=MSG_TIP_INICIACION_AL_RECLAMAR)
             await interaction.followup.send(embed=embed, ephemeral=True)
         else:
             # Si no se reclamó nada
@@ -232,8 +237,10 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
                 # Si el usuario pidió "todo" pero no había nada listo
                 extra = build_inicial_reclaim_hint(self.db, user_id) if tipo is None else None
                 msg = (
-                    "No hay recompensas listas para reclamar en este momento. "
-                    "Usá `/aat-progreso-iniciacion`, `/aat-progreso-diaria` o `/aat-progreso-semanal` para ver qué falta."
+                    "No hay recompensas listas para reclamar en este momento.\n\n"
+                    f"{MSG_TIP_INICIACION_AL_RECLAMAR}\n\n"
+                    "Para **diaria** / **semanal**: `/aat-progreso-diaria` · `/aat-progreso-semanal` "
+                    "(o `?diaria` · `?semanal` · `?progreso` en el canal)."
                 )
                 if extra:
                     msg = f"{msg}\n\n{extra}"

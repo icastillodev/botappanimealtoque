@@ -1,6 +1,7 @@
-# Contenido del mensaje fijo de guía (se publica en el canal del bot).
+# Contenido del mensaje fijo de guía (canal dedicado BOT_GUIA_CHANNEL_ID / task_config guia_bot).
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, List, Optional
 
 import discord
@@ -18,6 +19,26 @@ def _linea_precio(nombre: str, precio: int) -> Optional[str]:
     return None
 
 
+def guia_fixed_channel_id(bot: Any) -> int:
+    tc = getattr(bot, "task_config", None) or {}
+    gid = int((tc.get("channels") or {}).get("guia_bot") or 0)
+    if gid <= 0:
+        raw = (os.environ.get("BOT_GUIA_CHANNEL_ID") or "").strip()
+        if raw.isdigit():
+            gid = int(raw)
+    return gid
+
+
+def guia_fixed_channel_blurb(bot: Any) -> str:
+    gid = guia_fixed_channel_id(bot)
+    if gid <= 0:
+        return ""
+    return (
+        f"**Guía fija del servidor:** <#{gid}> — ahí el bot deja varios mensajes/embeds con **toda** la guía "
+        f"(para qué sirve cada cosa). También podés usar `?guia` o `/aat-guia` donde lo permita el staff.\n\n"
+    )
+
+
 # Discord suele mostrar mejor varias partes que un solo mensaje con muchos embeds.
 GUIDE_EMBEDS_PER_MESSAGE = 5
 
@@ -29,13 +50,19 @@ def chunk_guia_embeds_for_send(bot: Any) -> List[List[discord.Embed]]:
     return [embeds[i : i + step] for i in range(0, len(embeds), step)]
 
 
-def build_comandos_ref_embeds() -> List[discord.Embed]:
+def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
     """Lista compacta de todos los comandos ? y / (para canal guía y `?ayuda`)."""
+    gid = guia_fixed_channel_id(bot)
+    canal_prefijo = (
+        f"En <#{gid}> (guía/comandos del bot) podés usar el resto de `?` sin que los borre el filtro.\n\n"
+        if gid > 0
+        else "En el **canal del bot** podés usar el resto de `?` sin que los borre el filtro.\n\n"
+    )
     r0 = discord.Embed(
         title="📋 Comandos con prefijo ?",
         description=(
             "En **#general** solo funcionan los `?` que el bot permite ahí (lista del staff). "
-            "En el **canal del bot** podés usar el resto de `?` sin que los borre el filtro.\n\n"
+            f"{canal_prefijo}"
             "**Economía y cartas**\n"
             "• `?puntos` — tus Toque points · `?inventario` — saldo, pins y blisters\n"
             "• `?mi` — saldo, posición en tops, cartas e histórico ganado\n"
@@ -122,9 +149,11 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
     sc: Dict[str, Any] = bot.shop_config or {}
     rw = tc.get("rewards") or {}
 
+    guia_ch = guia_fixed_channel_blurb(bot)
     e0 = discord.Embed(
         title="📌 Guía del bot — Anime al Toque",
         description=(
+            f"{guia_ch}"
             "Acá tenés una guía rápida de **todo lo que podés hacer** con el bot: "
             "Toque points, recompensas, cartas, tienda, Impostor, votaciones y más.\n\n"
             f"{guia_toque_explicacion()}\n\n"
@@ -140,12 +169,12 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
             f"• **Diaria** (una recompensa, **dos partes**): {_fmt_pts(int(rw.get('diaria') or 0))} + blister cuando completes **las dos**.\n"
             f"  · **Parte 1 — actividad y oráculo:** 10 mensajes en el servidor, 3 reacciones, 1 consulta al oráculo "
             f"(@bot + pregunta · `?pregunta` · `/aat-consulta`).\n"
-            f"  · **Parte 2 — Trampa:** 1 carta trampa **con** objetivo **o** 2 trampas **sin** objetivo (casuales). "
+            f"  · **Parte 2 — Trampa:** **una** carta trampa **con** mención (a alguien) **o** **sin** objetivo (sola). "
             f"Ver ambas partes con **`?diaria`**.\n"
             f"  · Toque extra oráculo: hasta {int(rw.get('oracle_max_preguntas_con_puntos') or 5)} preguntas/día a "
             f"{_fmt_pts(int(rw.get('oracle_pregunta_points') or 0))} c/u.\n"
             f"• **Semanal** (un premio base): {_fmt_pts(int(rw.get('semanal') or 0))} — **media** (memes / fanart u otros canales de creación) **aparte** de "
-            f"**foro + #videos**; **Impostor** es recompensa aparte — `/aat-progreso-semanal`.\n"
+            f"**Foro** (un hilo con tu mensaje) + **#videos** (una reacción); **Impostor** es recompensa aparte — `/aat-progreso-semanal`.\n"
             f"• **Especial semanal (Impostor)**: {_fmt_pts(int(rw.get('especial_semanal') or 0))} + blisters.\n"
             f"• **Minijuegos semanal**: {_fmt_pts(int(rw.get('minijuegos_semanal') or 0))} + blisters.\n"
             "• **Top anime (bonos únicos en Toque points):** completar 10 y 30 posiciones — ver embed *Top anime*.\n"
@@ -262,10 +291,16 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
         ),
         inline=False,
     )
+    gid = guia_fixed_channel_id(bot)
+    en_canal = (
+        f"**En el canal de guía** <#{gid}>: los embeds siguientes listan **todos** los `?` y `/` del bot.\n"
+        if gid > 0
+        else "**En este canal:** los embeds siguientes listan **todos** los `?` y `/` del bot.\n"
+    )
     e4.add_field(
         name="Lista de comandos y ayuda",
         value=(
-            "**En este canal:** los embeds siguientes listan **todos** los `?` y `/` del bot.\n"
+            f"{en_canal}"
             "**En el chat:** `?ayuda` · `?guia` (donde el staff lo permita) repite la misma guía en embeds.\n"
             "**Slash público:** `/aat-guia`\n"
             "**Resumen corto:** `?comandos`\n"
@@ -274,5 +309,5 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
         inline=False,
     )
 
-    out: List[discord.Embed] = [e0, e1, e2, e3, e4] + build_comandos_ref_embeds()
+    out: List[discord.Embed] = [e0, e1, e2, e3, e4] + build_comandos_ref_embeds(bot)
     return out[:10]

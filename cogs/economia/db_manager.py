@@ -494,7 +494,7 @@ class EconomiaDBManagerV2:
             conn.commit()
 
     def bump_trampa_sin_objetivo(self, user_id: int) -> None:
-        """Trampa tipo Trampa sin objetivo: suma 1; con 2 en el día equivale a la pista 'casual' de la diaria."""
+        """Trampa sin objetivo: suma 1 por uso; 1 en el día alcanza la parte Trampa de la diaria (alternativa a trampa con mención)."""
         fecha, _ = self.get_current_date_keys()
         self.update_task_diaria(user_id, "trampa_sin_objetivo", fecha, 1)
 

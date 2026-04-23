@@ -76,17 +76,27 @@ def load_task_and_shop_config(log: logging.Logger) -> Tuple[Optional[Dict[str, A
 
         votacion_ch = _int("VOTACION_CHANNEL_ID", 0) or _int("VOTING_CHANNEL_ID", 0)
 
+        # Multiplica solo precios de tienda > 0 (100 = igual; 130 ≈ +30 %). Útil si subió el ingreso diario.
+        shop_scale = _int("SHOP_GLOBAL_SCALE_PERCENT", 100)
+        shop_scale = max(50, min(300, shop_scale))
+
+        def _scaled_shop_price(key: str, default: int = 0) -> int:
+            p = _int(key, default)
+            if p <= 0:
+                return p
+            return max(1, int(round(p * (shop_scale / 100.0))))
+
         shop_config: Dict[str, Any] = {
             "akatsuki_role_id": _int("AKATSUKI_ROLE_ID", 0),
             "jonin_role_id": _int("JONIN_ROLE_ID", 0),
             "id_rol_contenidos": _int("ID_ROL_CONTENIDOS", 0),
-            "price_akatsuki": _int("SHOP_PRICE_ROLE_AKATSUKI", 0),
-            "price_jonin": _int("SHOP_PRICE_ROLE_JONIN", 0),
-            "price_pin": _int("SHOP_PRICE_PIN_MESSAGE", 0),
-            "price_blister_trampa": _int("SHOP_PRICE_BLISTER_TRAMPA", 150),
-            "price_poll_tienda": _int("SHOP_PRICE_POLL_TIENDA", 0),
-            "price_pin_general": _int("SHOP_PRICE_PIN_GENERAL", 0),
-            "price_temp_role": _int("SHOP_PRICE_TEMP_ROLE", 0),
+            "price_akatsuki": _scaled_shop_price("SHOP_PRICE_ROLE_AKATSUKI", 0),
+            "price_jonin": _scaled_shop_price("SHOP_PRICE_ROLE_JONIN", 0),
+            "price_pin": _scaled_shop_price("SHOP_PRICE_PIN_MESSAGE", 0),
+            "price_blister_trampa": _scaled_shop_price("SHOP_PRICE_BLISTER_TRAMPA", 1200),
+            "price_poll_tienda": _scaled_shop_price("SHOP_PRICE_POLL_TIENDA", 0),
+            "price_pin_general": _scaled_shop_price("SHOP_PRICE_PIN_GENERAL", 0),
+            "price_temp_role": _scaled_shop_price("SHOP_PRICE_TEMP_ROLE", 0),
             "votacion_channel_id": votacion_ch,
             "temp_role_prefix": (os.getenv("SHOP_TEMP_ROLE_PREFIX", "★ ") or "★ ")[:16],
             "temp_role_days": _int("SHOP_TEMP_ROLE_DAYS", 30),

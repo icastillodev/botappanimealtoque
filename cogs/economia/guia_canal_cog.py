@@ -1,4 +1,4 @@
-# Mensaje fijo en BOT_GUIA_CHANNEL_ID (canal dedicado, distinto de BOT_CHANNEL_ID / #general / votación).
+# Mensaje fijo: prioridad BOT_GUIA_CHANNEL_ID (guía larga fija); si falta, BOT_CHANNEL_ID (#general / votación no).
 # Se vuelve a generar al conectar (on_ready / reconexión) y al unirse a un servidor que contiene ese canal,
 # para que comandos nuevos, textos de guía y reglas en código reemplacen el mensaje guardado.
 from __future__ import annotations
@@ -54,7 +54,7 @@ class GuiaCanalCog(commands.Cog, name="Guía canal fijo"):
         tc = getattr(self.bot, "task_config", None) or {}
         bot_channel_id = int(os.getenv("BOT_CHANNEL_ID") or 0)
         guia_channel_id = int((tc.get("channels") or {}).get("guia_bot") or 0)
-        ch_id = bot_channel_id or guia_channel_id
+        ch_id = guia_channel_id or bot_channel_id
         if ch_id <= 0:
             return
         if guild.get_channel(ch_id) is not None:
@@ -73,13 +73,13 @@ class GuiaCanalCog(commands.Cog, name="Guía canal fijo"):
 
     async def _sync_guia_message_unlocked(self, reason: str) -> None:
         tc = getattr(self.bot, "task_config", None) or {}
-        # Publicar SIEMPRE en el canal del bot (canal de comandos), porque es donde la gente lo usa.
-        # Si no está configurado, caer al canal guía dedicado (si existe).
+        # Prioridad: canal dedicado de guía (BOT_GUIA_CHANNEL_ID / task_config guia_bot).
+        # Si no hay, usar el canal de comandos slash (BOT_CHANNEL_ID).
         bot_channel_id = int(os.getenv("BOT_CHANNEL_ID") or 0)
         guia_channel_id = int((tc.get("channels") or {}).get("guia_bot") or 0)
-        ch_id = bot_channel_id or guia_channel_id
+        ch_id = guia_channel_id or bot_channel_id
         if ch_id <= 0:
-            log.debug("No hay canal configurado para publicar la guía (BOT_CHANNEL_ID / BOT_GUIA_CHANNEL_ID).")
+            log.debug("No hay canal configurado para publicar la guía (BOT_GUIA_CHANNEL_ID / BOT_CHANNEL_ID).")
             return
 
         channel = self.bot.get_channel(ch_id)
