@@ -1,4 +1,6 @@
 # Mensaje fijo en BOT_GUIA_CHANNEL_ID (canal dedicado, distinto de BOT_CHANNEL_ID / #general / votación).
+# Se vuelve a generar al conectar (on_ready / reconexión) y al unirse a un servidor que contiene ese canal,
+# para que comandos nuevos, textos de guía y reglas en código reemplacen el mensaje guardado.
 from __future__ import annotations
 
 import asyncio
@@ -20,20 +22,35 @@ class GuiaCanalCog(commands.Cog, name="Guía canal fijo"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.db: EconomiaDBManagerV2 = bot.economia_db
-        self._sync_started = False
+        self._guia_sync_lock = asyncio.Lock()
 
-    async def cog_load(self) -> None:
-        if self._sync_started:
+    @commands.Cog.listener()
+    async def on_ready(self) -> None:
+        if not self.bot.user:
             return
-        self._sync_started = True
-        asyncio.create_task(self._sync_after_ready())
+        asyncio.create_task(self._sync_after_delay("on_ready"))
 
-    async def _sync_after_ready(self) -> None:
-        await self.bot.wait_until_ready()
+    @commands.Cog.listener()
+    async def on_guild_join(self, guild: discord.Guild) -> None:
+        tc = getattr(self.bot, "task_config", None) or {}
+        ch_id = int((tc.get("channels") or {}).get("guia_bot") or 0)
+        if ch_id <= 0:
+            return
+        if guild.get_channel(ch_id) is not None:
+            asyncio.create_task(self._sync_after_delay("on_guild_join"))
+
+    async def _sync_after_delay(self, reason: str) -> None:
         await asyncio.sleep(3)
-        await self._sync_guia_message()
+        try:
+            await self._sync_guia_message(reason)
+        except Exception:
+            log.exception("Fallo sync guía (%s)", reason)
 
-    async def _sync_guia_message(self) -> None:
+    async def _sync_guia_message(self, reason: str = "sync") -> None:
+        async with self._guia_sync_lock:
+            await self._sync_guia_message_unlocked(reason)
+
+    async def _sync_guia_message_unlocked(self, reason: str) -> None:
         tc = getattr(self.bot, "task_config", None) or {}
         ch_id = int((tc.get("channels") or {}).get("guia_bot") or 0)
         if ch_id <= 0:
@@ -75,7 +92,7 @@ class GuiaCanalCog(commands.Cog, name="Guía canal fijo"):
         try:
             if msg is not None and msg.author.id == self.bot.user.id:
                 await msg.edit(content=None, embeds=embeds)
-                log.info("Mensaje de guía actualizado en canal %s (id %s).", channel.id, msg.id)
+                log.info("Mensaje de guía actualizado (%s) en canal %s (id %s).", reason, channel.id, msg.id)
                 return
             if msg is not None and msg.author.id != self.bot.user.id:
                 log.warning(

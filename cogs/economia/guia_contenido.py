@@ -16,6 +16,88 @@ def _linea_precio(nombre: str, precio: int) -> Optional[str]:
     return None
 
 
+def build_comandos_ref_embeds() -> List[discord.Embed]:
+    """Lista compacta de todos los comandos ! y / (para canal guía y `!ayuda`)."""
+    r0 = discord.Embed(
+        title="📋 Comandos con prefijo !",
+        description=(
+            "En **#general** solo funcionan los `!` que el bot permite ahí (lista del staff). "
+            "En el **canal de comandos del bot** (`BOT_CHANNEL_ID`) podés usar el resto de `!` sin que los borre el filtro.\n\n"
+            "**Economía y cartas**\n"
+            "• `!puntos` — tus puntos · `!inventario` — puntos, pins y blisters\n"
+            "• `!top` · `!rank` · `!ranking` — top 5 del servidor\n"
+            "• `!reclamar` — cobrar recompensas listas\n"
+            "• `!progreso` — resumen iniciación + diaria + semanal\n"
+            "• `!diaria` · `!daily` · `!semanal` · `!weekly` · `!inicial` · `!starter` · `!iniciacion` — ver qué falta\n"
+            "• `!abrir` — abrir blister (público en el canal)\n"
+            "• `!miscartas` — lista de cartas (**visible para todos** en ese canal)\n"
+            "• `!catalogo` — todas las cartas del juego\n"
+            "• `!usar` · `!usarcarta` — usar carta trampa (`!usar <id> [@alguien]`)\n\n"
+            "**Resúmenes y guía en el chat**\n"
+            "• `!comandos` · `!aat` · `!cmds` · `!cmd` · `!ayudabot` — resumen corto\n"
+            "• `!ayuda` · `!guia` — **esta guía completa** en varios embeds\n"
+            "• `!canjes` · `!tienda` · `!recompensas` — embed de tienda y canjes\n"
+            "• `!ganarpuntos` · `!comoganar` — cómo ganar puntos + reclamar\n"
+            "• `!roll` — dado casual entre dos números\n\n"
+            "**Impostor**\n"
+            "• `!impostor` · `!buscoimpostor` · `!busco` · `!lobbys` · `!cartelera` — aviso de busca / cartelera\n\n"
+            "**Oráculo (diaria)**\n"
+            "• `!pregunta` · `!consulta` · `!8ball` · `!bola` · `!oraculo` — pregunta sí/no (también @mención al bot)\n\n"
+            "**Trivia (pregunta en #general)**\n"
+            "• `!respuestapregunta` · `!triviaresp` · `!rtrivia` + tu respuesta\n\n"
+            "**Top anime**\n"
+            "• `!animetop` · `!animetop @usuario`"
+        ),
+        color=discord.Color.light_grey(),
+    )
+
+    r1 = discord.Embed(
+        title="⚙️ Slash — economía, cartas y tienda",
+        description=(
+            "**Puntos e inventario:** `/aat_puntos` · `/aat_inventario`\n"
+            "**Reclamar y progreso:** `/aat_reclamar` · `/aat_progreso_iniciacion` · `/aat_progreso_diaria` · `/aat_progreso_semanal`\n"
+            "**Ranking:** `/aat_ranking_top`\n"
+            "**Cartas:** `/aat_abrirblister` · `/aat_miscartas` · `/aat_catalogo` · `/vercarta` · `/usar`\n"
+            "**Tienda:** `/aat_tienda_ver` · `/aat_tienda_canjear` · `/aat_tienda_fijar` · `/aat_tienda_pin_general` · "
+            "`/aat_tienda_encuesta` · `/aat_tienda_rol_temporal`\n"
+            "**Público en el canal:** `/aat_canjes` · `/aat_ganar_puntos`\n"
+            "**Guía interactiva (solo vos):** `/aat_ayuda`\n"
+            "**Minijuegos y encuesta del servidor:** `/aat_roll` · `/aat_roll_retar` · `/aat_roll_aceptar` · "
+            "`/aat_voto_semanal`\n"
+            "**Duelos con cartas** (si el staff los activa en `.env`): `/aat_duelo_retar` · `/aat_duelo_aceptar`"
+        ),
+        color=discord.Color.blue(),
+    )
+
+    r2 = discord.Embed(
+        title="⚙️ Slash — perfil, top anime y oráculo",
+        description=(
+            "**Top anime (30 posiciones):** `/aat_anime_top_ver` · `/aat_anime_top_set` · `/aat_anime_top_quitar` · `/aat_anime_top_guia`\n"
+            "**Wishlist / odiados / personajes:** `/aat_wishlist_ver` · `/aat_wishlist_set` · `/aat_wishlist_quitar` · "
+            "`/aat_hated_ver` · `/aat_hated_set` · `/aat_hated_quitar` · `/aat_chars_ver` · `/aat_chars_set` · `/aat_chars_quitar`\n"
+            "**Oráculo:** `/aat_consulta`"
+        ),
+        color=discord.Color.teal(),
+    )
+
+    r3 = discord.Embed(
+        title="⚙️ Slash — Impostor, VERSUS y votaciones",
+        description=(
+            "**Impostor:** `/crearsimpostor` · `/entrar` · `/leave` · `/salir` · `/invitar` · `/ready` · `/abrirlobby` · `/cerrarlobby` · `/helpimpostor`\n"
+            "**VERSUS semanal:** `/aat_versus_votos` — quién votó en la encuesta actual\n\n"
+            "**Votaciones del servidor**\n"
+            "• `/crear_votacion` — encuesta simple (usuario)\n"
+            "• `/mis_resultados` — resultados de una votación que creaste\n"
+            "• `/ayudaencuesta` — ayuda interactiva de votación\n"
+            "• **Solo staff:** `/crear_votacionadmin` · `/modificarvotacion` · `/finalizarvotacion` · `/borrarvotacion` · "
+            "`/agregaropcion` · `/quitaropcion` · `/resultados`"
+        ),
+        color=discord.Color.dark_purple(),
+    )
+
+    return [r0, r1, r2, r3]
+
+
 def build_guia_embeds(bot: Any) -> List[discord.Embed]:
     """Arma hasta 10 embeds (límite Discord) con resumen de economía, tienda y extras."""
     tc: Dict[str, Any] = bot.task_config or {}
@@ -162,10 +244,13 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
     e4.add_field(
         name="Lista de comandos y ayuda",
         value=(
-            "**Todos:** `!comandos` (resumen en el canal).\n"
-            "**Solo vos:** `/aat_ayuda` (guía interactiva con botones, privada)."
+            "**En este canal:** los embeds siguientes listan **todos** los `!` y `/` del bot.\n"
+            "**En el chat:** `!ayuda` o `!guia` (donde el staff lo permita) repite la misma guía en embeds.\n"
+            "**Resumen corto:** `!comandos`\n"
+            "**Solo vos:** `/aat_ayuda` (guía interactiva con botones, *ephemeral*)."
         ),
         inline=False,
     )
 
-    return [e0, e1, e2, e3, e4]
+    out: List[discord.Embed] = [e0, e1, e2, e3, e4] + build_comandos_ref_embeds()
+    return out[:10]

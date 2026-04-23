@@ -36,6 +36,7 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         embed = discord.Embed(
             title="Comandos del bot (Anime al Toque)",
             description=(
+                "**Lista completa** (todos los `!` y `/`): **`!ayuda`** o **`!guia`** (varios embeds).\n"
                 "**Con `!` en el canal** (todos lo ven) — atajos abajo.\n"
                 "**Con `/`** — versión completa (Discord te autocompleta).\n\n"
                 "**Economía:** `!puntos` · `!inventario` · `!top` · `!reclamar` · `!progreso` · "
@@ -50,6 +51,15 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
             color=discord.Color.blurple(),
         )
         await ctx.send(embed=embed)
+
+    async def _send_full_guia_embeds(self, ctx: commands.Context) -> None:
+        embeds = build_guia_embeds(self.bot)[:10]
+        await ctx.send(embeds=embeds)
+
+    @commands.command(name="ayuda")
+    async def ayuda(self, ctx: commands.Context):
+        """Misma guía que el canal fijo: economía, tienda, cartas, listado de ! y /."""
+        await self._send_full_guia_embeds(ctx)
 
     @commands.command(aliases=["puntos"])
     async def puntos_cmd(self, ctx: commands.Context):
@@ -342,14 +352,14 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
             "`/aat_progreso_semanal` · `/aat_reclamar`\n\n"
             "Tip: si querés reclamar **solo** un tipo con slash, usá `/aat_reclamar` eligiendo "
             "`inicial` / `diaria` / `semanal` / `semanal_especial` / `semanal_minijuegos`.\n"
-            "Guía completa: `!guia` o `/aat_ayuda`."
+            "Guía completa en embeds: `!ayuda` / `!guia`. Interactiva (solo vos): `/aat_ayuda`."
         )
         await ctx.send(embeds=[e0, extra])
 
     @commands.command(name="guia")
     async def guia(self, ctx: commands.Context):
-        """Atajo público a la guía completa."""
-        await ctx.send("📌 Guía completa: usá `/aat_ayuda` (también se puede usar en #general).")
+        """Misma guía larga que `!ayuda` (embeds); `/aat_ayuda` sigue siendo la versión con botones."""
+        await self._send_full_guia_embeds(ctx)
 
     @usar.error
     async def usar_err(self, ctx: commands.Context, error):
