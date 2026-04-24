@@ -1,6 +1,6 @@
 # Preguntas sí / no: 40% sí, 40% no, 20% con % (dado), salvo ORACLE_LLM_YESNO=1 + IA activa → modelo en una frase.
 # Cuentas simples: en el bot. Preguntas abiertas: Ollama si IA activa; si no, plantillas + humor.
-# Sin Ollama: pedidos “recomendá anime” → lista curada; hechos (Newton, etc.) → ORACLE_WIKI_FALLBACK (Wikipedia es).
+# Sin Ollama: anime/manga → oracle_media (AniList + definiciones wiki); hechos → ORACLE_WIKI_FALLBACK (Wikipedia es).
 # IA: ORACLE_USE_LLM=1 o ORACLE_LLM_AUTO=1, y ORACLE_LLM_URL (ver .env.example). ORACLE_USE_LLM=0 fuerza apagado.
 # Cuenta para la diaria + puntos extra (config .env).
 from __future__ import annotations
@@ -37,6 +37,18 @@ except Exception:
         return None
 
     async def oracle_local_reply_followup(*_a: Any, **_k: Any) -> None:  # type: ignore[misc]
+        return None
+
+try:
+    from cogs.oracle_media import oracle_media_open_reply_async
+except Exception:
+    log.warning(
+        "No se pudo importar cogs.oracle_media (recomendaciones por género / AniList). "
+        "El oráculo sigue; esas respuestas ricas quedan desactivadas.",
+        exc_info=True,
+    )
+
+    async def oracle_media_open_reply_async(*_a: Any, **_k: Any) -> None:  # type: ignore[misc]
         return None
 
 
@@ -97,10 +109,14 @@ def _message_pings_bot(message: discord.Message, me: discord.abc.User) -> bool:
 
 
 # Preguntas que no son un sí/no claro: mejor “charla” que un porcentaje místico.
-# Solo números y operadores (p. ej. "2+2?", "12 * 3") — no va al dado sí/no.
-_ARITH_EXPRESSION_ONLY_RE = re.compile(r"^[\d\s\+\-\*\/x×÷.,\(\)=%^]+$", re.IGNORECASE)
-# Cuenta “visible” dentro de una frase corta (p. ej. "te pregunte 2+2", "@bot 12*3 jaja").
-_ARITH_SNIPPET_RE = re.compile(r"\b(?:\d{1,8}\s*[\+\-\*\/x×÷]\s*)+\d{1,8}\b", re.IGNORECASE)
+# Tras reemplazar √n y sqrt(n) por un dígito, solo deben quedar dígitos y operadores básicos.
+_ARITH_FLATTENED_OK_RE = re.compile(r"^[\d\s\+\-\*\/x×÷.,\(\)=%^]+$", re.IGNORECASE)
+# Cuenta “visible” dentro de una frase corta (p. ej. "te pregunte 2+2", "@bot √144 jaja").
+_ARITH_SNIPPET_RE = re.compile(
+    r"(?i)(?:\b(?:\d{1,8}\s*[\+\-\*\/x×÷]\s*)+\d{1,8}\b"
+    r"|\b√\s*\d{1,8}\b"
+    r"|\bsqrt\s*\(\s*\d{1,8}\s*\))",
+)
 # Raíz cuadrada en lenguaje natural o sqrt(n).
 _ARITH_SQRT_IN_QUESTION_RE = re.compile(
     r"(?is)(?:ra[ií]z\s+cuadrada|raiz\s+cuadrada)\s+(?:de\s+|del\s+)?(\d{1,8})"
@@ -225,20 +241,41 @@ def _arith_sqrt_operand_from_match(m: re.Match[str]) -> Optional[int]:
     return n if 0 < n < 10**9 else None
 
 
+def _arith_prepare_implicit_mul(s: str) -> str:
+    """2√9 → 2*√9 ; )√4 → )*√4"""
+    t = re.sub(r"(\d)\s*(?=√)", r"\1*", s)
+    t = re.sub(r"\)\s*(?=√)", ")*", t)
+    return t
+
+
+def _arith_pure_flatten_radicals(s: str) -> str:
+    """Sustituye sqrt(n) y √n por dígito para validar el resto de la expresión."""
+    t = re.sub(r"(?i)sqrt\s*\(\s*\d{1,8}\s*\)", "0", s)
+    t = re.sub(r"√\s*\(\s*\d{1,8}\s*\)", "0", t)
+    t = re.sub(r"√\s*\d{1,8}", "0", t)
+    return t
+
+
 def _is_pure_arithmetic_expression(q: str) -> bool:
     s = (q or "").strip()
     s = re.sub(r"^[¿?]+", "", s)
     s = re.sub(r"[?.!…]+$", "", s)
     s = "".join(s.split())
-    if len(s) < 3 or len(s) > 36:
+    s = _arith_prepare_implicit_mul(s)
+    if len(s) < 2 or len(s) > 48:
         return False
-    if not _ARITH_EXPRESSION_ONLY_RE.match(s):
+    flat = _arith_pure_flatten_radicals(s)
+    if not _ARITH_FLATTENED_OK_RE.match(flat):
         return False
-    if not re.search(r"\d", s):
+    if not re.search(r"\d", flat):
         return False
-    if not re.search(r"[\+\-\*\/x×÷=]", s):
-        return False
-    return True
+    has_radical = "√" in s or re.search(r"sqrt", s, re.I)
+    has_binop = bool(re.search(r"[\+\-\*\/x×÷=%^]", s))
+    if has_radical and not has_binop:
+        return True
+    if has_binop:
+        return True
+    return False
 
 
 def _is_simple_arithmetic_question(q: str) -> bool:
@@ -262,7 +299,7 @@ def _is_simple_arithmetic_question(q: str) -> bool:
     if not m:
         return False
     core = re.sub(r"\s+", "", m.group(0))
-    if len(core) > 22:
+    if len(core) > 40:
         return False
     before, after = s0[: m.start()], s0[m.end() :]
     rest = f"{before} {after}".strip().lower()
@@ -274,8 +311,13 @@ def _is_simple_arithmetic_question(q: str) -> bool:
 
 def _normalize_arith_eval_expr(raw: str) -> str:
     t = "".join((raw or "").split())
+    t = _arith_prepare_implicit_mul(t)
     t = t.replace("×", "*").replace("÷", "/")
     t = re.sub(r"(?<=\d)[xX](?=\d)", "*", t)
+    # sqrt(n) y notación √ antes de ^ → **
+    t = re.sub(r"(?i)sqrt\s*\(\s*(\d{1,8})\s*\)", r"(\1)**0.5", t)
+    t = re.sub(r"√\s*\(\s*(\d{1,8})\s*\)", r"(\1)**0.5", t)
+    t = re.sub(r"√\s*(\d{1,8})", r"(\1)**0.5", t)
     t = t.replace("^", "**")
     if "=" in t:
         t = t.split("=", 1)[0].strip()
@@ -289,7 +331,7 @@ def _extract_arithmetic_expression_for_eval(q: str) -> str:
         s = (q or "").strip()
         s = re.sub(r"^[¿?]+", "", s)
         s = re.sub(r"[?.!…]+$", "", s)
-        core = "".join(s.split())
+        core = _arith_prepare_implicit_mul("".join(s.split()))
     else:
         msqrt = _arith_sqrt_match(q)
         if msqrt:
@@ -383,7 +425,7 @@ def _arith_eval_node(node: ast.AST) -> float:
 
 
 def _safe_eval_arithmetic(expr: str) -> Optional[float]:
-    if not expr or len(expr) > 44:
+    if not expr or len(expr) > 72:
         return None
     try:
         tree = ast.parse(expr, mode="eval")
@@ -481,15 +523,34 @@ def _is_roulette_color_question(q: str) -> bool:
 
 
 def _oracle_roulette_pick(q: str) -> str:
+    """
+    Si nombran un solo color (“todo al rojo”), igual hay dos casillas en la ruleta:
+    elige al azar entre Rojo y Negro (no queda fijo en el color que dijeron).
+    Si nombran dos o tres colores con ‘o’, solo elige entre esos.
+    """
     low = (q or "").lower()
+    has_rojo = "rojo" in low
+    has_negro = "negro" in low
+    has_verde = "verde" in low
+    n = sum(1 for x in (has_rojo, has_negro, has_verde) if x)
     pool: list[str] = []
-    if "rojo" in low:
-        pool.append("Rojo")
-    if "negro" in low:
-        pool.append("Negro")
-    if "verde" in low:
-        pool.append("Verde")
-    pool = list(dict.fromkeys(pool))
+    if n >= 2:
+        if has_rojo:
+            pool.append("Rojo")
+        if has_negro:
+            pool.append("Negro")
+        if has_verde:
+            pool.append("Verde")
+        pool = list(dict.fromkeys(pool))
+    elif n == 1:
+        if has_verde:
+            pool = ["Verde", "Rojo", "Negro"]
+        else:
+            pool = ["Rojo", "Negro"]
+            if random.random() < 0.05:
+                pool.append("Verde")
+    else:
+        pool = ["Rojo", "Negro"]
     if not pool:
         pool = ["Rojo", "Negro"]
     pick = random.choice(pool)
@@ -498,9 +559,24 @@ def _oracle_roulette_pick(q: str) -> str:
             "Humor de oráculo: no es consejo de apuestas.",
             "Tapete imaginario; en la vida real usá cabeza (y leyes locales).",
             "Tirada simbólica; si perdés plata no reclamás al bot.",
+            "Lectura **no científica**; el casino real tiene términos y condiciones.",
+            "Siempre podés volver a tirar con otra `?pregunta` — acá no cobramos fichas.",
+            "El multiverso asintió; vos decidís si le prestás bola.",
+            "Nada de esto reemplaza suerte, criterio o leyes locales.",
+            "Cero responsabilidad civil del bot; eso lo firma el destino.",
+            "Si sale distinto a lo que querías, fue el viento del tapete.",
         ]
     )
-    return f"Que sea **{pick}** — {tail}"
+    lead = random.choice(
+        [
+            f"Que sea **{pick}** — {tail}",
+            f"**{pick}** sale del sombrero místico — {tail}",
+            f"Tirada express: **{pick}**. {tail}",
+            f"La bola imaginaria marca **{pick}**. {tail}",
+            f"Me inclino por **{pick}** (sin notario). {tail}",
+        ]
+    )
+    return lead
 
 
 def _is_poker_push_decision_question(q: str) -> bool:
@@ -725,25 +801,6 @@ def _oracle_multi_option_pick(q: str) -> str:
     )
 
 
-_ORACLE_ANIME_PICKS = (
-    "Fullmetal Alchemist: Brotherhood",
-    "Steins;Gate",
-    "Mob Psycho 100",
-    "Spy x Family",
-    "Violet Evergarden",
-    "Haikyu!!",
-    "Hunter x Hunter (2011)",
-    "One Punch Man",
-    "Made in Abyss",
-    "Death Note",
-    "Jujutsu Kaisen",
-    "Sousou no Frieren",
-    "Oshi no Ko",
-    "Bocchi the Rock!",
-    "March Comes in Like a Lion",
-)
-
-
 def _oracle_wiki_fallback_enabled() -> bool:
     v = (os.getenv("ORACLE_WIKI_FALLBACK") or "1").strip().lower()
     return v not in ("0", "false", "no", "off")
@@ -781,18 +838,15 @@ def _oracle_silly_open_templates(pregunta: str) -> str:
 
 
 async def _oracle_open_answer_async(pregunta: str) -> str:
-    """Sin Ollama: recomendación anime curada, hechos vía Wikipedia (opcional), resto plantillas."""
+    """Sin Ollama: anime/manga (género, Jikan, definiciones), hechos vía Wikipedia, resto plantillas."""
     pq = (pregunta or "").strip()
-    if _is_anime_recommendation_request(pq):
-        pick = random.choice(_ORACLE_ANIME_PICKS)
-        intro = random.choice(
-            [
-                "Sin IA: un título de la lista curada del bot:",
-                "Te dejo un pick random (lista interna, sin spoilers de plot twist):",
-                "Para no tirarte un dado absurdo, algo para ver:",
-            ]
-        )
-        return f"{intro} **{pick}**."
+    try:
+        media = await oracle_media_open_reply_async(pq)
+    except Exception:
+        log.debug("Oráculo: oracle_media falló (ignorado).", exc_info=True)
+        media = None
+    if media:
+        return media
     if _SERIOUS_FACT_RE.search(pq):
         if _oracle_wiki_fallback_enabled():
             try:
@@ -1247,34 +1301,42 @@ class OraculoCog(commands.Cog, name="Oraculo"):
             if val is not None:
                 body, response_kind = _format_math_answer_body(expr, val), "math"
             else:
+                media_first = await oracle_media_open_reply_async(pq)
+                if media_first:
+                    body, response_kind = media_first, "open"
+                else:
+                    llm = await oracle_local_reply(pq, style="open") if use_llm else None
+                    if llm:
+                        body, response_kind = llm, "llm"
+                    elif _is_open_ended_question(pq):
+                        kind, body, _ = await _roll_oracle_for_question_async(pq)
+                        response_kind = "open" if kind == "open" else "yesno"
+                    else:
+                        body = (
+                            "No pude resolver esa cuenta tal cual está; "
+                            "probá con `+ - * / % ^ ( )` y números simples."
+                        )
+                        response_kind = "open"
+        elif _is_open_ended_question(pq):
+            media_first = await oracle_media_open_reply_async(pq)
+            if media_first:
+                body, response_kind = media_first, "open"
+            else:
                 llm = await oracle_local_reply(pq, style="open") if use_llm else None
                 if llm:
                     body, response_kind = llm, "llm"
-                elif _is_open_ended_question(pq):
-                    kind, body, _ = await _roll_oracle_for_question_async(pq)
-                    response_kind = "open" if kind == "open" else "yesno"
                 else:
-                    body = (
-                        "No pude resolver esa cuenta tal cual está; "
-                        "probá con `+ - * / % ^ ( )` y números simples."
-                    )
-                    response_kind = "open"
-        elif _is_open_ended_question(pq):
-            llm = await oracle_local_reply(pq, style="open") if use_llm else None
-            if llm:
-                body, response_kind = llm, "llm"
-            else:
-                expr = _extract_arithmetic_expression_for_eval(pq)
-                if expr:
-                    val = _safe_eval_arithmetic(expr)
-                    if val is not None:
-                        body, response_kind = _format_math_answer_body(expr, val), "math"
+                    expr = _extract_arithmetic_expression_for_eval(pq)
+                    if expr:
+                        val = _safe_eval_arithmetic(expr)
+                        if val is not None:
+                            body, response_kind = _format_math_answer_body(expr, val), "math"
+                        else:
+                            kind, body, _ = await _roll_oracle_for_question_async(pq)
+                            response_kind = "open" if kind == "open" else "yesno"
                     else:
                         kind, body, _ = await _roll_oracle_for_question_async(pq)
                         response_kind = "open" if kind == "open" else "yesno"
-                else:
-                    kind, body, _ = await _roll_oracle_for_question_async(pq)
-                    response_kind = "open" if kind == "open" else "yesno"
         else:
             if use_llm and _oracle_llm_yesno_via_model():
                 llm = await oracle_local_reply(pq, style="yesno")
