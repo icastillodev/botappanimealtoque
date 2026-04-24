@@ -378,9 +378,7 @@ _OPEN_QUESTION_RE = re.compile(
     r"\bprimer[ao]?\s+ley\b|\bley(es)?\s+de\s+newton\b|"
     r"\b(cuéntame|cuentame|contame)\s+(sobre|de)\b|"
     r"\b(hablame|háblame|hablá)\s+de\b|"
-    r"\brecomendame\b|\brecomiendame\b|\brecomendá\b|"
-    r"\btodo\s+al\b|\bal\s+(rojo|negro|verde)\b|"
-    r"\b(quizás|quiza|quizá)\s+el\s+(rojo|negro|verde)\b"
+    r"\brecomendame\b|\brecomiendame\b|\brecomendá\b"
     r")",
 )
 
@@ -413,9 +411,143 @@ def _is_anime_recommendation_request(q: str) -> bool:
     return False
 
 
+# “Todo al negro / rojo / verde”, “¿rojo o negro?”: ruleta, no pregunta abierta tipo temporadas.
+_RULETTE_COLOR_CONTEXT_RE = re.compile(
+    r"(?is)"
+    r"\btodo\s+al\b|"
+    r"\b(al\s+)?(rojo|negro|verde)\s+o\s+(al\s+)?(rojo|negro|verde)\b|"
+    r"\b(rojo|negro|verde)\s+o\s+(el\s+)?(rojo|negro|verde)\b|"
+    r"\b(quizás|quiza|quizá)\s+el\s+(rojo|negro|verde)\b",
+)
+
+
+def _is_roulette_color_question(q: str) -> bool:
+    s = (q or "").strip()
+    if len(s) < 6:
+        return False
+    if not _RULETTE_COLOR_CONTEXT_RE.search(s):
+        return False
+    low = s.lower()
+    if not re.search(r"\b(rojo|negro|verde)\b", low):
+        return False
+    # Falsos positivos típicos (no es la ruleta del casino).
+    if re.search(
+        r"(?is)\b(sem[aá]foro|luz\s+roja|rojo\s+vivo|lista\s+negra|"
+        r"bandera\s+roja|ojos\s+rojos|humor\s+negro|"
+        r"al\s+rojo\s+vivo)\b",
+        low,
+    ):
+        return False
+    return True
+
+
+def _oracle_roulette_pick(q: str) -> str:
+    low = (q or "").lower()
+    pool: list[str] = []
+    if "rojo" in low:
+        pool.append("Rojo")
+    if "negro" in low:
+        pool.append("Negro")
+    if "verde" in low:
+        pool.append("Verde")
+    pool = list(dict.fromkeys(pool))
+    if not pool:
+        pool = ["Rojo", "Negro"]
+    pick = random.choice(pool)
+    tail = random.choice(
+        [
+            "Humor de oráculo: no es consejo de apuestas.",
+            "Tapete imaginario; en la vida real usá cabeza (y leyes locales).",
+            "Tirada simbólica; si perdés plata no reclamás al bot.",
+        ]
+    )
+    return f"Que sea **{pick}** — {tail}"
+
+
+def _is_poker_push_decision_question(q: str) -> bool:
+    """Poker / naipes + ir con todo o plantarse — no un simple ‘¡Sí!’ sin contexto."""
+    s = (q or "").strip()
+    if len(s) < 12:
+        return False
+    low = s.lower()
+    if _is_roulette_color_question(s):
+        return False
+    ctx = bool(
+        re.search(r"(?is)\b(poker|holdem|hold'?em|texas|omaha|blackjack)\b", low)
+        or re.search(r"(?is)\bbaraja\s+de\s+(poker|cartas?)\b", low)
+        or (
+            re.search(r"\bnaipes?\b", low)
+            and re.search(r"\b(poker|fichas|tapete|apuesta|ciegas?|torneo)\b", low)
+        )
+        or (
+            re.search(r"\ball[\s-]*in\b", low)
+            and re.search(r"\b(poker|fichas|tapete|mesa|torneo|baraja)\b", low)
+        )
+    )
+    if not ctx:
+        return False
+    dilemma = bool(
+        re.search(
+            r"(?is)\b(le\s+)?(doy|meto|tiro)\s+todo\b|\bno\s+voy\b|\bvoy\s+o\s+no\b|"
+            r"\bme\s+la\s+juego\b|\ball[\s-]*in\b|\btodo\s+o\s+nada\b|"
+            r"\bapuesto\s+todo\b|\barriesgo\s+todo\b",
+            low,
+        )
+    )
+    if not dilemma:
+        return False
+    if re.search(r"(?is)\b(compr(ar|o)|vend(er|o)|regal(ar|o))\b", low) and not re.search(
+        r"\b(doy|meto|tiro|voy\s+o)\b",
+        low,
+    ):
+        return False
+    return True
+
+
+def _oracle_poker_push_answer() -> str:
+    """Misma distribución que el dado clásico, texto acorde a mesa / all-in."""
+    dado = random.randint(1, 100)
+    y_max = _ORACLE_DICE_YES_PCT
+    n_max = y_max + _ORACLE_DICE_NO_PCT
+    if dado <= y_max:
+        return random.choice(
+            [
+                "**Sí — shove místico:** las cartas te saludan; en Discord no se pierden fichas de verdad.",
+                "**All-in simbólico** (sí): el pozo te guiña; en la vida real contá outs y bankroll.",
+                "**Sí**: si vas con todo, que sea con **baraja cerrada** y cero drama en el river mental.",
+            ]
+        )
+    if dado <= n_max:
+        return random.choice(
+            [
+                "**No — fold** con estilo: guardá narrativa y el stack emocional.",
+                "**No vas** así nomás: el flop del destino pidió un paso atrás.",
+                "**No** (por ahora): mejor leer tells del café que del multiverso.",
+            ]
+        )
+    pct = random.randint(15, 85)
+    if random.choice([True, False]):
+        return random.choice(
+            [
+                f"Ni mano ganada ni **fold** claro: **~{pct}%** de “meter **presión**” y el resto a pensar en frío.",
+                f"Ambiguo como **split pot** místico: **~{pct}%** a favor del **push**; no firmo nada.",
+            ]
+        )
+    return random.choice(
+        [
+            f"Mano rara: inclinación **~{pct}%** al **no meter**; el resto queda en la penumbra del river.",
+            f"Dado flojo en Las Vegas del alma: **{pct}%** no, **{100 - pct}%** sí (humor, no odds reales).",
+        ]
+    )
+
+
 def _is_open_ended_question(pregunta: str) -> bool:
     q = (pregunta or "").strip()
     if len(q) < 4:
+        return False
+    if _is_roulette_color_question(q):
+        return False
+    if _is_multi_option_or_recommendation(q):
         return False
     if _is_anime_recommendation_request(q):
         return True
@@ -459,6 +591,100 @@ _SERIOUS_FACT_RE = re.compile(
     r"\b(historia\s+universal|historia\s+de\s+(francia|españa|argentina))\b|"
     r"\b(cuál|cual)\s+es\s+la\s+(primera|primer|segunda|tercera|1|2|3)\b",
 )
+
+# “Pizza, sushi o pasta” / “esta o esa o la otra”: el oráculo elige una (sin ser solo poker).
+_CHOICE_ALT_MIN_LEN = 2
+_CHOICE_ALT_MAX_LEN = 52
+_CHOICE_MAX_ALTS = 8
+
+
+def _normalize_choice_fragment(t: str) -> str:
+    x = " ".join((t or "").split())
+    return x.strip("¿?.,;:·\"'«»()[]{}…").strip()
+
+
+def _extract_or_alternatives(raw: str) -> Optional[list[str]]:
+    """Parte por ‘ o ’ y por comas dentro de cada trozo → opciones cortas."""
+    s = " ".join((raw or "").split()).strip().strip("¿?")
+    if len(s) < 7 or not re.search(r"(?i)\s+o\s+", s):
+        return None
+    parts = re.split(r"(?i)\s+o\s+", s)
+    alts: list[str] = []
+    for p in parts:
+        subs = [x for x in re.split(r",\s*", p) if x.strip()]
+        if not subs:
+            continue
+        for sub in subs:
+            frag = _normalize_choice_fragment(sub)
+            if len(frag) < _CHOICE_ALT_MIN_LEN or len(frag) > _CHOICE_ALT_MAX_LEN:
+                return None
+            alts.append(frag)
+    seen: set[str] = set()
+    out: list[str] = []
+    for a in alts:
+        k = a.casefold()
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(a)
+    return out if 2 <= len(out) <= _CHOICE_MAX_ALTS else None
+
+
+def _alts_are_plain_yesno_only(alts: list[str]) -> bool:
+    """Solo sí/no puro → mejor el dado clásico."""
+    if len(alts) != 2:
+        return False
+
+    def _bucket(x: str) -> Optional[str]:
+        z = re.sub(r"[^\wáéíóúÁÉÍÓÚñÑ]+", "", x.lower())
+        if z in ("si", "sí"):
+            return "si"
+        if z == "no":
+            return "no"
+        return None
+
+    a, b = _bucket(alts[0]), _bucket(alts[1])
+    return a is not None and b is not None and a in ("si", "no") and b in ("si", "no")
+
+
+def _is_multi_option_or_recommendation(q: str) -> bool:
+    s = (q or "").strip()
+    if len(s) < 9:
+        return False
+    if _is_roulette_color_question(s):
+        return False
+    if _is_poker_push_decision_question(s):
+        return False
+    if _is_anime_recommendation_request(s):
+        return False
+    if _SERIOUS_FACT_RE.search(s):
+        return False
+    alts = _extract_or_alternatives(s)
+    if not alts:
+        return False
+    if _alts_are_plain_yesno_only(alts):
+        return False
+    # Dos trozos muy largos: casi seguro no es “opción A / B”, sino dos oraciones.
+    if len(alts) == 2 and len(alts[0]) > 44 and len(alts[1]) > 44:
+        return False
+    return True
+
+
+def _oracle_multi_option_pick(q: str) -> str:
+    alts = _extract_or_alternatives(q) or []
+    if len(alts) < 2:
+        return "No leí opciones claras; probá listar tipo **A, B o C**."
+    pick_raw = random.choice(alts)
+    pick = discord.utils.escape_markdown(pick_raw)[:200]
+    return random.choice(
+        [
+            f"Si tuviera **IA posta** pondría pros/contras; acá va pick random: **{pick}**.",
+            f"Entre lo que tiraste, hoy me quedo con **{pick}** (humor, cero garantías).",
+            f"**{pick}** — suena a menos arrepentimiento que el resto (o no, el cosmos no firma).",
+            f"Recomendación **de vibes**: **{pick}**. Si falla, fue el multiverso.",
+        ]
+    )
+
 
 _ORACLE_ANIME_PICKS = (
     "Fullmetal Alchemist: Brotherhood",
@@ -600,8 +826,15 @@ async def _roll_oracle_for_question_async(pregunta: str) -> Tuple[str, str, int]
     Si la pregunta parece abierta (cuántas, cuándo, temporadas…), contesta en modo ‘opinión’.
     Si no, mantiene sí / no / % como antes.
     """
-    if _is_open_ended_question(pregunta):
-        return "open", await _oracle_open_answer_async(pregunta), random.randint(1, 100)
+    pq = (pregunta or "").strip()
+    if _is_roulette_color_question(pq):
+        return "yesno", _oracle_roulette_pick(pq), random.randint(1, 100)
+    if _is_poker_push_decision_question(pq):
+        return "yesno", _oracle_poker_push_answer(), random.randint(1, 100)
+    if _is_multi_option_or_recommendation(pq):
+        return "yesno", _oracle_multi_option_pick(pq), random.randint(1, 100)
+    if _is_open_ended_question(pq):
+        return "open", await _oracle_open_answer_async(pq), random.randint(1, 100)
     cat, body, dado = _roll_oracle()
     return cat, body, dado
 
@@ -937,6 +1170,37 @@ class OraculoCog(commands.Cog, name="Oraculo"):
         self.db.ensure_user_exists(author_id)
         pq = pregunta.strip()
         use_llm = _oracle_use_llm()
+        # Ruleta (negro/rojo/verde): siempre pick local; el LLM en modo sí/no no entiende el contexto.
+        if _is_roulette_color_question(pq):
+            rb = _oracle_roulette_pick(pq)
+            emb = self._embed_respuesta(
+                nombre_visible=nombre_visible,
+                mencion=mencion,
+                pregunta=pregunta.strip(),
+                body=rb,
+                response_kind="yesno",
+            )
+            return emb, rb, "yesno"
+        if _is_poker_push_decision_question(pq):
+            pb = _oracle_poker_push_answer()
+            emb = self._embed_respuesta(
+                nombre_visible=nombre_visible,
+                mencion=mencion,
+                pregunta=pregunta.strip(),
+                body=pb,
+                response_kind="yesno",
+            )
+            return emb, pb, "yesno"
+        if _is_multi_option_or_recommendation(pq):
+            mb = _oracle_multi_option_pick(pq)
+            emb = self._embed_respuesta(
+                nombre_visible=nombre_visible,
+                mencion=mencion,
+                pregunta=pregunta.strip(),
+                body=mb,
+                response_kind="yesno",
+            )
+            return emb, mb, "yesno"
         # Cuenta resuelta en el bot primero (rápido): evita que una regex “abierta” fuerce IA antes que `2+2`.
         if _is_simple_arithmetic_question(pq):
             expr = _extract_arithmetic_expression_for_eval(pq)
