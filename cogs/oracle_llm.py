@@ -1,4 +1,4 @@
-# Cliente mínimo para Ollama (`/api/generate`) — oráculo del bot.
+# Cliente Ollama (`/api/generate`) — oráculo del bot (opcional vía ORACLE_USE_LLM / ORACLE_LLM_AUTO).
 from __future__ import annotations
 
 import asyncio
@@ -6,10 +6,41 @@ import logging
 import os
 import re
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 
 import aiohttp
 
 log = logging.getLogger(__name__)
+
+_oracle_http_lock: Optional[asyncio.Lock] = None
+_oracle_http_session: Optional[aiohttp.ClientSession] = None
+
+
+def _oracle_http_lock_get() -> asyncio.Lock:
+    global _oracle_http_lock
+    if _oracle_http_lock is None:
+        _oracle_http_lock = asyncio.Lock()
+    return _oracle_http_lock
+
+
+async def close_oracle_http() -> None:
+    """Cierra la sesión aiohttp compartida (p. ej. al descargar el cog)."""
+    global _oracle_http_session
+    async with _oracle_http_lock_get():
+        if _oracle_http_session is not None and not _oracle_http_session.closed:
+            await _oracle_http_session.close()
+        _oracle_http_session = None
+
+
+async def _oracle_http_session_get() -> aiohttp.ClientSession:
+    global _oracle_http_session
+    async with _oracle_http_lock_get():
+        if _oracle_http_session is None or _oracle_http_session.closed:
+            _oracle_http_session = aiohttp.ClientSession(
+                connector=aiohttp.TCPConnector(limit=10, ttl_dns_cache=300),
+                headers={"User-Agent": "AnimeAlToque-Oracle/1.0"},
+            )
+        return _oracle_http_session
 
 # Defaults (sobreescribibles con env: ORACLE_MAX_WORDS, ORACLE_MAX_CHARS, ORACLE_FOLLOWUP_*).
 _DEF_MAX_WORDS = 20
@@ -43,16 +74,15 @@ def oracle_max_chars_followup() -> int:
 
 # System (campo `system` en Ollama). {max_words} se rellena al llamar.
 _SYSTEM_ORACLE = (
-    "Sos el oráculo de un Discord de anime/otaku; respondés en español. "
-    "Si piden **recomendación** o **qué elegir**, decí opción concreta (aunque sea con humor). "
-    "Si es **opinión**, historia, cultura o explicación breve, contestá con **idea completa**: "
-    "no repitas el título de la pregunta ni te quedes a medias; preferí **una** frase cerrada, "
-    "o **dos frases muy cortas** si hace falta para no cortar el sentido. "
-    "**Máximo {max_words} palabras** en total (contalas; cuantas menos, mejor). "
-    "Sin listas numeradas ni comillas decorativas. Tono jocoso o místico OK. "
-    "No inventés fechas oficiales ni citas verificables. "
-    "Las preguntas que son solo sí/no al azar las responde **otra parte del bot** (dado: 40% sí, 40% no, 20% con %); "
-    "acá respondés con criterio cuando piden opinión, datos generales o consejo."
+    "Sos el oráculo de un Discord de anime/otaku; **español rioplatense** si encaja el tono. "
+    "Si piden **recomendación** o **qué elegir**, nombrá **una** opción concreta (podés humorizar). "
+    "Si es **opinión**, lore o explicación corta: **idea completa** en pocas palabras; "
+    "no repitas la pregunta entera ni dejes la frase a medias. "
+    "**Máximo {max_words} palabras** en total (contalas; menos es mejor). "
+    "Sin listas numeradas, sin comillas decorativas, sin roleplay de sistema. "
+    "No inventés fechas oficiales, estrenos ni citas verificables. "
+    "Si el usuario solo quiere **suerte sí/no**, otra parte del bot puede usar dado; "
+    "vos priorizás criterio cuando piden opinión, consejo o charla."
 )
 
 _SYSTEM_FOLLOWUP = (
@@ -61,6 +91,59 @@ _SYSTEM_FOLLOWUP = (
     "Una frase o dos muy cortas si cerrás mejor; **máx. {max_words} palabras** en total (menos es mejor). "
     "No repitas reglas, encabezados ni el texto del contexto; solo tu respuesta final."
 )
+
+# Modo sí/no vía modelo (cuando ORACLE_LLM_YESNO=1 en el cog): una línea, tono oráculo.
+_SYSTEM_YESNO_LAYER = (
+    "Esta consulta va en modo **adivinación sí/no** (no ensayo largo). "
+    "Respondé **una sola frase** (máx. {max_words} palabras): **Sí**, **No**, **quizás**, o humor breve con **%** si encaja. "
+    "Sin párrafos ni explicación de reglas."
+)
+
+
+def _normalize_generate_url(raw: str) -> str:
+    """Acepta URL completa a `/api/generate` o solo base `http://host:11434`."""
+    u = (raw or "").strip()
+    if not u:
+        return ""
+    base = u.rstrip("/")
+    if base.endswith("/api/generate"):
+        return base
+    if "/api/" in u and not base.endswith("/api/generate"):
+        log.warning(
+            "ORACLE_LLM_URL debería terminar en /api/generate (Ollama). Valor recibido: %s",
+            u[:120],
+        )
+    return base + "/api/generate"
+
+
+def _system_oracle_combined(*, max_words: int, style: str) -> str:
+    sys = _SYSTEM_ORACLE.format(max_words=max_words)
+    extra = (os.getenv("ORACLE_SYSTEM_SUFFIX") or "").strip()
+    if extra:
+        sys = f"{sys}\n\n{extra}"
+    if style == "yesno":
+        sys = f"{sys}\n\n{_SYSTEM_YESNO_LAYER.format(max_words=max_words)}"
+    return sys
+
+
+def _ollama_endpoint_log_label(url: str) -> str:
+    try:
+        p = urlparse(url)
+        host = p.hostname or "?"
+        port = f":{p.port}" if p.port else ""
+        return f"{host}{port}"
+    except Exception:
+        return "?"
+
+
+def oracle_effective_generate_url() -> str:
+    """URL normalizada para logs y comprobaciones (misma que usa el POST)."""
+    return _normalize_generate_url(os.getenv("ORACLE_LLM_URL") or "")
+
+
+def oracle_log_host() -> str:
+    """Host:puerto del endpoint Ollama (sin path), para logs."""
+    return _ollama_endpoint_log_label(oracle_effective_generate_url())
 
 
 def _truncate_response(text: str, *, max_words: int, max_chars: int) -> str:
@@ -173,22 +256,22 @@ async def _ollama_post_generate(url: str, payload: Dict[str, Any], timeout_sec: 
     t = max(5.0, float(timeout_sec))
     timeout = aiohttp.ClientTimeout(total=t + 4.0, connect=8.0, sock_read=t + 3.0)
     try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(url, json=payload) as resp:
-                if resp.status != 200:
-                    body = (await resp.text())[:300]
-                    log.warning("Oracle LLM HTTP %s: %s", resp.status, body)
-                    return None
-                try:
-                    return await resp.json(content_type=None)
-                except Exception:
-                    log.warning("Oracle LLM: JSON inválido")
-                    return None
+        session = await _oracle_http_session_get()
+        async with session.post(url, json=payload, timeout=timeout) as resp:
+            if resp.status != 200:
+                body = (await resp.text())[:300]
+                log.warning("Oracle LLM HTTP %s: %s", resp.status, body)
+                return None
+            try:
+                return await resp.json(content_type=None)
+            except Exception:
+                log.warning("Oracle LLM: JSON inválido")
+                return None
     except asyncio.TimeoutError:
-        log.warning("Oracle LLM: timeout")
+        log.warning("Oracle LLM: timeout (%s)", _ollama_endpoint_log_label(url))
         return None
     except aiohttp.ClientError:
-        log.exception("Oracle LLM: error de red")
+        log.exception("Oracle LLM: error de red (%s)", _ollama_endpoint_log_label(url))
         return None
     except Exception:
         log.exception("Oracle LLM: error inesperado")
@@ -210,12 +293,12 @@ async def _ollama_post_generate_guarded(
         return None
 
 
-async def oracle_local_reply(user_question: str) -> Optional[str]:
+async def oracle_local_reply(user_question: str, *, style: str = "open") -> Optional[str]:
     """
-    Llama a Ollama (o compatible) si ORACLE_LLM_URL está definido.
-    Devuelve texto corto o None si falla / no hay URL.
+    Llama a Ollama si hay URL configurada (el cog decide si la IA está activada).
+    style: \"open\" (opinión / charla) o \"yesno\" (una frase tipo adivinación).
     """
-    url = (os.getenv("ORACLE_LLM_URL") or "").strip()
+    url = _normalize_generate_url(os.getenv("ORACLE_LLM_URL") or "")
     if not url:
         return None
     model = (os.getenv("ORACLE_MODEL") or "tinyllama").strip()
@@ -235,8 +318,11 @@ async def oracle_local_reply(user_question: str) -> Optional[str]:
     except ValueError:
         num_pred = 48
     num_pred = max(16, min(96, num_pred))
+    if style == "yesno":
+        num_pred = min(num_pred, 56)
     # `prompt` = solo la consulta; reglas en `system` (API Ollama) para menos eco y menos tokens.
-    system = _SYSTEM_ORACLE.format(max_words=mw)
+    st = style if style in ("open", "yesno") else "open"
+    system = _system_oracle_combined(max_words=mw, style=st)
     payload: Dict[str, Any] = {
         "model": model,
         "system": system,
@@ -272,7 +358,7 @@ async def oracle_local_reply_followup(
     """
     Misma URL/modelo que `oracle_local_reply`, pero con contexto de la consulta anterior.
     """
-    url = (os.getenv("ORACLE_LLM_URL") or "").strip()
+    url = _normalize_generate_url(os.getenv("ORACLE_LLM_URL") or "")
     if not url:
         return None
     model = (os.getenv("ORACLE_MODEL") or "tinyllama").strip()
@@ -292,6 +378,9 @@ async def oracle_local_reply_followup(
     mw = max(6, min(48, mw))
 
     system = _SYSTEM_FOLLOWUP.format(max_words=mw)
+    sfx = (os.getenv("ORACLE_SYSTEM_SUFFIX") or "").strip()
+    if sfx:
+        system = f"{system}\n\n{sfx}"
     # Prompt compacto: menos texto copiable por modelos chicos.
     prompt = (
         f"Contexto breve (no lo copies): antes «{(oq or '…')[:200]}»; tu línea anterior «{(pa or '…')[:160]}».\n"

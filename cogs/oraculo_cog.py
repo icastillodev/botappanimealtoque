@@ -1,6 +1,6 @@
-# Preguntas sí / no: 40% sí, 40% no, 20% respuesta tipo probabilidad con % (ver constantes del dado).
-# Cuentas simples: resultado exacto en el bot. Preguntas “abiertas”: plantillas + humor (sin red).
-# IA local (Ollama): solo si ORACLE_USE_LLM=1 en .env (por defecto apagado — menos fallos y cero timeout).
+# Preguntas sí / no: 40% sí, 40% no, 20% con % (dado), salvo ORACLE_LLM_YESNO=1 + IA activa → modelo en una frase.
+# Cuentas simples: en el bot. Preguntas abiertas: Ollama si IA activa; si no, plantillas + humor.
+# IA: ORACLE_USE_LLM=1 o ORACLE_LLM_AUTO=1, y ORACLE_LLM_URL (ver .env.example). ORACLE_USE_LLM=0 fuerza apagado.
 # Cuenta para la diaria + puntos extra (config .env).
 from __future__ import annotations
 
@@ -40,8 +40,23 @@ except Exception:
 
 
 def _oracle_use_llm() -> bool:
-    """Ollama / ORACLE_LLM_URL. Por defecto False: solo dado sí·no·% y plantillas."""
-    return (os.getenv("ORACLE_USE_LLM") or "").strip().lower() in ("1", "true", "yes", "on")
+    """
+    Ollama si hay URL y (ORACLE_USE_LLM=1 **o** ORACLE_LLM_AUTO=1).
+    ORACLE_USE_LLM=0|false|off desactiva aunque exista ORACLE_LLM_AUTO.
+    """
+    off = (os.getenv("ORACLE_USE_LLM") or "").strip().lower()
+    if off in ("0", "false", "no", "off"):
+        return False
+    on = off in ("1", "true", "yes", "on")
+    auto = (os.getenv("ORACLE_LLM_AUTO") or "").strip().lower() in ("1", "true", "yes", "on")
+    if not (on or auto):
+        return False
+    return bool((os.getenv("ORACLE_LLM_URL") or "").strip())
+
+
+def _oracle_llm_yesno_via_model() -> bool:
+    """Si True y la IA está activa, las consultas que iban al dado pasan primero por el modelo (una frase)."""
+    return (os.getenv("ORACLE_LLM_YESNO") or "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _oracle_env_show_errors() -> bool:
@@ -763,17 +778,40 @@ class OraculoCog(commands.Cog, name="Oraculo"):
 
     async def cog_load(self) -> None:
         if _oracle_use_llm():
-            log.info("Oráculo: IA local activa (ORACLE_USE_LLM=1 + ORACLE_LLM_URL).")
+            try:
+                from cogs.oracle_llm import oracle_log_host
+
+                host = oracle_log_host()
+            except Exception:
+                host = "?"
+            mod = (os.getenv("ORACLE_MODEL") or "tinyllama").strip()
+            to = (os.getenv("ORACLE_TIMEOUT") or "12").strip()
+            yn = "sí" if _oracle_llm_yesno_via_model() else "no (dado clásico)"
+            log.info(
+                "Oráculo: IA local **ON** → host %s · modelo=%s · timeout≈%ss · sí/no vía modelo=%s",
+                host,
+                mod,
+                to,
+                yn,
+            )
         else:
             log.info(
-                "Oráculo: modo **solo dado** (sí / no / %%) + plantillas y cuentas locales; "
-                "IA desactivada. Para Ollama: ORACLE_USE_LLM=1 en .env y reiniciar."
+                "Oráculo: IA **OFF** (dado sí/no/%% + plantillas). Activar: URL en ORACLE_LLM_URL y "
+                "ORACLE_USE_LLM=1 **o** ORACLE_LLM_AUTO=1; reiniciar."
             )
         if _oracle_env_show_errors():
             log.warning(
                 "ORACLE_SHOW_ERRORS está activo: los fallos del oráculo mostrarán detalle en el canal "
                 "(usar solo en servidores de confianza)."
             )
+
+    async def cog_unload(self) -> None:
+        try:
+            from cogs.oracle_llm import close_oracle_http
+
+            await close_oracle_http()
+        except Exception:
+            log.debug("Oráculo: no se pudo cerrar sesión HTTP de oracle_llm (ignorado).", exc_info=True)
 
     async def _build_oracle_embed(
         self,
@@ -786,6 +824,7 @@ class OraculoCog(commands.Cog, name="Oraculo"):
         assert self.db is not None
         self.db.ensure_user_exists(author_id)
         pq = pregunta.strip()
+        use_llm = _oracle_use_llm()
         # Cuenta resuelta en el bot primero (rápido): evita que una regex “abierta” fuerce IA antes que `2+2`.
         if _is_simple_arithmetic_question(pq):
             expr = _extract_arithmetic_expression_for_eval(pq)
@@ -793,7 +832,7 @@ class OraculoCog(commands.Cog, name="Oraculo"):
             if val is not None:
                 body, response_kind = _format_math_answer_body(expr, val), "math"
             else:
-                llm = await oracle_local_reply(pq) if _oracle_use_llm() else None
+                llm = await oracle_local_reply(pq, style="open") if use_llm else None
                 if llm:
                     body, response_kind = llm, "llm"
                 elif _is_open_ended_question(pq):
@@ -806,7 +845,7 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                     )
                     response_kind = "open"
         elif _is_open_ended_question(pq):
-            llm = await oracle_local_reply(pq) if _oracle_use_llm() else None
+            llm = await oracle_local_reply(pq, style="open") if use_llm else None
             if llm:
                 body, response_kind = llm, "llm"
             else:
@@ -822,8 +861,16 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                     kind, body, _ = _roll_oracle_for_question(pq)
                     response_kind = "open" if kind == "open" else "yesno"
         else:
-            kind, body, _ = _roll_oracle_for_question(pq)
-            response_kind = "open" if kind == "open" else "yesno"
+            if use_llm and _oracle_llm_yesno_via_model():
+                llm = await oracle_local_reply(pq, style="yesno")
+                if llm:
+                    body, response_kind = llm, "llm"
+                else:
+                    kind, body, _ = _roll_oracle_for_question(pq)
+                    response_kind = "open" if kind == "open" else "yesno"
+            else:
+                kind, body, _ = _roll_oracle_for_question(pq)
+                response_kind = "open" if kind == "open" else "yesno"
         emb = self._embed_respuesta(
             nombre_visible=nombre_visible,
             mencion=mencion,
@@ -949,7 +996,7 @@ class OraculoCog(commands.Cog, name="Oraculo"):
             )
             if llm:
                 return llm, "llm"
-            llm2 = await oracle_local_reply(user_line)
+            llm2 = await oracle_local_reply(user_line, style="open")
             if llm2:
                 return llm2, "llm"
         if _is_simple_arithmetic_question(user_line):
@@ -1104,10 +1151,14 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                 f"**Cuenta:** {body_show}"
             )
         elif response_kind == "open":
+            if _oracle_use_llm():
+                sub = "**Contestación (plantillas + humor):**\n"
+            else:
+                sub = "**Modo charla (plantillas + humor):**\n"
             bloque = (
                 f"{mencion} **({nombre_visible})** preguntó:\n"
                 f"> {q}\n\n"
-                f"**Modo charla (sin IA local, plantillas + humor):**\n"
+                f"{sub}"
                 f"{body_show}"
             )
         else:
@@ -1153,10 +1204,13 @@ class OraculoCog(commands.Cog, name="Oraculo"):
 
     @app_commands.command(
         name="aat-consulta",
-        description="Sí/no/% con dado; abiertas = plantillas (IA solo si ORACLE_USE_LLM=1). Seguimiento citando embed. ?pregunta.",
+        description=(
+            "Oráculo: sí/no/% (dado u opcional IA), abiertas con Ollama si IA activa, si no plantillas. "
+            "IA: ORACLE_USE_LLM=1 o ORACLE_LLM_AUTO=1 + URL. ?pregunta."
+        ),
     )
     @app_commands.describe(
-        pregunta="Sí/no o abierta (cuántas, cuándo, qué opinás…). Sin ORACLE_USE_LLM=1, lo abierto va a plantillas + humor."
+        pregunta="Sí/no o abierta. Con IA: Ollama; sin IA: dado o plantillas. Opcional ORACLE_LLM_YESNO=1 para sí/no vía modelo."
     )
     async def consulta_slash(self, interaction: discord.Interaction, pregunta: str):
         if not pregunta or not pregunta.strip():
@@ -1361,7 +1415,7 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                         persist_pending=False,
                     )
                 else:
-                    llm = await oracle_local_reply(user_text) if _oracle_use_llm() else None
+                    llm = await oracle_local_reply(user_text, style="open") if _oracle_use_llm() else None
                     if llm:
                         esc = discord.utils.escape_markdown(user_text)[:500]
                         esc_r = discord.utils.escape_markdown(llm)
