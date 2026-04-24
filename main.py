@@ -274,6 +274,12 @@ class MiBot(commands.Bot):
 
     async def on_ready(self):
         self.log.info(f"Conectado como {self.user} (ID {self.user.id})")
+        self.log.info(
+            "Intents: message_content=%s — si en el servidor el texto de los mensajes llega vacío, "
+            "activá **Message Content Intent** en https://discord.com/developers/applications → tu app → Bot → "
+            "Privileged Gateway Intents, guardá y reiniciá el bot.",
+            getattr(self.intents, "message_content", False),
+        )
         self.log.info("Bot listo y operativo.")
 
 async def main():

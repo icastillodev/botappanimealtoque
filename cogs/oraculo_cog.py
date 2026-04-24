@@ -717,20 +717,25 @@ class OraculoCog(commands.Cog, name="Oráculo"):
         self,
         reference: Optional[discord.Message],
         *,
+        channel: Optional[discord.abc.Messageable] = None,
         text: str,
         delete_after: float = 35.0,
     ) -> None:
-        """Aviso corto al usuario cuando el embed principal no se pudo mandar."""
-        if not reference or not (text or "").strip():
+        """Aviso corto al usuario cuando el embed principal no se pudo mandar.
+        Con `?pregunta` no hay `reference` → hay que usar `channel.send` o el aviso nunca llega."""
+        if not (text or "").strip():
             return
+        if reference is None and channel is None:
+            log.warning("Oráculo: fallo sin reference ni channel; no se puede avisar al usuario.")
+            return
+        msg = (text or "")[:1950]
         try:
-            await reference.reply(
-                (text or "")[:1950],
-                mention_author=False,
-                delete_after=delete_after,
-            )
+            if reference is not None:
+                await reference.reply(msg, mention_author=False, delete_after=delete_after)
+            elif channel is not None:
+                await channel.send(msg, delete_after=delete_after)
         except discord.HTTPException as re:
-            log.warning("Oráculo: no se pudo enviar el aviso de fallo (reply): %s", re)
+            log.warning("Oráculo: no se pudo enviar el aviso de fallo: %s", re)
 
     async def cog_load(self) -> None:
         if _oracle_env_show_errors():
@@ -846,6 +851,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             )
             await self._oracle_reply_failure(
                 reference,
+                channel=channel,
                 text=(
                     "**Oráculo:** no tengo permiso para enviar (o embedear) en este canal. "
                     "Revisá permisos del rol del bot."
@@ -863,6 +869,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             )
             await self._oracle_reply_failure(
                 reference,
+                channel=channel,
                 text=(
                     "**Oráculo:** Discord rechazó el envío del embed. "
                     "Reintentá en unos segundos o usá `?pregunta …`."
@@ -877,7 +884,11 @@ class OraculoCog(commands.Cog, name="Oráculo"):
                 author.id,
                 (pregunta or "")[:200],
             )
-            await self._oracle_reply_failure(reference, text=_oracle_user_visible_internal_error(e))
+            await self._oracle_reply_failure(
+                reference,
+                channel=channel,
+                text=_oracle_user_visible_internal_error(e),
+            )
             return None
 
         if isinstance(sent, discord.Message) and sent.guild:
@@ -958,6 +969,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             )
             await self._oracle_reply_failure(
                 reference,
+                channel=channel,
                 text="**Oráculo (seguimiento):** sin permiso para enviar el embed acá.",
             )
             return
@@ -972,6 +984,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             )
             await self._oracle_reply_failure(
                 reference,
+                channel=channel,
                 text="**Oráculo (seguimiento):** Discord rechazó el envío. Probá de nuevo.",
             )
             return
@@ -983,7 +996,11 @@ class OraculoCog(commands.Cog, name="Oráculo"):
                 author.id,
                 (user_line or "")[:200],
             )
-            await self._oracle_reply_failure(reference, text=_oracle_user_visible_internal_error(e))
+            await self._oracle_reply_failure(
+                reference,
+                channel=channel,
+                text=_oracle_user_visible_internal_error(e),
+            )
             return
 
         if persist_pending and isinstance(sent, discord.Message) and sent.guild:
