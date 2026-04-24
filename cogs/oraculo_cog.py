@@ -1,5 +1,6 @@
 # Preguntas sí / no: 40% sí, 40% no, 20% con % (dado), salvo ORACLE_LLM_YESNO=1 + IA activa → modelo en una frase.
 # Cuentas simples: en el bot. Preguntas abiertas: Ollama si IA activa; si no, plantillas + humor.
+# Sin Ollama: pedidos “recomendá anime” → lista curada; hechos (Newton, etc.) → ORACLE_WIKI_FALLBACK (Wikipedia es).
 # IA: ORACLE_USE_LLM=1 o ORACLE_LLM_AUTO=1, y ORACLE_LLM_URL (ver .env.example). ORACLE_USE_LLM=0 fuerza apagado.
 # Cuenta para la diaria + puntos extra (config .env).
 from __future__ import annotations
@@ -384,10 +385,40 @@ _OPEN_QUESTION_RE = re.compile(
 )
 
 
+_ANIME_REC_RE = re.compile(
+    r"(?is)"
+    r"\brecomienda(?:me|nos)?(\s+un)?\s+anime\b|"
+    r"\brecomiend(?:ame|anos|an)\b.*\banime\b|"
+    r"\brecomend(?:ame|á|a)\b.*\banime\b|"
+    r"\bsuger(?:ime|í|i)\b.*\banime\b|"
+    r"\bqu[eé]\s+anime\s+(ver|mirar|empezar|poner)\b|"
+    r"\banime\s+(para\s+)?ver\b|"
+    r"\bpon(?:eme|me|é)\s+un\s+anime\b|"
+    r"\bpas(?:a|á)(?:me|nos)?\s+un\s+anime\b|"
+    r"\btir(?:a|á)(?:me|nos)?\s+un\s+anime\b|"
+    r"\bdame\s+un\s+anime\b",
+)
+
+
+def _is_anime_recommendation_request(q: str) -> bool:
+    s = (q or "").strip()
+    if len(s) < 6:
+        return False
+    if _ANIME_REC_RE.search(s):
+        return True
+    if re.search(r"\brecomienda\b", s) and re.search(r"\banime\b", s):
+        return True
+    if re.search(r"\brecomend\w*", s) and re.search(r"\banime\b", s):
+        return True
+    return False
+
+
 def _is_open_ended_question(pregunta: str) -> bool:
     q = (pregunta or "").strip()
     if len(q) < 4:
         return False
+    if _is_anime_recommendation_request(q):
+        return True
     return bool(_OPEN_QUESTION_RE.search(q))
 
 
@@ -429,21 +460,44 @@ _SERIOUS_FACT_RE = re.compile(
     r"\b(cuál|cual)\s+es\s+la\s+(primera|primer|segunda|tercera|1|2|3)\b",
 )
 
+_ORACLE_ANIME_PICKS = (
+    "Fullmetal Alchemist: Brotherhood",
+    "Steins;Gate",
+    "Mob Psycho 100",
+    "Spy x Family",
+    "Violet Evergarden",
+    "Haikyu!!",
+    "Hunter x Hunter (2011)",
+    "One Punch Man",
+    "Made in Abyss",
+    "Death Note",
+    "Jujutsu Kaisen",
+    "Sousou no Frieren",
+    "Oshi no Ko",
+    "Bocchi the Rock!",
+    "March Comes in Like a Lion",
+)
 
-def _oracle_open_answer(pregunta: str) -> str:
-    """Sin Ollama: plantillas cortas; temas ‘serios’ → aviso honesto (no dado sí/no)."""
-    pq = (pregunta or "").strip()
-    if _SERIOUS_FACT_RE.search(pq):
-        return random.choice(
-            [
-                "Eso es **material de estudio / Wikipedia**, no de adivinanza con dado. "
-                "Si querés texto posta en el servidor, que dejen **Ollama** activo (`ORACLE_USE_LLM=1` o `ORACLE_LLM_AUTO=1` + `ORACLE_LLM_URL`). "
-                "Si no, buscá en Google o en tus apuntes: acá sin IA no invento fechas ni leyes.",
-                "Para **hechos** (historia, leyes de Newton, etc.) no tengo base seria sin **IA local**. "
-                "Con el bot en modo solo plantillas te puedo tirar **humor de anime**, pero sería deshonesto para esto.",
-                "Consulta **demasiado enciclopedia** para el oráculo-random. Activá **Ollama** en el `.env` o usá una fuente confiable; no te voy a decir Sí/No ni inventar la Revolución.",
-            ]
-        )
+
+def _oracle_wiki_fallback_enabled() -> bool:
+    v = (os.getenv("ORACLE_WIKI_FALLBACK") or "1").strip().lower()
+    return v not in ("0", "false", "no", "off")
+
+
+def _oracle_serious_no_llm_fallback() -> str:
+    return random.choice(
+        [
+            "Eso es **material de estudio / Wikipedia**, no de adivinanza con dado. "
+            "Si querés texto posta en el servidor, que dejen **Ollama** activo (`ORACLE_USE_LLM=1` o `ORACLE_LLM_AUTO=1` + `ORACLE_LLM_URL`). "
+            "Si no, buscá en Google o en tus apuntes: acá sin IA no invento fechas ni leyes.",
+            "Para **hechos** (historia, leyes de Newton, etc.) no tengo base seria sin **IA local**. "
+            "Con el bot en modo solo plantillas te puedo tirar **humor de anime**, pero sería deshonesto para esto.",
+            "Consulta **demasiado enciclopedia** para el oráculo-random. Activá **Ollama** en el `.env` o usá una fuente confiable; no te voy a decir Sí/No ni inventar la Revolución.",
+        ]
+    )
+
+
+def _oracle_silly_open_templates(pregunta: str) -> str:
     raw_topic = _extract_topic_for_oracle(pregunta)
     topic = discord.utils.escape_markdown(raw_topic) if raw_topic else "eso"
     n1 = random.randint(2, 4)
@@ -459,6 +513,33 @@ def _oracle_open_answer(pregunta: str) -> str:
             f"Sobre **{topic}**: ni idea real, pero para no quedar en silencio te digo que suena a **{n2}** en la escala de ‘confío en el estudio’ y **{n3}** en la de ‘me van a hacer llorar igual’.",
         ]
     )
+
+
+async def _oracle_open_answer_async(pregunta: str) -> str:
+    """Sin Ollama: recomendación anime curada, hechos vía Wikipedia (opcional), resto plantillas."""
+    pq = (pregunta or "").strip()
+    if _is_anime_recommendation_request(pq):
+        pick = random.choice(_ORACLE_ANIME_PICKS)
+        intro = random.choice(
+            [
+                "Sin IA: un título de la lista curada del bot:",
+                "Te dejo un pick random (lista interna, sin spoilers de plot twist):",
+                "Para no tirarte un dado absurdo, algo para ver:",
+            ]
+        )
+        return f"{intro} **{pick}**."
+    if _SERIOUS_FACT_RE.search(pq):
+        if _oracle_wiki_fallback_enabled():
+            try:
+                from cogs.oracle_wiki import wikipedia_es_snippet
+
+                wiki = await wikipedia_es_snippet(pq)
+                if wiki:
+                    return wiki
+            except Exception:
+                log.debug("Oráculo: Wikipedia fallback falló (ignorado).", exc_info=True)
+        return _oracle_serious_no_llm_fallback()
+    return _oracle_silly_open_templates(pq)
 
 
 def _roll_oracle() -> Tuple[str, str, int]:
@@ -514,13 +595,13 @@ def _roll_oracle() -> Tuple[str, str, int]:
     return "Probabilidad", prob_msg, dado
 
 
-def _roll_oracle_for_question(pregunta: str) -> Tuple[str, str, int]:
+async def _roll_oracle_for_question_async(pregunta: str) -> Tuple[str, str, int]:
     """
     Si la pregunta parece abierta (cuántas, cuándo, temporadas…), contesta en modo ‘opinión’.
     Si no, mantiene sí / no / % como antes.
     """
     if _is_open_ended_question(pregunta):
-        return "open", _oracle_open_answer(pregunta), random.randint(1, 100)
+        return "open", await _oracle_open_answer_async(pregunta), random.randint(1, 100)
     cat, body, dado = _roll_oracle()
     return cat, body, dado
 
@@ -867,7 +948,7 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                 if llm:
                     body, response_kind = llm, "llm"
                 elif _is_open_ended_question(pq):
-                    kind, body, _ = _roll_oracle_for_question(pq)
+                    kind, body, _ = await _roll_oracle_for_question_async(pq)
                     response_kind = "open" if kind == "open" else "yesno"
                 else:
                     body = (
@@ -886,10 +967,10 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                     if val is not None:
                         body, response_kind = _format_math_answer_body(expr, val), "math"
                     else:
-                        kind, body, _ = _roll_oracle_for_question(pq)
+                        kind, body, _ = await _roll_oracle_for_question_async(pq)
                         response_kind = "open" if kind == "open" else "yesno"
                 else:
-                    kind, body, _ = _roll_oracle_for_question(pq)
+                    kind, body, _ = await _roll_oracle_for_question_async(pq)
                     response_kind = "open" if kind == "open" else "yesno"
         else:
             if use_llm and _oracle_llm_yesno_via_model():
@@ -897,10 +978,10 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                 if llm:
                     body, response_kind = llm, "llm"
                 else:
-                    kind, body, _ = _roll_oracle_for_question(pq)
+                    kind, body, _ = await _roll_oracle_for_question_async(pq)
                     response_kind = "open" if kind == "open" else "yesno"
             else:
-                kind, body, _ = _roll_oracle_for_question(pq)
+                kind, body, _ = await _roll_oracle_for_question_async(pq)
                 response_kind = "open" if kind == "open" else "yesno"
         emb = self._embed_respuesta(
             nombre_visible=nombre_visible,
@@ -1035,7 +1116,7 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                 "No pude resolver esa cuenta; probá solo la expresión (ej. `3*4`) o `?pregunta …`.",
                 "open",
             )
-        kind, ans, _ = _roll_oracle_for_question(user_line)
+        kind, ans, _ = await _roll_oracle_for_question_async(user_line)
         return ans, ("open" if kind == "open" else "yesno")
 
     async def _send_oracle_followup(
@@ -1457,7 +1538,7 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                         )
                         await message.reply(embed=emb_fb, mention_author=False)
                     else:
-                        kind, ans, _ = _roll_oracle_for_question(user_text)
+                        kind, ans, _ = await _roll_oracle_for_question_async(user_text)
                         body_fb = ans
                         d_fb2 = (
                             f"{message.author.mention} **({nombre})** sigue el hilo:\n"
