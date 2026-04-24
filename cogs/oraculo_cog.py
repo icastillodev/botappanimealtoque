@@ -361,7 +361,7 @@ def _safe_eval_arithmetic(expr: str) -> Optional[float]:
 _OPEN_QUESTION_RE = re.compile(
     r"(?isx)"
     r"(\b(cuánt|cuant)\w*|"
-    r"\bcuál\b|\bcuales\b|"
+    r"\bcuál\b|\bcual\b|\bcuales\b|"
     r"\b(cómo|como)\s+(está|esta|va|será|sera|fue|iban|ibas|anduv|andaba)\b|"
     r"\bcuándo\b|\bcuando\b\s+(sale|va|llega|empieza|termina)|"
     r"\bdónde\b|\bdonde\b\s+(está|esta|ver|mirar|consigo)|"
@@ -373,6 +373,8 @@ _OPEN_QUESTION_RE = re.compile(
     r"\b(describí|describe|descríbeme|describime)\b|"
     r"\b(definí|define|definición|definicion)\b|"
     r"\b(qué\s+es|que\s+es|qué\s+son|que\s+son)\b|"
+    r"\b(cuál\s+es|cual\s+es|cuál\s+son|cual\s+son)\b|"
+    r"\bprimer[ao]?\s+ley\b|\bley(es)?\s+de\s+newton\b|"
     r"\b(cuéntame|cuentame|contame)\s+(sobre|de)\b|"
     r"\b(hablame|háblame|hablá)\s+de\b|"
     r"\brecomendame\b|\brecomiendame\b|\brecomendá\b|"
@@ -416,9 +418,32 @@ _ORACLE_DICE_PROBABILITY_PCT = 20
 _ORACLE_DICE_YES_PCT = (100 - _ORACLE_DICE_PROBABILITY_PCT) // 2
 _ORACLE_DICE_NO_PCT = 100 - _ORACLE_DICE_PROBABILITY_PCT - _ORACLE_DICE_YES_PCT
 
+# Historia / física / “deberes”: no inventar sí/no ni chistes de anime; sin Ollama, respuesta sobria.
+_SERIOUS_FACT_RE = re.compile(
+    r"(?is)"
+    r"\b(revoluci[oó]n\s+francesa|revoluci[oó]n\s+rusa|guerra\s+(mundial|civil|de\s+troya)|"
+    r"primera\s+guerra|segunda\s+guerra|imperio\s+romano)\b|"
+    r"\b(newton|einstein|galileo|maxwell|darwin|ley(es)?\s+de\s+newton|"
+    r"primer[ao]?\s+ley|segund[ao]?\s+ley|tercer[ao]?\s+ley)\b|"
+    r"\b(historia\s+universal|historia\s+de\s+(francia|españa|argentina))\b|"
+    r"\b(cuál|cual)\s+es\s+la\s+(primera|primer|segunda|tercera|1|2|3)\b",
+)
+
 
 def _oracle_open_answer(pregunta: str) -> str:
-    """Respuesta ‘tipo IA básica’ pero 100 % plantillas + azar (sin API)."""
+    """Sin Ollama: plantillas cortas; temas ‘serios’ → aviso honesto (no dado sí/no)."""
+    pq = (pregunta or "").strip()
+    if _SERIOUS_FACT_RE.search(pq):
+        return random.choice(
+            [
+                "Eso es **material de estudio / Wikipedia**, no de adivinanza con dado. "
+                "Si querés texto posta en el servidor, que dejen **Ollama** activo (`ORACLE_USE_LLM=1` o `ORACLE_LLM_AUTO=1` + `ORACLE_LLM_URL`). "
+                "Si no, buscá en Google o en tus apuntes: acá sin IA no invento fechas ni leyes.",
+                "Para **hechos** (historia, leyes de Newton, etc.) no tengo base seria sin **IA local**. "
+                "Con el bot en modo solo plantillas te puedo tirar **humor de anime**, pero sería deshonesto para esto.",
+                "Consulta **demasiado enciclopedia** para el oráculo-random. Activá **Ollama** en el `.env` o usá una fuente confiable; no te voy a decir Sí/No ni inventar la Revolución.",
+            ]
+        )
     raw_topic = _extract_topic_for_oracle(pregunta)
     topic = discord.utils.escape_markdown(raw_topic) if raw_topic else "eso"
     n1 = random.randint(2, 4)
@@ -427,12 +452,11 @@ def _oracle_open_answer(pregunta: str) -> str:
     chaos = random.randint(40, 95)
     return random.choice(
         [
-            f"Si fuera una IA **de verdad** te mandaría a buscar fuentes. Como soy **random con personalidad**: "
+            f"Si fuera una IA **de verdad** te mandaría a buscar fuentes. Como acá es **plantilla**: "
             f"sobre **{topic}** yo tiraría **{n1}** temporadas más… más o menos, con un **{chaos}%** de margen de error y cero responsabilidad civil.",
             f"Opinión **inventada** (pero con onda) sobre **{topic}**: anuncian **{n2}** cosas nuevas, **{n3}** son filler aprobado por el comité del caos, y el fandom discute igual.",
             f"Mi **cerebro de lata** interpreta **{topic}** así: el universo tira un dado, sale **{n1 + n3}**, y alguien en Twitter ya lo sabía desde el capítulo 1.",
             f"Sobre **{topic}**: ni idea real, pero para no quedar en silencio te digo que suena a **{n2}** en la escala de ‘confío en el estudio’ y **{n3}** en la de ‘me van a hacer llorar igual’.",
-            f"Modo **charla de café**: **{topic}** me huele a **{n1}** vueltas de tuerca narrativas y **{chaos}%** de drama innecesario… o sea, entretenimiento asegurado.",
         ]
     )
 
@@ -550,6 +574,13 @@ def _parse_consulta_embed_description(desc: str) -> Optional[Tuple[str, str, _Or
         )
         if m:
             return (q, m.group(1).strip(), "open")
+    # Formato nuevo (abierto sin subtítulo): cita y luego el cuerpo suelto.
+    m_plain = re.search(r"(?is)preguntó:\s*\n>\s*(.+?)\n\n(.+)\Z", desc, re.DOTALL)
+    if m_plain:
+        qq = (m_plain.group(1) or "").strip()
+        body = (m_plain.group(2) or "").strip()
+        if qq and body and not body.lstrip().startswith("**"):
+            return (qq, body, "open")
     return None
 
 
@@ -1151,14 +1182,10 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                 f"**Cuenta:** {body_show}"
             )
         elif response_kind == "open":
-            if _oracle_use_llm():
-                sub = "**Contestación (plantillas + humor):**\n"
-            else:
-                sub = "**Modo charla (plantillas + humor):**\n"
+            # Sin subtítulo “modo charla”: solo la respuesta (más limpio en Discord).
             bloque = (
                 f"{mencion} **({nombre_visible})** preguntó:\n"
                 f"> {q}\n\n"
-                f"{sub}"
                 f"{body_show}"
             )
         else:
