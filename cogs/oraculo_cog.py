@@ -101,6 +101,11 @@ def _message_pings_bot(message: discord.Message, me: discord.abc.User) -> bool:
 _ARITH_EXPRESSION_ONLY_RE = re.compile(r"^[\d\s\+\-\*\/x×÷.,\(\)=%^]+$", re.IGNORECASE)
 # Cuenta “visible” dentro de una frase corta (p. ej. "te pregunte 2+2", "@bot 12*3 jaja").
 _ARITH_SNIPPET_RE = re.compile(r"\b(?:\d{1,8}\s*[\+\-\*\/x×÷]\s*)+\d{1,8}\b", re.IGNORECASE)
+# Raíz cuadrada en lenguaje natural o sqrt(n).
+_ARITH_SQRT_IN_QUESTION_RE = re.compile(
+    r"(?is)(?:ra[ií]z\s+cuadrada|raiz\s+cuadrada)\s+(?:de\s+|del\s+)?(\d{1,8})"
+    r"|sqrt\s*\(\s*(\d{1,8})\s*\)",
+)
 
 # Palabras / risas que suelen rodear la cuenta sin convertirla en consulta seria al oráculo.
 _ARITH_CONTEXT_FILLER = frozenset(
@@ -205,6 +210,21 @@ _ARITH_CONTEXT_FILLER = frozenset(
 )
 
 
+def _arith_sqrt_match(q: str) -> Optional[re.Match[str]]:
+    s0 = " ".join((q or "").strip().split())
+    if len(s0) < 8 or len(s0) > 92:
+        return None
+    return _ARITH_SQRT_IN_QUESTION_RE.search(s0)
+
+
+def _arith_sqrt_operand_from_match(m: re.Match[str]) -> Optional[int]:
+    g = (m.group(1) or m.group(2) or "").strip()
+    if not g.isdigit():
+        return None
+    n = int(g)
+    return n if 0 < n < 10**9 else None
+
+
 def _is_pure_arithmetic_expression(q: str) -> bool:
     s = (q or "").strip()
     s = re.sub(r"^[¿?]+", "", s)
@@ -225,6 +245,16 @@ def _is_simple_arithmetic_question(q: str) -> bool:
     """Pregunta que es básicamente una cuenta: el oráculo no debe tirar sí/no al azar."""
     if _is_pure_arithmetic_expression(q):
         return True
+    msqrt = _arith_sqrt_match(q)
+    if msqrt and _arith_sqrt_operand_from_match(msqrt) is not None:
+        s0 = " ".join((q or "").strip().split())
+        before, after = s0[: msqrt.start()], s0[msqrt.end() :]
+        rest = f"{before} {after}"
+        rest = re.sub(r"[^\w\sáéíóúüñ]", " ", rest, flags=re.IGNORECASE)
+        words = [w for w in rest.split() if w]
+        extra_ok = frozenset({"cuál", "cual", "cuanto", "cuánto", "vale", "da", "es", "son", "igual"})
+        meaningful = [w for w in words if w not in _ARITH_CONTEXT_FILLER and w not in extra_ok]
+        return len(meaningful) == 0
     s0 = " ".join((q or "").strip().split())
     if len(s0) < 3 or len(s0) > 88:
         return False
@@ -261,6 +291,11 @@ def _extract_arithmetic_expression_for_eval(q: str) -> str:
         s = re.sub(r"[?.!…]+$", "", s)
         core = "".join(s.split())
     else:
+        msqrt = _arith_sqrt_match(q)
+        if msqrt:
+            n = _arith_sqrt_operand_from_match(msqrt)
+            if n is not None:
+                return f"({n})**0.5"
         s0 = " ".join((q or "").strip().split())
         m = _ARITH_SNIPPET_RE.search(s0)
         if not m:
@@ -283,7 +318,11 @@ def _format_math_result_value(val: float) -> str:
 
 
 def _format_math_answer_body(expr_norm: str, val: float) -> str:
-    disp = expr_norm.replace("**", "^") or "?"
+    msqrt_disp = re.match(r"^\((\d{1,8})\)\*\*0\.5$", (expr_norm or "").replace(" ", ""))
+    if msqrt_disp:
+        disp = f"√{msqrt_disp.group(1)}"
+    else:
+        disp = expr_norm.replace("**", "^") or "?"
     res = _format_math_result_value(val)
     return f"`{disp}` → **{res}**"
 
