@@ -8,7 +8,7 @@ import os
 import random
 import re
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 import aiohttp
 
@@ -170,6 +170,75 @@ def _detect_hint_pools(q: str) -> List[str]:
         if any(n in low for n in needles):
             found.append(pool_key)
     return found
+
+
+# Palabras en **negritas** que no son títulos de obra (respuestas de recomendación).
+_REC_BOLD_SKIP: Set[str] = {
+    x.casefold()
+    for x in (
+        "AniList",
+        "isekai",
+        "romance",
+        "shonen",
+        "shōnen",
+        "seinen",
+        "mecha",
+        "slice of life",
+        "comedia",
+        "fantasia",
+        "fantasy",
+        "terror",
+        "deportes",
+    )
+}
+
+
+def _norm_title_cmp(title: str) -> str:
+    x = re.sub(r"[^\w\sáéíóúüñÁÉÍÓÚÜÑ0-9]+", " ", (title or "").lower())
+    return " ".join(x.split())
+
+
+def _exclude_norm_set(*groups: Optional[Iterable[str]]) -> Set[str]:
+    out: Set[str] = set()
+    for g in groups:
+        if not g:
+            continue
+        for s in g:
+            n = _norm_title_cmp(s)
+            if len(n) >= 3:
+                out.add(n)
+    return out
+
+
+def extract_recommendation_titles_from_reply(text: str) -> Set[str]:
+    """Títulos en **negrita** de una respuesta de recomendación (para excluir en ‘otro’)."""
+    raw: Set[str] = set()
+    for m in re.finditer(r"\*\*([^*]+)\*\*", text or ""):
+        frag = (m.group(1) or "").strip()
+        if len(frag) < 3 or len(frag) > 160:
+            continue
+        if "://" in frag:
+            continue
+        if frag.casefold() in _REC_BOLD_SKIP:
+            continue
+        raw.add(frag)
+    return raw
+
+
+def _filter_media_dicts_by_excludes(
+    items: List[Any], excl_norm: Set[str]
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for x in items:
+        if not isinstance(x, dict):
+            continue
+        t = _pick_title_anilist(x)
+        if t in ("?", ""):
+            continue
+        if _norm_title_cmp(t) in excl_norm:
+            continue
+        out.append(x)
+    return out
 
 
 def _curated_recommendation_line(q: str) -> str:
@@ -397,26 +466,36 @@ async def _anilist_browse_random_titles(pool_key: str, count: int = 24) -> List[
     return (((data.get("Page") or {}).get("media")) or []) or []
 
 
-async def _anilist_recommendation_body(q: str) -> str:
+async def _anilist_recommendation_body(
+    q: str,
+    *,
+    exclude_title_strings: Optional[Iterable[str]] = None,
+) -> str:
+    excl0 = _exclude_norm_set(exclude_title_strings)
     pools = _detect_hint_pools(q)
     if not pools:
         # Sin pista: búsqueda popular genérica
-        data = await _anilist_post(
-            """
-            query ($page: Int) {
-              Page(page: $page, perPage: 25) {
-                media(type: ANIME, sort: POPULARITY_DESC, isAdult: false) {
-                  title { romaji english }
-                  siteUrl
+        pick = None
+        for _ in range(4):
+            data = await _anilist_post(
+                """
+                query ($page: Int) {
+                  Page(page: $page, perPage: 25) {
+                    media(type: ANIME, sort: POPULARITY_DESC, isAdult: false) {
+                      title { romaji english }
+                      siteUrl
+                    }
+                  }
                 }
-              }
-            }
-            """,
-            {"page": random.randint(1, 3)},
-        )
-        items = (((data or {}).get("Page") or {}).get("media")) or [] if data else []
-        if items and isinstance(items[0], dict):
-            pick = random.choice(items[:20])
+                """,
+                {"page": random.randint(1, 5)},
+            )
+            items = (((data or {}).get("Page") or {}).get("media")) or [] if data else []
+            usable = _filter_media_dicts_by_excludes(items, excl0)
+            if usable:
+                pick = random.choice(usable[:20])
+                break
+        if pick and isinstance(pick, dict):
             t = _pick_title_anilist(pick)
             u = pick.get("siteUrl") or ""
             return (
@@ -427,13 +506,19 @@ async def _anilist_recommendation_body(q: str) -> str:
         return _curated_recommendation_line(q)
 
     key = random.choice(pools)
-    items = await _anilist_browse_random_titles(key)
-    usable = [x for x in items if isinstance(x, dict) and _pick_title_anilist(x) != "?"]
-    if usable:
-        pick = random.choice(usable)
+    pick = None
+    for _ in range(4):
+        items = await _anilist_browse_random_titles(key)
+        usable = _filter_media_dicts_by_excludes(items, excl0)
+        if usable:
+            pick = random.choice(usable)
+            break
+    if pick and isinstance(pick, dict):
         t = _pick_title_anilist(pick)
         u = pick.get("siteUrl") or ""
-        extra = await _anilist_second_pick_same_filter(key, exclude_title=t)
+        ex_after = set(excl0)
+        ex_after.add(_norm_title_cmp(t))
+        extra = await _anilist_second_pick_same_filter(key, excl_norm=ex_after)
         body = (
             f"Según **AniList** (género/tag **{key}**): **{t}**.\n"
             f"{u and (u + chr(10)) or ''}"
@@ -445,17 +530,16 @@ async def _anilist_recommendation_body(q: str) -> str:
     return _curated_recommendation_line(q)
 
 
-async def _anilist_second_pick_same_filter(pool_key: str, *, exclude_title: str) -> str:
-    items = await _anilist_browse_random_titles(pool_key)
-    cand = [
-        _pick_title_anilist(x)
-        for x in items
-        if isinstance(x, dict) and _pick_title_anilist(x) not in ("?", exclude_title)
-    ]
-    if not cand:
-        return ""
-    t2 = random.choice(cand[:12])
-    return f"Otra opción del mismo bloque: **{t2}**."
+async def _anilist_second_pick_same_filter(pool_key: str, *, excl_norm: Set[str]) -> str:
+    for _ in range(3):
+        items = await _anilist_browse_random_titles(pool_key)
+        usable = _filter_media_dicts_by_excludes(items, excl_norm)
+        if not usable:
+            continue
+        t2 = _pick_title_anilist(random.choice(usable[:12]))
+        if t2 not in ("?", ""):
+            return f"Otra opción del mismo bloque: **{t2}**."
+    return ""
 
 
 _MEDIA_INFO_TRIG = re.compile(
@@ -468,14 +552,22 @@ _MEDIA_INFO_TRIG = re.compile(
 )
 
 
+_MEDIA_REC_GENRE_WORD = re.compile(
+    r"(?is)\b(anime|manga|manhwa|manhua|isekai|sh[oō]nen|shonen|seinen|josei|"
+    r"mecha|rom[aá]nce|slice|fantas|fantasy|fantasía|comedy|comedia|"
+    r"acci[oó]n|action|horror|thriller|sci-?fi|deporte|sports|musical|idol|"
+    r"iyashikei|reencarn|otro mundo)\b"
+)
+
+
 def _is_anime_recommendation_text(q: str) -> bool:
     s = (q or "").strip()
     if len(s) < 6:
         return False
     if re.search(
-        r"(?is)\brecomienda(?:me|nos)?(\s+un)?\s+anime\b|"
-        r"\brecomiend(?:ame|anos|an)\b.*\banime\b|"
-        r"\brecomend(?:ame|á|a|arme)\b.*\banime\b|"
+        r"(?is)\brecomienda(?:me|nos|le)?(\s+un)?\s+anime\b|"
+        r"\brecomiend(?:ame|anos|an|ale)\b.*\banime\b|"
+        r"\brecomend(?:ame|á|a|arme|ale|an)\b.*\banime\b|"
         r"\bsuger(?:ime|í|i)\b.*\banime\b|"
         r"\bqu[eé]\s+anime\s+(ver|mirar|empezar|poner)\b|"
         r"\banime\s+(para\s+)?ver\b|"
@@ -489,6 +581,13 @@ def _is_anime_recommendation_text(q: str) -> bool:
     if re.search(r"\brecomienda\b", s) and re.search(r"\banime\b", s):
         return True
     if re.search(r"\brecomend\w*", s) and re.search(r"\banime\b", s):
+        return True
+    # “Recomendame un isekai” (sin la palabra anime) u otro género/tag reconocible.
+    if re.search(r"\brecomienda(?:me|nos|le)?\b", s) and _MEDIA_REC_GENRE_WORD.search(s):
+        return True
+    if re.search(r"\brecomend\w*", s) and _MEDIA_REC_GENRE_WORD.search(s):
+        return True
+    if re.search(r"\bsuger(?:ime|í|i)\w*\b", s) and _MEDIA_REC_GENRE_WORD.search(s):
         return True
     return False
 
@@ -547,6 +646,22 @@ def _strip_media_query_boilerplate(q: str) -> str:
     s = re.sub(r"[^\w\sáéíóúüñÁÉÍÓÚÜÑ0-9':-]", " ", s)
     s = " ".join(s.split()).strip("¿?.,;:! ")
     return s[:120] if s else ""
+
+
+async def oracle_media_another_recommendation_async(
+    original_query: str,
+    previous_reply: str,
+) -> Optional[str]:
+    """
+    Otra recomendación AniList en un hilo, evitando títulos ya nombrados en la respuesta anterior.
+    """
+    oq = (original_query or "").strip()
+    if not anilist_enabled() or len(oq) < 4:
+        return None
+    if not _is_anime_recommendation_text(oq) and not _detect_hint_pools(oq):
+        return None
+    prev_titles = extract_recommendation_titles_from_reply(previous_reply)
+    return await _anilist_recommendation_body(oq, exclude_title_strings=prev_titles)
 
 
 async def oracle_media_open_reply_async(pq: str) -> Optional[str]:

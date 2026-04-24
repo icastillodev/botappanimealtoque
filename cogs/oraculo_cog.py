@@ -40,7 +40,10 @@ except Exception:
         return None
 
 try:
-    from cogs.oracle_media import oracle_media_open_reply_async
+    from cogs.oracle_media import (
+        oracle_media_another_recommendation_async,
+        oracle_media_open_reply_async,
+    )
 except Exception:
     log.warning(
         "No se pudo importar cogs.oracle_media (recomendaciones por género / AniList). "
@@ -49,6 +52,9 @@ except Exception:
     )
 
     async def oracle_media_open_reply_async(*_a: Any, **_k: Any) -> None:  # type: ignore[misc]
+        return None
+
+    async def oracle_media_another_recommendation_async(*_a: Any, **_k: Any) -> None:  # type: ignore[misc]
         return None
 
 
@@ -459,16 +465,16 @@ _OPEN_QUESTION_RE = re.compile(
     r"\bprimer[ao]?\s+ley\b|\bley(es)?\s+de\s+newton\b|"
     r"\b(cuéntame|cuentame|contame)\s+(sobre|de)\b|"
     r"\b(hablame|háblame|hablá)\s+de\b|"
-    r"\brecomendame\b|\brecomiendame\b|\brecomendá\b"
+    r"\brecomend(?:ame|á|a|arme|ale|an)\b|\brecomiend(?:ame|ale|an)\b"
     r")",
 )
 
 
 _ANIME_REC_RE = re.compile(
     r"(?is)"
-    r"\brecomienda(?:me|nos)?(\s+un)?\s+anime\b|"
-    r"\brecomiend(?:ame|anos|an)\b.*\banime\b|"
-    r"\brecomend(?:ame|á|a)\b.*\banime\b|"
+    r"\brecomienda(?:me|nos|le)?(\s+un)?\s+anime\b|"
+    r"\brecomiend(?:ame|anos|an|ale)\b.*\banime\b|"
+    r"\brecomend(?:ame|á|a|arme|ale|an)\b.*\banime\b|"
     r"\bsuger(?:ime|í|i)\b.*\banime\b|"
     r"\bqu[eé]\s+anime\s+(ver|mirar|empezar|poner)\b|"
     r"\banime\s+(para\s+)?ver\b|"
@@ -476,6 +482,13 @@ _ANIME_REC_RE = re.compile(
     r"\bpas(?:a|á)(?:me|nos)?\s+un\s+anime\b|"
     r"\btir(?:a|á)(?:me|nos)?\s+un\s+anime\b|"
     r"\bdame\s+un\s+anime\b",
+)
+
+_ORACLE_MEDIA_REC_GENRE = re.compile(
+    r"(?is)\b(anime|manga|manhwa|manhua|isekai|sh[oō]nen|shonen|seinen|josei|"
+    r"mecha|rom[aá]nce|slice|fantas|fantasy|fantasía|comedy|comedia|"
+    r"acci[oó]n|action|horror|thriller|sci-?fi|deporte|sports|musical|idol|"
+    r"iyashikei|reencarn|otro mundo)\b"
 )
 
 
@@ -488,6 +501,12 @@ def _is_anime_recommendation_request(q: str) -> bool:
     if re.search(r"\brecomienda\b", s) and re.search(r"\banime\b", s):
         return True
     if re.search(r"\brecomend\w*", s) and re.search(r"\banime\b", s):
+        return True
+    if re.search(r"\brecomienda(?:me|nos|le)?\b", s) and _ORACLE_MEDIA_REC_GENRE.search(s):
+        return True
+    if re.search(r"\brecomend\w*", s) and _ORACLE_MEDIA_REC_GENRE.search(s):
+        return True
+    if re.search(r"\bsuger(?:ime|í|i)\w*\b", s) and _ORACLE_MEDIA_REC_GENRE.search(s):
         return True
     return False
 
@@ -838,7 +857,7 @@ def _oracle_silly_open_templates(pregunta: str) -> str:
 
 
 async def _oracle_open_answer_async(pregunta: str) -> str:
-    """Sin Ollama: anime/manga (género, Jikan, definiciones), hechos vía Wikipedia, resto plantillas."""
+    """Sin Ollama: anime/manga (AniList, definiciones), hechos vía Wikipedia, resto plantillas."""
     pq = (pregunta or "").strip()
     try:
         media = await oracle_media_open_reply_async(pq)
@@ -1078,6 +1097,32 @@ class OraclePending:
     last_answer: str
     response_kind: _OracleResponseKind
     deadline_monotonic: float
+
+
+def _oracle_reply_looks_like_anilist_recommendation(last_answer: str) -> bool:
+    la = (last_answer or "").lower()
+    if "anilist.co" in la:
+        return True
+    if "anilist" in la and re.search(r"(?is)g[eé]nero/tag|pick popular|mismo bloque", la):
+        return True
+    return False
+
+
+def _oracle_followup_seeks_another_recommendation(user_line: str, pending: OraclePending) -> bool:
+    if pending.response_kind != "open":
+        return False
+    if not _oracle_reply_looks_like_anilist_recommendation(pending.last_answer):
+        return False
+    low = " ".join((user_line or "").lower().split())
+    if len(low) < 2:
+        return False
+    return bool(
+        re.search(
+            r"(?is)\b(otro|otra|otros|m[aá]s|siguiente)\b|"
+            r"recomend|suger|alternativ|opciones|ideas",
+            low,
+        )
+    )
 
 
 class OraculoCog(commands.Cog, name="Oraculo"):
@@ -1476,6 +1521,17 @@ class OraculoCog(commands.Cog, name="Oraculo"):
             llm2 = await oracle_local_reply(user_line, style="open")
             if llm2:
                 return llm2, "llm"
+        if _oracle_followup_seeks_another_recommendation(user_line, pending):
+            try:
+                media_fu = await oracle_media_another_recommendation_async(
+                    pending.original_question,
+                    pending.last_answer,
+                )
+            except Exception:
+                log.debug("Oráculo: otra recomendación AniList falló (ignorado).", exc_info=True)
+                media_fu = None
+            if media_fu:
+                return media_fu, "open"
         if _is_simple_arithmetic_question(user_line):
             return (
                 "No pude resolver esa cuenta; probá solo la expresión (ej. `3*4`) o `?pregunta …`.",
