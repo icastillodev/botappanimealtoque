@@ -233,6 +233,12 @@ class MiBot(commands.Bot):
             except Exception as e:
                 self.log.exception(f"❌ Error cargando {ext}: {e}")
 
+        if "pregunta" not in self.all_commands:
+            self.log.critical(
+                "El comando de prefijo `pregunta` no está registrado (no aparece en all_commands). "
+                "Revisá errores de carga de extensiones unas líneas más arriba."
+            )
+
         # Slash: una sola vez al arrancar (evita re-sync en cada on_ready → duplicados / ruido en el cliente)
         try:
             synced = await self.tree.sync()

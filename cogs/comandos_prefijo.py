@@ -224,6 +224,19 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
             return await ctx.send("Minijuegos no disponible.", delete_after=8)
         await cog.roll_aceptar_desde_prefijo(ctx)
 
+    @commands.command(name="pregunta", aliases=["consulta", "8ball", "bola", "oraculo"])
+    async def pregunta_prefijo(self, ctx: commands.Context, *, texto: Optional[str] = None):
+        """Oráculo sí/no/% — registrado acá para que exista aunque falle otra extensión; la lógica vive en el cog Oráculo."""
+        oc = self.bot.get_cog("Oráculo")
+        if not oc:
+            await ctx.send(
+                "El **oráculo** no está cargado (buscá en el log del bot: `Error cargando cogs.oraculo_cog`). "
+                "Reiniciá tras instalar dependencias o corregir el `.env`.",
+                delete_after=22,
+            )
+            return
+        await oc.oracle_pregunta_desde_prefijo(ctx, texto=texto)
+
     @commands.command()
     async def animetop(self, ctx: commands.Context, quien: Optional[discord.Member] = None):
         """Ver top anime propio o de otro miembro (mismo texto que el slash)."""

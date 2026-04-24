@@ -13,7 +13,7 @@ import re
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
-from typing import Deque, Dict, Literal, Optional, Tuple
+from typing import Any, Deque, Dict, Literal, Optional, Tuple
 
 _OracleResponseKind = Literal["yesno", "open", "llm", "math"]
 
@@ -21,9 +21,22 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from cogs.oracle_llm import oracle_local_reply, oracle_local_reply_followup
-
 log = logging.getLogger(__name__)
+
+try:
+    from cogs.oracle_llm import oracle_local_reply, oracle_local_reply_followup
+except ImportError:
+    log.warning(
+        "No se pudo importar cogs.oracle_llm (¿falta aiohttp u otra dependencia?). "
+        "El oráculo carga igual; IA local queda desactivada.",
+        exc_info=True,
+    )
+
+    async def oracle_local_reply(*_a: Any, **_k: Any) -> None:  # type: ignore[misc]
+        return None
+
+    async def oracle_local_reply_followup(*_a: Any, **_k: Any) -> None:  # type: ignore[misc]
+        return None
 
 
 def _oracle_use_llm() -> bool:
@@ -53,13 +66,18 @@ def _oracle_user_visible_internal_error(exc: BaseException) -> str:
 
 
 def _message_pings_bot(message: discord.Message, me: discord.abc.User) -> bool:
-    """Algunos clientes no rellenan `mentions` igual; `raw_mentions` sale del texto `<@…>`."""
+    """Algunos clientes no rellenan `mentions` igual; `raw_mentions` y el texto `<@…>` son respaldo."""
     if me in message.mentions:
         return True
     try:
-        return me.id in (message.raw_mentions or ())
+        if me.id in (message.raw_mentions or ()):
+            return True
     except Exception:
-        return False
+        pass
+    c = message.content or ""
+    if f"<@{me.id}>" in c or f"<@!{me.id}>" in c:
+        return True
+    return False
 
 
 # Preguntas que no son un sí/no claro: mejor “charla” que un porcentaje místico.
@@ -620,6 +638,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
         self.bot = bot
         self.db = getattr(bot, "economia_db", None)
         self.task_config = getattr(bot, "task_config", None) or {}
+        super().__init__()
         self._oracle_times: dict[int, Deque[float]] = defaultdict(deque)
         # Seguimiento: (guild_id, channel_id, user_id) → última consulta respondible
         self._oracle_pending: Dict[Tuple[int, int, int], OraclePending] = {}
@@ -1112,8 +1131,8 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             emb.set_footer(text="Cuenta resuelta en el bot · instantáneo")
         return emb
 
-    @commands.command(name="pregunta", aliases=["consulta", "8ball", "bola", "oraculo"])
-    async def pregunta_prefijo(self, ctx: commands.Context, *, texto: str = None):
+    async def oracle_pregunta_desde_prefijo(self, ctx: commands.Context, *, texto: Optional[str] = None) -> None:
+        """Lógica de `?pregunta` (el comando con prefijo lo registra `comandos_prefijo` para que no se pierda)."""
         if not texto or not str(texto).strip():
             await ctx.send("Usá: `?pregunta ¿va a salir bien el stream?` (escribí la pregunta después del comando).")
             return
