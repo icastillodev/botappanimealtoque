@@ -238,6 +238,12 @@ class MiBot(commands.Bot):
                 "El comando de prefijo `pregunta` no está registrado (no aparece en all_commands). "
                 "Revisá errores de carga de extensiones unas líneas más arriba."
             )
+        if not any(type(c).__name__ == "OraculoCog" for c in self.cogs.values()):
+            self.log.critical(
+                "No hay ningún cog OraculoCog cargado: `?pregunta` no podrá contestar y el @ al bot tampoco. "
+                "Buscá arriba `Error cargando cogs.oraculo_cog` y corregí el traceback (o ejecutá desde la carpeta del "
+                "bot: `.venv/bin/python -c \"import cogs.oraculo_cog\"` en el servidor)."
+            )
 
         # Slash: una sola vez al arrancar (evita re-sync en cada on_ready → duplicados / ruido en el cliente)
         try:

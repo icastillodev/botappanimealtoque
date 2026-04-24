@@ -25,9 +25,9 @@ log = logging.getLogger(__name__)
 
 try:
     from cogs.oracle_llm import oracle_local_reply, oracle_local_reply_followup
-except ImportError:
+except Exception:
     log.warning(
-        "No se pudo importar cogs.oracle_llm (¿falta aiohttp u otra dependencia?). "
+        "No se pudo importar cogs.oracle_llm (dependencia rota, sintaxis, etc.). "
         "El oráculo carga igual; IA local queda desactivada.",
         exc_info=True,
     )
@@ -362,7 +362,7 @@ _OPEN_QUESTION_RE = re.compile(
     r"\b(hablame|háblame|hablá)\s+de\b|"
     r"\brecomendame\b|\brecomiendame\b|\brecomendá\b|"
     r"\btodo\s+al\b|\bal\s+(rojo|negro|verde)\b|"
-    r"\b(quizás|quiza|quizá)\s+el\s+(rojo|negro|verde)\b)",
+    r"\b(quizás|quiza|quizá)\s+el\s+(rojo|negro|verde)\b"
     r")",
 )
 
@@ -627,7 +627,7 @@ class OraclePending:
     deadline_monotonic: float
 
 
-class OraculoCog(commands.Cog, name="Oráculo"):
+class OraculoCog(commands.Cog, name="Oraculo"):
     """Preguntas al bot (sí / no / %)."""
 
     # Mismo criterio que @commands.cooldown(2, 5, commands.BucketType.user) en !pregunta

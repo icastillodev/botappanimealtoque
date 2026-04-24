@@ -49,6 +49,18 @@ from cogs.impostor.engine import PHASE_END
 log = logging.getLogger(__name__)
 
 
+def _oracle_cog_instance(bot: commands.Bot):
+    """Busca el cog del oráculo por clase (OraculoCog); el nombre visible en bot.cogs puede variar."""
+    for c in bot.cogs.values():
+        if c.__class__.__name__ == "OraculoCog":
+            return c
+    for key in ("Oraculo", "Oráculo"):
+        c = bot.get_cog(key)
+        if c is not None:
+            return c
+    return None
+
+
 async def _reply_paginated_embeds(
     ctx: commands.Context,
     pages: List[List[discord.Embed]],
@@ -227,12 +239,13 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
     @commands.command(name="pregunta", aliases=["consulta", "8ball", "bola", "oraculo"])
     async def pregunta_prefijo(self, ctx: commands.Context, *, texto: Optional[str] = None):
         """Oráculo sí/no/% — registrado acá para que exista aunque falle otra extensión; la lógica vive en el cog Oráculo."""
-        oc = self.bot.get_cog("Oráculo")
+        oc = _oracle_cog_instance(self.bot)
         if not oc:
             await ctx.send(
-                "El **oráculo** no está cargado (buscá en el log del bot: `Error cargando cogs.oraculo_cog`). "
-                "Reiniciá tras instalar dependencias o corregir el `.env`.",
-                delete_after=22,
+                "El **oráculo** no está cargado (en el log del bot buscá la línea `Error cargando cogs.oraculo_cog` "
+                "y el traceback justo debajo). Suele ser un error de sintaxis/import en `oraculo_cog.py` o falta de "
+                "`discord.py` / `aiohttp` en el venv del servidor.",
+                delete_after=28,
             )
             return
         await oc.oracle_pregunta_desde_prefijo(ctx, texto=texto)
