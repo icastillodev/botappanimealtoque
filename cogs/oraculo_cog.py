@@ -1,6 +1,6 @@
 # Preguntas sí / no: 40% sí, 40% no, 20% respuesta tipo probabilidad con % (ver constantes del dado).
-# Cuentas simples («2+2», «te pregunte 3*4»): resultado exacto en el bot (rápido); si no se puede parsear, IA local.
-# La IA local (Ollama) solo entra en preguntas “abiertas”; el resto siempre va al dado (más divertido).
+# Cuentas simples: resultado exacto en el bot. Preguntas “abiertas”: plantillas + humor (sin red).
+# IA local (Ollama): solo si ORACLE_USE_LLM=1 en .env (por defecto apagado — menos fallos y cero timeout).
 # Cuenta para la diaria + puntos extra (config .env).
 from __future__ import annotations
 
@@ -24,6 +24,11 @@ from discord.ext import commands
 from cogs.oracle_llm import oracle_local_reply, oracle_local_reply_followup
 
 log = logging.getLogger(__name__)
+
+
+def _oracle_use_llm() -> bool:
+    """Ollama / ORACLE_LLM_URL. Por defecto False: solo dado sí·no·% y plantillas."""
+    return (os.getenv("ORACLE_USE_LLM") or "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _oracle_env_show_errors() -> bool:
@@ -738,6 +743,13 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             log.warning("Oráculo: no se pudo enviar el aviso de fallo: %s", re)
 
     async def cog_load(self) -> None:
+        if _oracle_use_llm():
+            log.info("Oráculo: IA local activa (ORACLE_USE_LLM=1 + ORACLE_LLM_URL).")
+        else:
+            log.info(
+                "Oráculo: modo **solo dado** (sí / no / %%) + plantillas y cuentas locales; "
+                "IA desactivada. Para Ollama: ORACLE_USE_LLM=1 en .env y reiniciar."
+            )
         if _oracle_env_show_errors():
             log.warning(
                 "ORACLE_SHOW_ERRORS está activo: los fallos del oráculo mostrarán detalle en el canal "
@@ -762,7 +774,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
             if val is not None:
                 body, response_kind = _format_math_answer_body(expr, val), "math"
             else:
-                llm = await oracle_local_reply(pq)
+                llm = await oracle_local_reply(pq) if _oracle_use_llm() else None
                 if llm:
                     body, response_kind = llm, "llm"
                 elif _is_open_ended_question(pq):
@@ -775,7 +787,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
                     )
                     response_kind = "open"
         elif _is_open_ended_question(pq):
-            llm = await oracle_local_reply(pq)
+            llm = await oracle_local_reply(pq) if _oracle_use_llm() else None
             if llm:
                 body, response_kind = llm, "llm"
             else:
@@ -904,22 +916,23 @@ class OraculoCog(commands.Cog, name="Oráculo"):
     async def _resolve_oracle_followup_body(
         self, pending: OraclePending, user_line: str
     ) -> Tuple[str, _OracleResponseKind]:
-        """Cuenta local → IA con contexto → IA solo último mensaje → dado / plantilla."""
+        """Cuenta local → (opcional IA) → dado / plantilla."""
         if _is_simple_arithmetic_question(user_line):
             expr = _extract_arithmetic_expression_for_eval(user_line)
             val = _safe_eval_arithmetic(expr) if expr else None
             if val is not None:
                 return _format_math_answer_body(expr, val), "math"
-        llm = await oracle_local_reply_followup(
-            pending.original_question,
-            pending.last_answer,
-            user_line,
-        )
-        if llm:
-            return llm, "llm"
-        llm2 = await oracle_local_reply(user_line)
-        if llm2:
-            return llm2, "llm"
+        if _oracle_use_llm():
+            llm = await oracle_local_reply_followup(
+                pending.original_question,
+                pending.last_answer,
+                user_line,
+            )
+            if llm:
+                return llm, "llm"
+            llm2 = await oracle_local_reply(user_line)
+            if llm2:
+                return llm2, "llm"
         if _is_simple_arithmetic_question(user_line):
             return (
                 "No pude resolver esa cuenta; probá solo la expresión (ej. `3*4`) o `?pregunta …`.",
@@ -1121,9 +1134,11 @@ class OraculoCog(commands.Cog, name="Oráculo"):
 
     @app_commands.command(
         name="aat-consulta",
-        description="Sí/no/% con dado; charla con IA solo en preguntas abiertas. Seguimiento citando embed. ?pregunta.",
+        description="Sí/no/% con dado; abiertas = plantillas (IA solo si ORACLE_USE_LLM=1). Seguimiento citando embed. ?pregunta.",
     )
-    @app_commands.describe(pregunta="Sí/no o abierta (cuántas, cuándo, qué opinás…). Lo abierto puede usar IA si está configurada.")
+    @app_commands.describe(
+        pregunta="Sí/no o abierta (cuántas, cuándo, qué opinás…). Sin ORACLE_USE_LLM=1, lo abierto va a plantillas + humor."
+    )
     async def consulta_slash(self, interaction: discord.Interaction, pregunta: str):
         if not pregunta or not pregunta.strip():
             await interaction.response.send_message("Escribí una pregunta.", ephemeral=True)
@@ -1327,7 +1342,7 @@ class OraculoCog(commands.Cog, name="Oráculo"):
                         persist_pending=False,
                     )
                 else:
-                    llm = await oracle_local_reply(user_text)
+                    llm = await oracle_local_reply(user_text) if _oracle_use_llm() else None
                     if llm:
                         esc = discord.utils.escape_markdown(user_text)[:500]
                         esc_r = discord.utils.escape_markdown(llm)
