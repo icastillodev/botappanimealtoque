@@ -51,46 +51,46 @@ def _oracle_greeting_answer(nombre_visible: str) -> str:
         pass
     tail = " " + random.choice(emojis) if emojis else ""
     lines = [
-        f"Buenas, **{discord.utils.escape_markdown(n)}**. *Yare yare…* ¿qué se te ofrece?{tail}",
-        f"Hola, **{discord.utils.escape_markdown(n)}**. *Dattebayo.* Tirame la pregunta.{tail}",
-        f"Ey, **{discord.utils.escape_markdown(n)}**. *Omae wa mou shindeiru*… nah, mentira. ¿Qué onda?{tail}",
-        f"Buenas, **{discord.utils.escape_markdown(n)}**. *Ara ara…* preguntá nomás.{tail}",
-        f"Hola, **{discord.utils.escape_markdown(n)}**. *Elijo creerte… hasta que me tires spoilers.*{tail}",
-        f"Hey, **{discord.utils.escape_markdown(n)}**. *Plus Ultra*… pero con calma. ¿Qué preguntás?{tail}",
-        f"Buenas, **{discord.utils.escape_markdown(n)}**. *Bankai*… digo, ¿qué necesitás?{tail}",
-        f"Hola, **{discord.utils.escape_markdown(n)}**. *Nani?!* (mentira). Dispará la consulta.{tail}",
-        f"Todo bien, **{discord.utils.escape_markdown(n)}**. ¿Venís por recomendación o por caos?{tail}",
-        f"Tranqui, **{discord.utils.escape_markdown(n)}**. Preguntá sin miedo (pero sin spoilers).{tail}",
-        f"Buenas. *Opening en loop*. ¿Qué querés saber, **{discord.utils.escape_markdown(n)}**?{tail}",
-        f"Hola hola. *Modo otaku activado*. ¿Consulta, **{discord.utils.escape_markdown(n)}**?{tail}",
-        f"Ey. Si vas a invocar al bot, al menos traé mate, **{discord.utils.escape_markdown(n)}**.{tail}",
-        f"Buenas, **{discord.utils.escape_markdown(n)}**. Decime qué género y te tiro algo decente.{tail}",
-        f"Hola, **{discord.utils.escape_markdown(n)}**. ¿Qué estás buscando: risas, lágrimas o violencia animada?{tail}",
-        f"Hey **{discord.utils.escape_markdown(n)}**. *Power-up* listo. Tirame la pregunta.{tail}",
-        f"Buenas. *No es filler si lo disfrutás.* ¿Qué onda, **{discord.utils.escape_markdown(n)}**?{tail}",
-        f"Hola. Si es para recomendar anime, decime mood y te lo saco.{tail}",
-        f"Buenas, **{discord.utils.escape_markdown(n)}**. *Plot twist*: el que pregunta manda.{tail}",
-        f"Ey. ¿Cómo estás? Yo en modo “no me spoilees” permanente.{tail}",
-        f"Todo bien por acá. ¿Querés un romcom, un isekai o algo para sufrir?{tail}",
-        f"Buenas. *Se escucha un ending triste a lo lejos.* ¿Qué preguntás?{tail}",
-        f"Hola, **{discord.utils.escape_markdown(n)}**. Si decís “otro” te tiro otra recomendación.{tail}",
-        f"Ey. Estoy 10/10 salvo cuando me piden ‘uno cortito’ y son 500 caps.{tail}",
-        f"Buenas. *Seinen mode* o *shonen mode*… vos elegís.{tail}",
-        f"Hola. ¿Querés algo chill o algo que te rompa el corazón?{tail}",
-        f"Hey. *NPC del servidor reportándose.* ¿Qué necesitás?{tail}",
-        f"Buenas. ¿Consulta de anime o consulta existencial con opening de fondo?{tail}",
-        f"Hola. Si es recomendación, tirame 2 keywords y te lo afino.{tail}",
-        f"Ey **{discord.utils.escape_markdown(n)}**. *No tengo chakra ilimitado*, pero intento.{tail}",
-        f"Buenas. *Gatillo de spoilers desactivado*. Dispará.{tail}",
-        f"Hola. ¿Qué onda? ¿Buscás algo tipo Frieren chill o algo tipo JJK a las piñas?{tail}",
-        f"Buenas. *Sensei del caos presente.* ¿Qué preguntás?{tail}",
-        f"Hola **{discord.utils.escape_markdown(n)}**. Si querés datos, decime el título (aunque sea abreviado).{tail}",
-        f"Hey. *La bola de cristal* dice: ‘preguntá bien y te respondo mejor’.{tail}",
-        f"Buenas. ¿Cómo estás? Yo bien, mientras no me tiren “recomendame algo” sin género.{tail}",
-        f"Hola. *No hago milagros*, pero hago recomendaciones decentes.{tail}",
-        f"Ey. ¿Qué hacés? Yo, esperando tu pregunta como cliffhanger.{tail}",
-        f"Buenas **{discord.utils.escape_markdown(n)}**. ¿Vamos con recomendación o con oráculo sí/no?{tail}",
-        f"Hola. *Modo server*: 1) saludás 2) pedís romcom 3) ganás.{tail}",
+        f"Buenas, **{discord.utils.escape_markdown(n)}**. *Yare yare…*{tail}",
+        f"Hola, **{discord.utils.escape_markdown(n)}**. *Dattebayo.*{tail}",
+        f"Ey, **{discord.utils.escape_markdown(n)}**. *Omae wa mou shindeiru*… nah.{tail}",
+        f"Buenas, **{discord.utils.escape_markdown(n)}**. *Ara ara…*{tail}",
+        f"Hola, **{discord.utils.escape_markdown(n)}**. Cero spoilers, por favor.{tail}",
+        f"Hey, **{discord.utils.escape_markdown(n)}**. *Plus Ultra* (tranqui).{tail}",
+        f"Buenas, **{discord.utils.escape_markdown(n)}**. *Bankai*… digo, hola.{tail}",
+        f"Hola, **{discord.utils.escape_markdown(n)}**. *Nani?!* (mentira).{tail}",
+        f"Todo bien, **{discord.utils.escape_markdown(n)}**.{tail}",
+        f"Tranqui, **{discord.utils.escape_markdown(n)}**.{tail}",
+        f"Buenas. *Opening en loop*.{tail}",
+        f"Hola hola. *Modo otaku activado*.{tail}",
+        f"Ey. Traé mate virtual y estamos.{tail}",
+        f"Buenas, **{discord.utils.escape_markdown(n)}**. *vibes* impecables.{tail}",
+        f"Hola, **{discord.utils.escape_markdown(n)}**. Hoy pinta romcom.{tail}",
+        f"Hey **{discord.utils.escape_markdown(n)}**. *Power-up* suavecito.{tail}",
+        f"Buenas. *No es filler si lo disfrutás*.{tail}",
+        f"Hola. *Se escucha un ending triste a lo lejos*.{tail}",
+        f"Ey. Estoy 10/10 (hasta que aparezca el lunes).{tail}",
+        f"Buenas. *Seinen mode* o *shonen mode*… lo que pinte.{tail}",
+        f"Hola. Chill y a otra cosa.{tail}",
+        f"Hey. *NPC del server reportándose*.{tail}",
+        f"Buenas. *Gatillo de spoilers desactivado*.{tail}",
+        f"Hola. ¿Cómo va?{tail}",
+        f"Buenas **{discord.utils.escape_markdown(n)}**.{tail}",
+        f"Hola. *Modo server*: saludás y todo mejora 1%.{tail}",
+        f"Buenas. *Respirá, es solo Discord*.{tail}",
+        f"Hey. *Arc de hoy*: sobrevivir.{tail}",
+        f"Hola. *Soundtrack mental* encendido.{tail}",
+        f"Buenas. *Kawaii pero peligroso*.{tail}",
+        f"Ey. *Chillman vibes*.{tail}",
+        f"Hola. *Frieren mood* (calmita).{tail}",
+        f"Buenas. *Okabe aprobó este saludo*.{tail}",
+        f"Hey. *uwu* (con respeto).{tail}",
+        f"Hola. *owo* (sin contexto).{tail}",
+        f"Buenas. *estres* (pero con estilo).{tail}",
+        f"Ey. *blurp*.{tail}",
+        f"Hola. *kaneki intensifies* (pero tranqui).{tail}",
+        f"Buenas. *gatollorando* (de emoción).{tail}",
+        f"Hola. *increibleewe*.{tail}",
     ]
     return random.choice(lines)
 
@@ -1604,17 +1604,8 @@ class OraculoCog(commands.Cog, name="Oraculo"):
             val = _safe_eval_arithmetic(expr) if expr else None
             if val is not None:
                 return _format_math_answer_body(expr, val), "math"
-        if _oracle_use_llm():
-            llm = await oracle_local_reply_followup(
-                pending.original_question,
-                pending.last_answer,
-                user_line,
-            )
-            if llm:
-                return llm, "llm"
-            llm2 = await oracle_local_reply(user_line, style="open")
-            if llm2:
-                return llm2, "llm"
+
+        # Fast-path: “otro / más / siguiente” sobre recomendación → AniList directo (evita latencia de IA).
         if _oracle_followup_seeks_another_recommendation(user_line, pending):
             try:
                 media_fu = await oracle_media_another_recommendation_async(
@@ -1626,6 +1617,18 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                 media_fu = None
             if media_fu:
                 return media_fu, "open"
+            return "No pude traer otra recomendación justo ahora. Probá de nuevo en unos segundos.", "open"
+        if _oracle_use_llm():
+            llm = await oracle_local_reply_followup(
+                pending.original_question,
+                pending.last_answer,
+                user_line,
+            )
+            if llm:
+                return llm, "llm"
+            llm2 = await oracle_local_reply(user_line, style="open")
+            if llm2:
+                return llm2, "llm"
         if _is_simple_arithmetic_question(user_line):
             return (
                 "No pude resolver esa cuenta; probá solo la expresión (ej. `3*4`) o `?pregunta …`.",
