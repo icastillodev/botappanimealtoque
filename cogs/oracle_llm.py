@@ -16,6 +16,9 @@ log = logging.getLogger(__name__)
 _oracle_http_lock: Optional[asyncio.Lock] = None
 _oracle_http_session: Optional[aiohttp.ClientSession] = None
 
+# Conocimiento fijo del bot (comandos/reglas) para que la IA no invente.
+_BOT_KB_CACHE: Optional[str] = None
+
 # Solo hacemos búsqueda web cuando parece “pregunta de hechos” (si no, es latencia gratis).
 _WEB_WORTH_IT_RE = re.compile(
     r"(?is)"
@@ -268,6 +271,33 @@ def _ollama_keep_alive() -> Optional[str]:
 def _env_truthy(key: str) -> bool:
     return (os.getenv(key) or "").strip().lower() in ("1", "true", "yes", "on")
 
+def _load_bot_kb() -> str:
+    """Carga un resumen corto de comandos/reglas del bot para el LLM (cacheado)."""
+    global _BOT_KB_CACHE
+    if _BOT_KB_CACHE is not None:
+        return _BOT_KB_CACHE
+    path = (os.getenv("ORACLE_BOT_KB_PATH") or "data/oracle_bot_kb.txt").strip()
+    try:
+        if not path:
+            _BOT_KB_CACHE = ""
+            return ""
+        with open(path, "r", encoding="utf-8") as f:
+            txt = f.read()
+        txt = "\n".join(line.rstrip() for line in (txt or "").splitlines()).strip()
+        if len(txt) > 2400:
+            txt = txt[:2395].rstrip() + "…"
+        _BOT_KB_CACHE = txt
+        return txt
+    except Exception:
+        _BOT_KB_CACHE = ""
+        return ""
+
+def _bot_kb_block() -> str:
+    kb = _load_bot_kb()
+    if not kb:
+        return ""
+    return "Contexto del bot (no lo inventes; si no está acá, decí que no estás seguro):\n" + kb
+
 
 def _format_web_context(results: list[dict[str, str]]) -> str:
     lines: list[str] = []
@@ -422,7 +452,14 @@ async def oracle_local_reply(user_question: str, *, style: str = "open") -> Opti
     web_ctx = ""
     if st == "open":
         web_ctx = await _duckduckgo_context_async(q)
-    prompt = q if not web_ctx else (web_ctx + "\n\nPregunta del usuario:\n" + q)
+    kb_ctx = _bot_kb_block()
+    parts = []
+    if kb_ctx:
+        parts.append(kb_ctx)
+    if web_ctx:
+        parts.append(web_ctx)
+    parts.append("Pregunta del usuario:\n" + q)
+    prompt = "\n\n".join(parts).strip()
     payload: Dict[str, Any] = {
         "model": model,
         "system": system,

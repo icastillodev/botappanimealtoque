@@ -34,11 +34,22 @@ def _is_oracle_greeting(pq: str) -> bool:
 def _oracle_greeting_answer(nombre_visible: str) -> str:
     n = (nombre_visible or "").strip() or "amigo"
     # Respuesta corta, sin “plantillas de temporadas”.
+    emojis = ["✨", "🔮", "🌀", "🍜", "🎲", "🧠"]
+    # Opcional: emotes custom del servidor (ponerlos en ORACLE_GREET_EMOJIS, separados por coma).
+    try:
+        raw = (os.getenv("ORACLE_GREET_EMOJIS") or "").strip()
+        if raw:
+            extra = [x.strip() for x in raw.split(",") if x.strip()]
+            if extra:
+                emojis = extra
+    except Exception:
+        pass
+    tail = " " + random.choice(emojis) if emojis else ""
     return random.choice(
         [
-            f"Hola, **{discord.utils.escape_markdown(n)}**. Tirame una pregunta posta y te digo qué vibra el multiverso.",
-            f"Buenas, **{discord.utils.escape_markdown(n)}**. ¿Consulta de anime, vida o caos? Dispará.",
-            f"Hey **{discord.utils.escape_markdown(n)}**. Estoy despierto: preguntá lo que quieras.",
+            f"Hola, **{discord.utils.escape_markdown(n)}**. Tirame una pregunta posta y te digo qué vibra el multiverso.{tail}",
+            f"Buenas, **{discord.utils.escape_markdown(n)}**. ¿Consulta de anime, vida o caos? Dispará.{tail}",
+            f"Hey **{discord.utils.escape_markdown(n)}**. Estoy despierto: preguntá lo que quieras.{tail}",
         ]
     )
 

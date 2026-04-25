@@ -1,0 +1,34 @@
+Anime al Toque — reglas/comandos (resumen corto para el Oráculo)
+
+Regla de oro (seguridad):
+- Los comandos slash (/) están restringidos al staff (admin o rol Hokage), EXCEPTO cartas.
+- Para usuarios normales, por ahora lo “usable” es: oráculo y roll. El resto se considera staff o deshabilitado.
+
+Oráculo:
+- Preguntar: `?pregunta <texto>` o mencionar al bot con la pregunta en el mismo mensaje.
+- El oráculo responde sí/no/% o en “modo charla” según la pregunta.
+
+Prefijo `?` (usuarios normales, por ahora):
+- `?pregunta <texto>`: oráculo.
+- `?roll [min] [max]`: dado casual.
+- `?rollp @usuario`: reto sin apuesta.
+- `?rollc @usuario <puntos>`: reto con apuesta.
+- `?rollpaceptar`: aceptar reto.
+
+Slash públicos permitidos (usuarios normales; SOLO cartas):
+- `/usar` (carta trampa consumible)
+- `/vercarta`
+- `/aat-miscartas`
+- `/aat-abrirblister`
+- `/aat-catalogo`
+- `/aat-puntos`
+- `/aat-inventario`
+
+Economía / tienda / progreso / ayuda grande:
+- Si el usuario pide “guía”, “ayuda”, “progreso”, “reclamar”, “tienda”, etc., está restringido o se maneja por staff.
+- En #general hay límites de comandos para no llenar el chat.
+
+Respuesta esperada del Oráculo cuando le preguntan por comandos:
+- Indicar el comando exacto (con `?` o `/`) y una línea de explicación.
+- Si algo está restringido: decir “eso es staff por ahora” y sugerir alternativa (roll/oráculo/cartas).
+
