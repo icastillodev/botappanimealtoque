@@ -593,7 +593,7 @@ _MEDIA_INFO_TRIG = re.compile(
 
 
 _MEDIA_REC_GENRE_WORD = re.compile(
-    r"(?is)\b(anime|manga|manhwa|manhua|isekai|sh[oō]nen|shonen|seinen|josei|"
+    r"(?is)\b(anime|manga|manhwa|manhua|isekai|sh[oō]nen|shonen|seinen|josei|romcom|"
     r"mecha|rom[aá]nce|slice|fantas|fantasy|fantasía|comedy|comedia|"
     r"acci[oó]n|action|horror|thriller|sci-?fi|deporte|sports|musical|idol|"
     r"iyashikei|reencarn|otro mundo)\b"

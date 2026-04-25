@@ -22,46 +22,19 @@ def _general_prefix_command_token(message: discord.Message) -> str:
 
 # Comandos ? permitidos en #general (primer token tras "?").
 # No: reclamar, progreso, diarias, tienda, guía larga, rankings, etc. (van al canal del bot o slash).
-# Sí: juego en vivo (roll, cartas), oráculo, trivia, impostor, resumen corto de comandos.
+# Sí (por ahora): oráculo y roll (y derivados).
 PUBLIC_GENERAL_PREFIX_COMMANDS = frozenset(
     {
-        "comandos",
-        "aat",
-        "cmds",
-        "cmd",
-        "ayudabot",
         "roll",
         "rollp",
         "rollc",
         "rollpaceptar",
         "rollp_aceptar",
-        "abrir",
-        "usar",
-        "usarcarta",
-        "cartas",
-        "carta",
-        "impostor",
-        "buscoimpostor",
-        "busco",
-        "lobbys",
-        "cartelera",
         "pregunta",
         "consulta",
         "8ball",
         "bola",
         "oraculo",
-        "animetop",
-        # Trivia (en #general)
-        "respuestapregunta",
-        "triviaresp",
-        "rtrivia",
-        "r",
-        "triviatop",
-        "toptrivia",
-        "ranktrivia",
-        "triviami",
-        "mitrivia",
-        "posiciontrivia",
     }
 )
 
@@ -100,9 +73,8 @@ class ChannelEnforcerCog(commands.Cog, name="Limpieza de Chat"):
                 # 2. Enviar Embed al CANAL (no DM)
                 embed = discord.Embed(
                     description=(
-                        f"🚫 **{message.author.mention}, en #general solo algunos `?`** (roll, rollp/rollc, abrir/usar cartas, oráculo, trivia, impostor, `?comandos`).\n"
-                        f"**Reclamar, progreso, diaria, tienda, guía…** → canal de comandos <#{self.bot_channel_id}> "
-                        f"o slash (`/aat-reclamar`, `/aat-progreso-*`, `/aat-progreso-ayuda`, `/aat-guia`, etc.)."
+                        f"🚫 **{message.author.mention}, en #general solo `?roll*` y el oráculo**.\n"
+                        f"Probá en <#{self.bot_channel_id}> (canal del bot) o con los comandos permitidos."
                     ),
                     color=discord.Color.red()
                 )

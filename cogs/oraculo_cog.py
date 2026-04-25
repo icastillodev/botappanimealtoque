@@ -510,11 +510,12 @@ _ANIME_REC_RE = re.compile(
     r"\bpon(?:eme|me|é)\s+un\s+anime\b|"
     r"\bpas(?:a|á)(?:me|nos)?\s+un\s+anime\b|"
     r"\btir(?:a|á)(?:me|nos)?\s+un\s+anime\b|"
-    r"\bdame\s+un\s+anime\b",
+    r"\bdame\s+un\s+anime\b|"
+    r"\bromcom\b",
 )
 
 _ORACLE_MEDIA_REC_GENRE = re.compile(
-    r"(?is)\b(anime|manga|manhwa|manhua|isekai|sh[oō]nen|shonen|seinen|josei|"
+    r"(?is)\b(anime|manga|manhwa|manhua|isekai|sh[oō]nen|shonen|seinen|josei|romcom|"
     r"mecha|rom[aá]nce|slice|fantas|fantasy|fantasía|comedy|comedia|"
     r"acci[oó]n|action|horror|thriller|sci-?fi|deporte|sports|musical|idol|"
     r"iyashikei|reencarn|otro mundo)\b"
