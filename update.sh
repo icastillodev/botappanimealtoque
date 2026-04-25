@@ -16,28 +16,56 @@ if [[ ! -d "$ROOT/.git" ]]; then
   exit 1
 fi
 
-# Si no hay venv en Linux/macOS, crear .venv (evita ModuleNotFoundError: discord con python del sistema)
-if [[ ! -x "$ROOT/.venv/bin/python" ]]; then
-  if [[ ! -d "$ROOT/.venv" ]] && command -v python3 >/dev/null 2>&1; then
-    echo "==> No existe .venv — creando con: python3 -m venv .venv"
-    python3 -m venv "$ROOT/.venv"
-  fi
-fi
+_is_windows() {
+  [[ "${OS:-}" == "Windows_NT" ]] || [[ "$(uname -s 2>/dev/null || true)" =~ (MINGW|MSYS|CYGWIN) ]]
+}
 
-_pick_python() {
-  if [[ -x "$ROOT/.venv/bin/python" ]]; then
-    echo "$ROOT/.venv/bin/python"
-  elif [[ -f "$ROOT/.venv/Scripts/python.exe" ]]; then
-    echo "$ROOT/.venv/Scripts/python.exe"
-  elif [[ -x "$ROOT/venv/bin/python" ]]; then
-    echo "$ROOT/venv/bin/python"
-  elif [[ -f "$ROOT/venv/Scripts/python.exe" ]]; then
-    echo "$ROOT/venv/Scripts/python.exe"
+# Si no hay venv en Linux/macOS, crear .venv (evita ModuleNotFoundError: discord con python del sistema)
+_pick_system_python() {
+  # Preferimos 3.12 (por wheels de aiohttp y friends). En Windows, usamos py launcher si está.
+  if _is_windows && command -v py >/dev/null 2>&1; then
+    if py -3.12 -c "import sys; print(sys.version)" >/dev/null 2>&1; then
+      echo "py -3.12"
+      return
+    fi
+    echo "py -3"
+    return
+  fi
+  if command -v python3.12 >/dev/null 2>&1; then
+    command -v python3.12
   elif command -v python3 >/dev/null 2>&1; then
     command -v python3
   else
     command -v python
   fi
+}
+
+_venv_python() {
+  if [[ -x "$ROOT/.venv/bin/python" ]]; then
+    echo "$ROOT/.venv/bin/python"
+  elif [[ -f "$ROOT/.venv/Scripts/python.exe" ]]; then
+    echo "$ROOT/.venv/Scripts/python.exe"
+  else
+    echo ""
+  fi
+}
+
+SYS_PY="$(_pick_system_python)"
+VENV_PY="$(_venv_python)"
+
+if [[ -z "$VENV_PY" ]]; then
+  echo "==> No existe .venv — creando venv con: $SYS_PY -m venv .venv"
+  $SYS_PY -m venv "$ROOT/.venv"
+  VENV_PY="$(_venv_python)"
+fi
+
+_pick_python() {
+  # Siempre preferimos el venv del repo.
+  if [[ -n "${VENV_PY:-}" ]]; then
+    echo "$VENV_PY"
+    return
+  fi
+  echo "$SYS_PY"
 }
 
 PY="$(_pick_python)"
@@ -54,7 +82,7 @@ git pull --ff-only
 
 if [[ -f "$ROOT/requirements.txt" ]]; then
   echo "==> pip install -r requirements.txt (con: $PY)"
-  "$PY" -m pip install --upgrade pip -q
+  "$PY" -m pip install --upgrade pip
   "$PY" -m pip install -r "$ROOT/requirements.txt"
 fi
 
@@ -77,4 +105,11 @@ nohup "$PY" "$ROOT/main.py" >>"$LOG_FILE" 2>&1 &
 new_pid=$!
 echo "$new_pid" >"$PID_FILE"
 echo "==> Listo. PID $new_pid"
-echo "    Seguimiento: tail -f \"$LOG_FILE\""
+sleep 1
+if kill -0 "$new_pid" 2>/dev/null; then
+  echo "    Seguimiento: tail -f \"$LOG_FILE\""
+else
+  echo "==> El bot no quedó corriendo. Últimas 80 líneas del log:"
+  tail -n 80 "$LOG_FILE" || true
+  exit 1
+fi

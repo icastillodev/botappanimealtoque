@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
 import aiohttp
+from duckduckgo_search import DDGS
 
 log = logging.getLogger(__name__)
 
@@ -81,6 +82,7 @@ _SYSTEM_ORACLE = (
     "**Máximo {max_words} palabras** en total (contalas; menos es mejor). "
     "Sin listas numeradas, sin comillas decorativas, sin roleplay de sistema. "
     "No inventés fechas oficiales, estrenos ni citas verificables. "
+    "Si te doy **contexto web** (snippets), usalo como apoyo; si no alcanza, decí que no podés verificarlo. "
     "Si el usuario solo quiere **suerte sí/no**, otra parte del bot puede usar dado; "
     "vos priorizás criterio cuando piden opinión, consejo o charla."
 )
@@ -251,6 +253,81 @@ def _ollama_keep_alive() -> Optional[str]:
     return raw
 
 
+def _env_truthy(key: str) -> bool:
+    return (os.getenv(key) or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _format_web_context(results: list[dict[str, str]]) -> str:
+    lines: list[str] = []
+    for r in results:
+        title = " ".join((r.get("title") or "").split()).strip()
+        body = " ".join((r.get("body") or "").split()).strip()
+        href = (r.get("href") or "").strip()
+        if not (title or body):
+            continue
+        if len(title) > 110:
+            title = title[:109].rstrip() + "…"
+        if len(body) > 220:
+            body = body[:219].rstrip() + "…"
+        if href and len(href) > 240:
+            href = href[:239].rstrip() + "…"
+        bit = f"- {title or '(sin título)'} — {body or '…'}"
+        if href:
+            bit += f" ({href})"
+        lines.append(bit)
+    if not lines:
+        return ""
+    # Mantener corto: 3–5 resultados.
+    head = "Contexto web (DuckDuckGo, snippets; puede estar incompleto):\n"
+    txt = head + "\n".join(lines[:5])
+    return txt[:1400].rstrip()
+
+
+def _duckduckgo_text_sync(query: str, *, max_results: int) -> list[dict[str, str]]:
+    # duckduckgo_search es sync; lo corremos en thread con to_thread.
+    q = " ".join((query or "").split()).strip()
+    if not q or len(q) < 3:
+        return []
+    out: list[dict[str, str]] = []
+    with DDGS() as ddgs:
+        for r in ddgs.text(q, max_results=max_results, region="es-es", safesearch="moderate"):
+            if not isinstance(r, dict):
+                continue
+            # r suele traer: title, href, body
+            out.append(
+                {
+                    "title": str(r.get("title") or ""),
+                    "href": str(r.get("href") or ""),
+                    "body": str(r.get("body") or ""),
+                }
+            )
+            if len(out) >= max_results:
+                break
+    return out
+
+
+async def _duckduckgo_context_async(query: str) -> str:
+    if not _env_truthy("ORACLE_INTERNET_SEARCH"):
+        return ""
+    try:
+        max_results = _env_int("ORACLE_INTERNET_SEARCH_MAX_RESULTS", 4, lo=2, hi=6)
+        timeout_sec = float((os.getenv("ORACLE_INTERNET_SEARCH_TIMEOUT") or "3.5").strip())
+    except ValueError:
+        timeout_sec = 3.5
+        max_results = 4
+    try:
+        res = await asyncio.wait_for(
+            asyncio.to_thread(_duckduckgo_text_sync, query, max_results=max_results),
+            timeout=max(1.5, min(8.0, timeout_sec)),
+        )
+    except asyncio.TimeoutError:
+        return ""
+    except Exception:
+        log.debug("DuckDuckGo search falló (ignorado).", exc_info=True)
+        return ""
+    return _format_web_context(res if isinstance(res, list) else [])
+
+
 async def _ollama_post_generate(url: str, payload: Dict[str, Any], timeout_sec: float) -> Optional[Dict[str, Any]]:
     # total + sock_read: evita colgarse si Ollama tarda más de lo esperado.
     t = max(5.0, float(timeout_sec))
@@ -323,10 +400,14 @@ async def oracle_local_reply(user_question: str, *, style: str = "open") -> Opti
     # `prompt` = solo la consulta; reglas en `system` (API Ollama) para menos eco y menos tokens.
     st = style if style in ("open", "yesno") else "open"
     system = _system_oracle_combined(max_words=mw, style=st)
+    web_ctx = ""
+    if st == "open":
+        web_ctx = await _duckduckgo_context_async(q)
+    prompt = q if not web_ctx else (web_ctx + "\n\nPregunta del usuario:\n" + q)
     payload: Dict[str, Any] = {
         "model": model,
         "system": system,
-        "prompt": q,
+        "prompt": prompt,
         "stream": False,
         "options": _ollama_options(num_predict=num_pred),
     }

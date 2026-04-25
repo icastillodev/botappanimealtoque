@@ -208,6 +208,17 @@ class AyudaCog(commands.Cog, name="Economia Ayuda"):
 
     @app_commands.command(name="aat-ayuda", description="Muestra una guía interactiva de los comandos de economía.")
     async def ayuda(self, interaction: discord.Interaction):
+        # Por ahora, restringimos la guía larga a staff (admin o rol Hokage) para evitar spam.
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
+            return await interaction.response.send_message("Este comando solo se puede usar en servidor.", ephemeral=True)
+        if not interaction.user.guild_permissions.administrator:
+            hokage_id = getattr(interaction.client, "hokage_role_id", None)
+            role = interaction.guild.get_role(int(hokage_id)) if hokage_id else None
+            if role is None or role not in interaction.user.roles:
+                return await interaction.response.send_message(
+                    "🚫 Este comando está restringido al staff por ahora.",
+                    ephemeral=True,
+                )
         view = EconomiaHelpView(interaction.user.id, self.bot)
         embed = view.embeds[0]
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)

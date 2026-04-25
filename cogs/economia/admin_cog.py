@@ -14,12 +14,18 @@ RarezaCarta = Literal["Común", "Rara", "Legendaria"]
 
 def is_hokage():
     async def predicate(interaction: discord.Interaction) -> bool:
-        hokage_id = interaction.client.hokage_role_id
-        if not hokage_id: return False
-        role = interaction.guild.get_role(hokage_id)
-        if role in interaction.user.roles: return True
-        if interaction.user.guild_permissions.administrator: return True
-        return False
+        # Solo en servidor (en DM no hay roles ni permisos de guild).
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
+            return False
+        if interaction.user.guild_permissions.administrator:
+            return True
+        hokage_id = getattr(interaction.client, "hokage_role_id", None)
+        if not hokage_id:
+            return False
+        role = interaction.guild.get_role(int(hokage_id))
+        if role is None:
+            return False
+        return role in interaction.user.roles
     return app_commands.check(predicate)
 
 # --- ¡¡¡CLASE QUE FALTABA!!! ---
@@ -95,6 +101,23 @@ class AdminCog(commands.Cog, name="Economia Admin"):
         self.card_db: CardDBManager = bot.card_db
         self.log = logging.getLogger(self.__class__.__name__)
         super().__init__()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        """
+        Backstop de permisos: asegura que los slash de este Cog sean solo admin/Hokage,
+        incluso si el decorator de clase no se aplicara como se espera.
+        """
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
+            return False
+        if interaction.user.guild_permissions.administrator:
+            return True
+        hokage_id = getattr(interaction.client, "hokage_role_id", None)
+        if not hokage_id:
+            return False
+        role = interaction.guild.get_role(int(hokage_id))
+        if role is None:
+            return False
+        return role in interaction.user.roles
 
     async def card_stock_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
         cartas = self.card_db.get_cartas_stock_by_name(current)

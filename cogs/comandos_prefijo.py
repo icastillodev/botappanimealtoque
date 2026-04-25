@@ -94,6 +94,37 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         self.card_db: CardDBManager = bot.card_db
         self.task_config = bot.task_config
 
+    def _is_staff(self, member: discord.abc.User) -> bool:
+        """Admin o rol Hokage (si existe)."""
+        if not isinstance(member, discord.Member) or not member.guild:
+            return False
+        if member.guild_permissions.administrator:
+            return True
+        hokage_id = getattr(self.bot, "hokage_role_id", None)
+        if not hokage_id:
+            return False
+        role = member.guild.get_role(int(hokage_id))
+        return bool(role and role in member.roles)
+
+    async def cog_check(self, ctx: commands.Context) -> bool:
+        """
+        Restricción global del set de comandos `?`:
+        - Staff: todo
+        - Usuarios: solo roll/retos y oráculo (por ahora).
+        """
+        if not ctx.command:
+            return True
+        if ctx.guild and isinstance(ctx.author, discord.Member) and self._is_staff(ctx.author):
+            return True
+        allowed = {
+            "roll",
+            "rollp",
+            "rollc",
+            "rollpaceptar",
+            "pregunta",
+        }
+        return ctx.command.name in allowed
+
     def _pages_inicial(self, ctx: commands.Context) -> List[List[discord.Embed]]:
         return build_pages_inicial(self.db, self.task_config or {}, ctx.author.id)
 
