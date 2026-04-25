@@ -94,6 +94,45 @@ def _oracle_greeting_answer(nombre_visible: str) -> str:
     ]
     return random.choice(lines)
 
+
+_ORACLE_PRAISE_RE = re.compile(
+    r"(?is)^\s*(que\s+genio|q\s+genio|genio+|crack+|capo+|god+|goat+|"
+    r"te\s+amo|te\s+quiero|te\s+adoro|"
+    r"gracias+|grax+|ty+|thx+|"
+    r"buen[íi]simo|buenisimo|tremendo|incre[ií]ble|increible|"
+    r"epic+|basad[oa]|based)\s*[!.…]*\s*$"
+)
+
+
+def _oracle_pick_fun_emoji() -> str:
+    """Emote/emoji para quips (usa el mismo pool que saludos si está seteado)."""
+    emojis = ["✨", "🔮", "🌀", "🍜", "🎲"]
+    try:
+        raw = (os.getenv("ORACLE_GREET_EMOJIS") or "").strip()
+        if raw:
+            extra = [x.strip() for x in raw.split(",") if x.strip()]
+            if extra:
+                emojis = extra
+    except Exception:
+        pass
+    return random.choice(emojis) if emojis else ""
+
+
+def _oracle_praise_quip(nombre_visible: str) -> str:
+    n = (nombre_visible or "").strip() or "jefe"
+    e = _oracle_pick_fun_emoji()
+    # Emote puede ir al medio, no solo al final.
+    return random.choice(
+        [
+            f"{e} Gracias, **{discord.utils.escape_markdown(n)}**. Hoy me levanté con el opening bueno.",
+            f"Gracias, **{discord.utils.escape_markdown(n)}** {e} (no le digas a los demás bots, se ponen celosos).",
+            f"{e} *Yare yare…* me sonrojás. Igual sigo siendo un bot.",
+            f"Si soy crack, vos sos el que hace las preguntas bien {e}",
+            f"{e} Acepto el cumplido y lo guardo en la mochila de loot.",
+            f"Gracias {e} (ahora mi ego pesa más que mi latency).",
+        ]
+    )
+
 try:
     from cogs.oracle_llm import oracle_local_reply, oracle_local_reply_followup
 except Exception:
@@ -300,6 +339,130 @@ _ARITH_CONTEXT_FILLER = frozenset(
         "decía",
     }
 )
+
+
+# --- Cálculo básico (derivadas simples) ---
+_DERIV_RE = re.compile(r"(?is)\bderivad[ao]\s+de\s+(.+)$")
+
+def _normalize_superscripts(s: str) -> str:
+    """2² → 2^2 ; x³ → x^3"""
+    if not s:
+        return ""
+    table = str.maketrans({"²": "^2", "³": "^3", "⁴": "^4", "⁵": "^5", "⁶": "^6", "⁷": "^7", "⁸": "^8", "⁹": "^9"})
+    return s.translate(table)
+
+def _parse_derivative_expression(q: str) -> str:
+    m = _DERIV_RE.search(q or "")
+    if not m:
+        return ""
+    core = (m.group(1) or "").strip()
+    core = _normalize_superscripts(core)
+    core = core.strip("¿?!.… ").strip()
+    return core[:120]
+
+def _derive_term(term: str) -> Optional[str]:
+    """
+    Deriva términos muy simples:
+    - constantes: c -> 0
+    - x -> 1
+    - x^n -> n*x^(n-1)
+    - a*x -> a
+    - a*x^n -> a*n*x^(n-1)
+    """
+    t = (term or "").strip()
+    if not t:
+        return None
+    t = t.replace(" ", "").replace("**", "^")
+    # constante pura
+    if re.fullmatch(r"[+-]?\d+(?:\.\d+)?", t):
+        return "0"
+    # x
+    if t in ("x", "+x"):
+        return "1"
+    if t == "-x":
+        return "-1"
+    # a*x o a*x^n
+    m = re.fullmatch(r"([+-]?\d+(?:\.\d+)?)\*?x(?:\^([+-]?\d+))?", t, flags=re.I)
+    if m:
+        a = float(m.group(1))
+        n_raw = m.group(2)
+        if not n_raw:
+            # a*x -> a
+            if abs(a - round(a)) < 1e-9:
+                return str(int(round(a)))
+            return str(a)
+        try:
+            n = int(n_raw)
+        except ValueError:
+            return None
+        if n == 0:
+            return "0"
+        coef = a * n
+        pow_new = n - 1
+        # formateo coef
+        if abs(coef - round(coef)) < 1e-9:
+            coef_s = str(int(round(coef)))
+        else:
+            coef_s = str(coef)
+        if pow_new == 0:
+            return coef_s
+        if pow_new == 1:
+            return f"{coef_s}*x"
+        return f"{coef_s}*x^{pow_new}"
+    # x^n
+    m2 = re.fullmatch(r"x\^([+-]?\d+)", t, flags=re.I)
+    if m2:
+        try:
+            n = int(m2.group(1))
+        except ValueError:
+            return None
+        if n == 0:
+            return "0"
+        coef = n
+        pow_new = n - 1
+        if pow_new == 0:
+            return str(coef)
+        if pow_new == 1:
+            return f"{coef}*x"
+        return f"{coef}*x^{pow_new}"
+    return None
+
+def _derive_simple(expr: str) -> Optional[str]:
+    """
+    Deriva una suma/resta de términos simples separados por + o - (sin paréntesis).
+    """
+    s = (expr or "").strip()
+    if not s or len(s) > 160:
+        return None
+    s = _normalize_superscripts(s)
+    s = s.replace("−", "-")
+    # Separar conservando signos
+    parts = re.findall(r"[+-]?\s*[^+-]+", s)
+    if not parts:
+        return None
+    derived: list[str] = []
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        sign = ""
+        body = p
+        if body[0] in "+-":
+            sign = body[0]
+            body = body[1:].strip()
+        dt = _derive_term(body)
+        if dt is None:
+            return None
+        if dt == "0":
+            continue
+        if sign == "-" and not dt.startswith("-"):
+            dt = "-" + dt
+        derived.append(dt)
+    if not derived:
+        return "0"
+    # Normalizar: unir con + y limpiar "+-"
+    out = " + ".join(derived).replace("+ -", "- ")
+    return out.strip()
 
 
 def _arith_sqrt_match(q: str) -> Optional[re.Match[str]]:
@@ -1402,6 +1565,21 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                 response_kind="open",
             )
             return emb, body, "open"
+
+        # Derivadas simples: responder local (rápido y correcto) en vez de IA/dado.
+        d_expr = _parse_derivative_expression(pq)
+        if d_expr:
+            d = _derive_simple(d_expr)
+            if d is not None:
+                body = f"`d/dx ({d_expr})` → **{d}**"
+                emb = self._embed_respuesta(
+                    nombre_visible=nombre_visible,
+                    mencion=mencion,
+                    pregunta=pregunta.strip(),
+                    body=body,
+                    response_kind="math",
+                )
+                return emb, body, "math"
         # Ruleta (negro/rojo/verde): siempre pick local; el LLM en modo sí/no no entiende el contexto.
         if _is_roulette_color_question(pq):
             rb = _oracle_roulette_pick(pq)
@@ -1599,6 +1777,9 @@ class OraculoCog(commands.Cog, name="Oraculo"):
         self, pending: OraclePending, user_line: str
     ) -> Tuple[str, _OracleResponseKind]:
         """Cuenta local → (opcional IA) → dado / plantilla."""
+        # Halagos / thanks: responder rápido, jocoso, con emote.
+        if _ORACLE_PRAISE_RE.match(user_line or ""):
+            return _oracle_praise_quip(nombre_visible="amigo"), "open"
         if _is_simple_arithmetic_question(user_line):
             expr = _extract_arithmetic_expression_for_eval(user_line)
             val = _safe_eval_arithmetic(expr) if expr else None
