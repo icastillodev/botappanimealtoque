@@ -120,7 +120,7 @@ _ORACLE_ANIME_POOLS: Dict[str, Tuple[str, ...]] = {
 
 _HINT_TO_POOL: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("isekai", ("isekai", "iseskai", "reencarn", "otro mundo", "truck")),
-    ("romance", ("romance", "romántic", "romantic", "amor", "pareja")),
+    ("romance", ("romance", "romántic", "romantic", "amor", "pareja", "romcom", "rom-com", "comedia romant")),
     ("shonen", ("shonen", "shōnen", "shounen", "batallas", "poderes")),
     ("seinen", ("seinen", "adulto", "maduro")),
     ("mecha", ("mecha", "robot", "gundam", "eva")),
@@ -130,6 +130,36 @@ _HINT_TO_POOL: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("terror", ("terror", "horror", "suspenso", "miedo")),
     ("deportes", ("deport", "fútbol", "futbol", "voley", "básquet", "basquet")),
 )
+
+# Abreviaciones populares de títulos → query más “AniList-friendly”.
+_TITLE_ABBREV_MAP: Dict[str, str] = {
+    "aot": "Attack on Titan",
+    "snk": "Shingeki no Kyojin",
+    "fmab": "Fullmetal Alchemist: Brotherhood",
+    "hxh": "Hunter x Hunter",
+    "jjk": "Jujutsu Kaisen",
+    "kny": "Kimetsu no Yaiba",
+    "opm": "One Punch Man",
+    "bnha": "Boku no Hero Academia",
+    "mha": "My Hero Academia",
+    "sao": "Sword Art Online",
+    "rezero": "Re:Zero",
+    "ngnl": "No Game No Life",
+    "frieren": "Sousou no Frieren",
+}
+
+def _expand_known_title_abbrev(q: str) -> str:
+    s = " ".join((q or "").strip().split())
+    low = re.sub(r"[^\w]+", "", s.lower())
+    if low in _TITLE_ABBREV_MAP:
+        return _TITLE_ABBREV_MAP[low]
+    # “aot s4”, “jjk 2”, etc.: si arranca con abreviación conocida, expandimos el primer token.
+    first = (s.split()[0] if s.split() else "").strip().lower()
+    f0 = re.sub(r"[^\w]+", "", first)
+    if f0 in _TITLE_ABBREV_MAP:
+        rest = " ".join(s.split()[1:]).strip()
+        return (_TITLE_ABBREV_MAP[f0] + (" " + rest if rest else "")).strip()
+    return s
 
 # Filtros AniList: genre_in / tag_in (nombres exactos de su esquema).
 _ANILIST_BROWSE: Dict[str, Tuple[List[str], List[str]]] = {
@@ -474,9 +504,9 @@ async def _anilist_recommendation_body(
     excl0 = _exclude_norm_set(exclude_title_strings)
     pools = _detect_hint_pools(q)
     if not pools:
-        # Sin pista: búsqueda popular genérica
-        pick = None
-        for _ in range(4):
+        # Sin pista: picks populares (3) para dar opciones sin alargar.
+        items_all: list[dict[str, Any]] = []
+        for _ in range(3):
             data = await _anilist_post(
                 """
                 query ($page: Int) {
@@ -491,42 +521,52 @@ async def _anilist_recommendation_body(
                 {"page": random.randint(1, 5)},
             )
             items = (((data or {}).get("Page") or {}).get("media")) or [] if data else []
-            usable = _filter_media_dicts_by_excludes(items, excl0)
-            if usable:
-                pick = random.choice(usable[:20])
-                break
-        if pick and isinstance(pick, dict):
-            t = _pick_title_anilist(pick)
-            u = pick.get("siteUrl") or ""
-            return (
-                f"Pick popular en **AniList**: **{t}**.\n"
-                f"{u and (u + chr(10)) or ''}"
-                f"_Sin género en tu mensaje; decí **isekai**, **romance**, etc. para afinar._"
-            )
+            for it in items:
+                if isinstance(it, dict):
+                    items_all.append(it)
+        usable = _filter_media_dicts_by_excludes(items_all, excl0)
+        if usable:
+            random.shuffle(usable)
+            picks = usable[:3]
+            titles = [f"**{_pick_title_anilist(p)}**" for p in picks if isinstance(p, dict)]
+            titles = [t for t in titles if t != "**?**"]
+            if titles:
+                u = (picks[0].get("siteUrl") or "") if isinstance(picks[0], dict) else ""
+                return (
+                    "Picks populares en **AniList**: " + " · ".join(titles[:3]) + ".\n"
+                    + (u + "\n" if u else "")
+                    + "_Si querés afinar: decí **isekai**, **romance**, **seinen**, **mecha**, etc._"
+                )
         return _curated_recommendation_line(q)
 
     key = random.choice(pools)
-    pick = None
+    picks: list[dict[str, Any]] = []
     for _ in range(4):
         items = await _anilist_browse_random_titles(key)
         usable = _filter_media_dicts_by_excludes(items, excl0)
         if usable:
-            pick = random.choice(usable)
+            random.shuffle(usable)
+            picks = [x for x in usable[:6] if isinstance(x, dict)]
             break
-    if pick and isinstance(pick, dict):
-        t = _pick_title_anilist(pick)
-        u = pick.get("siteUrl") or ""
-        ex_after = set(excl0)
-        ex_after.add(_norm_title_cmp(t))
-        extra = await _anilist_second_pick_same_filter(key, excl_norm=ex_after)
-        body = (
-            f"Según **AniList** (género/tag **{key}**): **{t}**.\n"
-            f"{u and (u + chr(10)) or ''}"
-        )
-        if extra:
-            body += f"{extra}\n"
-        body += "_Listas y fechas pueden actualizarse en la web._"
-        return body
+    if picks:
+        # Elegimos hasta 3 títulos distintos.
+        titles: list[str] = []
+        for p in picks:
+            t = _pick_title_anilist(p)
+            if t in ("", "?"):
+                continue
+            titles.append(t)
+            if len(titles) >= 3:
+                break
+        if titles:
+            u = picks[0].get("siteUrl") or ""
+            return (
+                f"Según **AniList** (género/tag **{key}**): "
+                + " · ".join(f"**{t}**" for t in titles)
+                + ".\n"
+                + (u + "\n" if u else "")
+                + "_Si querés otro: decí “otro” en el hilo._"
+            )
     return _curated_recommendation_line(q)
 
 
@@ -645,6 +685,7 @@ def _strip_media_query_boilerplate(q: str) -> str:
     )
     s = re.sub(r"[^\w\sáéíóúüñÁÉÍÓÚÜÑ0-9':-]", " ", s)
     s = " ".join(s.split()).strip("¿?.,;:! ")
+    s = _expand_known_title_abbrev(s)
     return s[:120] if s else ""
 
 

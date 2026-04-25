@@ -24,6 +24,24 @@ from discord.ext import commands
 
 log = logging.getLogger(__name__)
 
+_ORACLE_GREETING_RE = re.compile(
+    r"(?is)^\s*(hola+|holi|buenas|buen\s*d[ií]a|buenas\s+tardes|buenas\s+noches|hey+|hello+)\s*[!.…]*\s*$"
+)
+
+def _is_oracle_greeting(pq: str) -> bool:
+    return bool(_ORACLE_GREETING_RE.match((pq or "").strip()))
+
+def _oracle_greeting_answer(nombre_visible: str) -> str:
+    n = (nombre_visible or "").strip() or "amigo"
+    # Respuesta corta, sin “plantillas de temporadas”.
+    return random.choice(
+        [
+            f"Hola, **{discord.utils.escape_markdown(n)}**. Tirame una pregunta posta y te digo qué vibra el multiverso.",
+            f"Buenas, **{discord.utils.escape_markdown(n)}**. ¿Consulta de anime, vida o caos? Dispará.",
+            f"Hey **{discord.utils.escape_markdown(n)}**. Estoy despierto: preguntá lo que quieras.",
+        ]
+    )
+
 try:
     from cogs.oracle_llm import oracle_local_reply, oracle_local_reply_followup
 except Exception:
@@ -1312,6 +1330,18 @@ class OraculoCog(commands.Cog, name="Oraculo"):
         self.db.ensure_user_exists(author_id)
         pq = pregunta.strip()
         use_llm = _oracle_use_llm()
+
+        # Saludos / mensajes ultra cortos: responder directo, sin IA ni plantillas raras.
+        if _is_oracle_greeting(pq):
+            body = _oracle_greeting_answer(nombre_visible)
+            emb = self._embed_respuesta(
+                nombre_visible=nombre_visible,
+                mencion=mencion,
+                pregunta=pregunta.strip(),
+                body=body,
+                response_kind="open",
+            )
+            return emb, body, "open"
         # Ruleta (negro/rojo/verde): siempre pick local; el LLM en modo sí/no no entiende el contexto.
         if _is_roulette_color_question(pq):
             rb = _oracle_roulette_pick(pq)
@@ -1893,13 +1923,81 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                 )
                 return True
 
-            # B) Reply a un embed del oráculo que ya no es el activo (o hay otro más nuevo)
+            # B) Reply a un embed del oráculo que ya no es el activo:
+            # permitimos continuar ESE embed (sin pisar el hilo activo del usuario).
             if oracle_embed and pending and ref_msg.id != pending.bot_message_id:
-                await message.reply(
-                    "Esa lectura **ya no** es el hilo activo: respondé al **último** mensaje del oráculo "
-                    "de esta charla o abrí una nueva con `?pregunta …`.",
-                    mention_author=False,
+                if len(user_text) < 1:
+                    await message.reply(
+                        "Escribí algo para seguir la charla (aunque sea corto).",
+                        mention_author=False,
+                    )
+                    return True
+                fu = self._followup_cooldown_retry_after(message.author.id)
+                if fu > 0:
+                    await message.reply(
+                        f"Despacito el hilo del oráculo: esperá **{fu:.1f}s**.",
+                        mention_author=False,
+                        delete_after=8,
+                    )
+                    return True
+                self._followup_mark(message.author.id)
+                if not self.db:
+                    await message.reply("Economía no disponible.", mention_author=False)
+                    return True
+                nombre = (
+                    message.author.display_name
+                    if isinstance(message.author, discord.Member)
+                    else str(message.author)
                 )
+                parsed = _oracle_context_from_reply_message(ref_msg)
+                if parsed:
+                    orig_q, last_a, rk_guess = parsed
+                    synthetic = OraclePending(
+                        bot_message_id=ref_msg.id,
+                        original_question=orig_q[:900],
+                        last_answer=last_a[:900],
+                        response_kind=rk_guess,
+                        deadline_monotonic=time.monotonic(),
+                    )
+                    await self._send_oracle_followup(
+                        message.channel,
+                        author=message.author,
+                        nombre_visible=nombre,
+                        user_line=user_text,
+                        pending=synthetic,
+                        reference=message,
+                        pending_key=key,
+                        persist_pending=False,
+                    )
+                else:
+                    # Si no se pudo parsear el embed, contestamos como fallback.
+                    llm = await oracle_local_reply(user_text, style="open") if _oracle_use_llm() else None
+                    if llm:
+                        esc = discord.utils.escape_markdown(user_text)[:500]
+                        esc_r = discord.utils.escape_markdown(llm)
+                        d_fb = (
+                            f"{message.author.mention} **({nombre})** sigue el hilo:\n"
+                            f"> {esc}\n\n**Oráculo:** {esc_r}"
+                        )[:4096]
+                        emb_fb = discord.Embed(
+                            title="🔮 Oráculo · seguimiento",
+                            description=d_fb,
+                            color=discord.Color.dark_magenta(),
+                        )
+                        await message.reply(embed=emb_fb, mention_author=False)
+                    else:
+                        kind, ans, _ = await _roll_oracle_for_question_async(user_text)
+                        d_fb2 = (
+                            f"{message.author.mention} **({nombre})** sigue el hilo:\n"
+                            f"> {discord.utils.escape_markdown(user_text)[:500]}\n\n"
+                            f"**Oráculo:** {ans}"
+                        )[:4096]
+                        emb_fb2 = discord.Embed(
+                            title="🔮 Oráculo · seguimiento",
+                            description=d_fb2,
+                            color=discord.Color.dark_magenta(),
+                        )
+                        await message.reply(embed=emb_fb2, mention_author=False)
                 return True
 
             # C) Embed del oráculo pero sin estado en memoria: igual contestamos leyendo el embed (sin guardar hilo).

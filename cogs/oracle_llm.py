@@ -16,6 +16,18 @@ log = logging.getLogger(__name__)
 _oracle_http_lock: Optional[asyncio.Lock] = None
 _oracle_http_session: Optional[aiohttp.ClientSession] = None
 
+# Solo hacemos búsqueda web cuando parece “pregunta de hechos” (si no, es latencia gratis).
+_WEB_WORTH_IT_RE = re.compile(
+    r"(?is)"
+    r"\b(qué\s+es|que\s+es|defin(?:i|í)|explic(?:a|á|ame|ame)|"
+    r"cu[aá]ndo|d[oó]nde|por\s+qu[eé]|"
+    r"fecha|estren|sale|cap[ií]tulo|episodio|temporada|"
+    r"qu[ií]en\s+es|qu[ií]en\s+fue|"
+    r"precio|valor|cu[aá]nto\s+cuesta|"
+    r"ranking|top|lista|"
+    r"wikipedia|fuente|link)\b"
+)
+
 
 def _oracle_http_lock_get() -> asyncio.Lock:
     global _oracle_http_lock
@@ -308,6 +320,13 @@ def _duckduckgo_text_sync(query: str, *, max_results: int) -> list[dict[str, str
 
 async def _duckduckgo_context_async(query: str) -> str:
     if not _env_truthy("ORACLE_INTERNET_SEARCH"):
+        return ""
+    q0 = " ".join((query or "").split()).strip()
+    # Evitar búsquedas para “hola”, “jaja”, etc.
+    if len(q0) < 14:
+        return ""
+    # Evitar latencia si no parece una consulta que se beneficie con web.
+    if not _WEB_WORTH_IT_RE.search(q0):
         return ""
     try:
         max_results = _env_int("ORACLE_INTERNET_SEARCH_MAX_RESULTS", 4, lo=2, hi=6)
