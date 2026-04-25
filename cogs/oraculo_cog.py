@@ -939,6 +939,10 @@ async def _roll_oracle_for_question_async(pregunta: str) -> Tuple[str, str, int]
     Si no, mantiene sí / no / % como antes.
     """
     pq = (pregunta or "").strip()
+    # Mensajes ultra cortos tipo saludo: no tiene sentido tirar sí/no/%.
+    low = pq.lower()
+    if low in ("hola", "holi", "buenas", "buenas!", "hello", "hey", "buen día", "buen dia", "buenas tardes", "buenas noches"):
+        return "open", await _oracle_open_answer_async(pq), random.randint(1, 100)
     if _is_roulette_color_question(pq):
         return "yesno", _oracle_roulette_pick(pq), random.randint(1, 100)
     if _is_poker_push_decision_question(pq):
