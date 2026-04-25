@@ -19,6 +19,15 @@ _oracle_http_session: Optional[aiohttp.ClientSession] = None
 # Conocimiento fijo del bot (comandos/reglas) para que la IA no invente.
 _BOT_KB_CACHE: Optional[str] = None
 
+_BOT_HELP_INTENT_RE = re.compile(
+    r"(?is)"
+    r"(^\s*[/?]\w+)|"  # empieza con /comando o ?comando
+    r"(\b(comando|comandos|slash|prefijo|bot|ayuda|gu[ií]a|reglas)\b)|"
+    r"(\b(c[oó]mo\s+uso|como\s+uso|c[oó]mo\s+se\s+usa|como\s+se\s+usa|"
+    r"cu[aá]l\s+es\s+el\s+comando|cual\s+es\s+el\s+comando|"
+    r"no\s+me\s+anda|no\s+funciona|permiso|admin|hokage)\b)"
+)
+
 # Solo hacemos búsqueda web cuando parece “pregunta de hechos” (si no, es latencia gratis).
 _WEB_WORTH_IT_RE = re.compile(
     r"(?is)"
@@ -298,6 +307,16 @@ def _bot_kb_block() -> str:
         return ""
     return "Contexto del bot (no lo inventes; si no está acá, decí que no estás seguro):\n" + kb
 
+def _should_include_bot_kb(user_question: str) -> bool:
+    """
+    El KB sirve para preguntas del bot (comandos/reglas). En preguntas normales (anime/vida),
+    meterlo confunde al modelo y termina sugiriendo comandos al azar.
+    """
+    q = " ".join((user_question or "").strip().split())
+    if len(q) < 2:
+        return False
+    return bool(_BOT_HELP_INTENT_RE.search(q))
+
 
 def _format_web_context(results: list[dict[str, str]]) -> str:
     lines: list[str] = []
@@ -452,7 +471,7 @@ async def oracle_local_reply(user_question: str, *, style: str = "open") -> Opti
     web_ctx = ""
     if st == "open":
         web_ctx = await _duckduckgo_context_async(q)
-    kb_ctx = _bot_kb_block()
+    kb_ctx = _bot_kb_block() if _should_include_bot_kb(q) else ""
     parts = []
     if kb_ctx:
         parts.append(kb_ctx)
@@ -500,7 +519,7 @@ async def oracle_local_reply_followup(
         return None
     model = (os.getenv("ORACLE_MODEL") or "tinyllama").strip()
     try:
-        timeout_sec = float((os.getenv("ORACLE_TIMEOUT") or "12").strip())
+        timeout_sec = float((os.getenv("ORACLE_TIMEOUT_FOLLOWUP") or os.getenv("ORACLE_TIMEOUT") or "12").strip())
     except ValueError:
         timeout_sec = 12.0
 

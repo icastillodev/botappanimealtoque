@@ -25,7 +25,12 @@ from discord.ext import commands
 log = logging.getLogger(__name__)
 
 _ORACLE_GREETING_RE = re.compile(
-    r"(?is)^\s*(hola+|holi|buenas|buen\s*d[ií]a|buenas\s+tardes|buenas\s+noches|hey+|hello+)\s*[!.…]*\s*$"
+    r"(?is)^\s*("
+    r"hola+|holi+s*|wena+s*|buenas|buen\s*d[ií]a|buenas\s+tardes|buenas\s+noches|"
+    r"hey+|hello+|hi+|saludos|que\s+onda|q\s+onda|qonda|"
+    r"como\s+estas|c[oó]mo\s+est[aá]s|todo\s+bien|tas\s+bien|todo\s+tranqui|"
+    r"que\s+haces|q\s+haces|qhaces"
+    r")\s*[!.…?¿]*\s*$"
 )
 
 def _is_oracle_greeting(pq: str) -> bool:
@@ -45,13 +50,49 @@ def _oracle_greeting_answer(nombre_visible: str) -> str:
     except Exception:
         pass
     tail = " " + random.choice(emojis) if emojis else ""
-    return random.choice(
-        [
-            f"Hola, **{discord.utils.escape_markdown(n)}**. Tirame una pregunta posta y te digo qué vibra el multiverso.{tail}",
-            f"Buenas, **{discord.utils.escape_markdown(n)}**. ¿Consulta de anime, vida o caos? Dispará.{tail}",
-            f"Hey **{discord.utils.escape_markdown(n)}**. Estoy despierto: preguntá lo que quieras.{tail}",
-        ]
-    )
+    lines = [
+        f"Buenas, **{discord.utils.escape_markdown(n)}**. *Yare yare…* ¿qué se te ofrece?{tail}",
+        f"Hola, **{discord.utils.escape_markdown(n)}**. *Dattebayo.* Tirame la pregunta.{tail}",
+        f"Ey, **{discord.utils.escape_markdown(n)}**. *Omae wa mou shindeiru*… nah, mentira. ¿Qué onda?{tail}",
+        f"Buenas, **{discord.utils.escape_markdown(n)}**. *Ara ara…* preguntá nomás.{tail}",
+        f"Hola, **{discord.utils.escape_markdown(n)}**. *Elijo creerte… hasta que me tires spoilers.*{tail}",
+        f"Hey, **{discord.utils.escape_markdown(n)}**. *Plus Ultra*… pero con calma. ¿Qué preguntás?{tail}",
+        f"Buenas, **{discord.utils.escape_markdown(n)}**. *Bankai*… digo, ¿qué necesitás?{tail}",
+        f"Hola, **{discord.utils.escape_markdown(n)}**. *Nani?!* (mentira). Dispará la consulta.{tail}",
+        f"Todo bien, **{discord.utils.escape_markdown(n)}**. ¿Venís por recomendación o por caos?{tail}",
+        f"Tranqui, **{discord.utils.escape_markdown(n)}**. Preguntá sin miedo (pero sin spoilers).{tail}",
+        f"Buenas. *Opening en loop*. ¿Qué querés saber, **{discord.utils.escape_markdown(n)}**?{tail}",
+        f"Hola hola. *Modo otaku activado*. ¿Consulta, **{discord.utils.escape_markdown(n)}**?{tail}",
+        f"Ey. Si vas a invocar al bot, al menos traé mate, **{discord.utils.escape_markdown(n)}**.{tail}",
+        f"Buenas, **{discord.utils.escape_markdown(n)}**. Decime qué género y te tiro algo decente.{tail}",
+        f"Hola, **{discord.utils.escape_markdown(n)}**. ¿Qué estás buscando: risas, lágrimas o violencia animada?{tail}",
+        f"Hey **{discord.utils.escape_markdown(n)}**. *Power-up* listo. Tirame la pregunta.{tail}",
+        f"Buenas. *No es filler si lo disfrutás.* ¿Qué onda, **{discord.utils.escape_markdown(n)}**?{tail}",
+        f"Hola. Si es para recomendar anime, decime mood y te lo saco.{tail}",
+        f"Buenas, **{discord.utils.escape_markdown(n)}**. *Plot twist*: el que pregunta manda.{tail}",
+        f"Ey. ¿Cómo estás? Yo en modo “no me spoilees” permanente.{tail}",
+        f"Todo bien por acá. ¿Querés un romcom, un isekai o algo para sufrir?{tail}",
+        f"Buenas. *Se escucha un ending triste a lo lejos.* ¿Qué preguntás?{tail}",
+        f"Hola, **{discord.utils.escape_markdown(n)}**. Si decís “otro” te tiro otra recomendación.{tail}",
+        f"Ey. Estoy 10/10 salvo cuando me piden ‘uno cortito’ y son 500 caps.{tail}",
+        f"Buenas. *Seinen mode* o *shonen mode*… vos elegís.{tail}",
+        f"Hola. ¿Querés algo chill o algo que te rompa el corazón?{tail}",
+        f"Hey. *NPC del servidor reportándose.* ¿Qué necesitás?{tail}",
+        f"Buenas. ¿Consulta de anime o consulta existencial con opening de fondo?{tail}",
+        f"Hola. Si es recomendación, tirame 2 keywords y te lo afino.{tail}",
+        f"Ey **{discord.utils.escape_markdown(n)}**. *No tengo chakra ilimitado*, pero intento.{tail}",
+        f"Buenas. *Gatillo de spoilers desactivado*. Dispará.{tail}",
+        f"Hola. ¿Qué onda? ¿Buscás algo tipo Frieren chill o algo tipo JJK a las piñas?{tail}",
+        f"Buenas. *Sensei del caos presente.* ¿Qué preguntás?{tail}",
+        f"Hola **{discord.utils.escape_markdown(n)}**. Si querés datos, decime el título (aunque sea abreviado).{tail}",
+        f"Hey. *La bola de cristal* dice: ‘preguntá bien y te respondo mejor’.{tail}",
+        f"Buenas. ¿Cómo estás? Yo bien, mientras no me tiren “recomendame algo” sin género.{tail}",
+        f"Hola. *No hago milagros*, pero hago recomendaciones decentes.{tail}",
+        f"Ey. ¿Qué hacés? Yo, esperando tu pregunta como cliffhanger.{tail}",
+        f"Buenas **{discord.utils.escape_markdown(n)}**. ¿Vamos con recomendación o con oráculo sí/no?{tail}",
+        f"Hola. *Modo server*: 1) saludás 2) pedís romcom 3) ganás.{tail}",
+    ]
+    return random.choice(lines)
 
 try:
     from cogs.oracle_llm import oracle_local_reply, oracle_local_reply_followup
@@ -538,6 +579,13 @@ def _is_anime_recommendation_request(q: str) -> bool:
         return True
     if re.search(r"\bsuger(?:ime|í|i)\w*\b", s) and _ORACLE_MEDIA_REC_GENRE.search(s):
         return True
+    # Heurística: mensajes cortos con género/tag (ej. "un anime isekai", "isekai", "romcom")
+    low = s.lower()
+    if _ORACLE_MEDIA_REC_GENRE.search(low):
+        if len(low) <= 28:
+            return True
+        if re.search(r"(?is)\b(un|una|alg[uú]n|algun|dame|tirame|pasame)\b", low) and re.search(r"\banime\b", low):
+            return True
     return False
 
 

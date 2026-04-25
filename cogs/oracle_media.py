@@ -56,6 +56,16 @@ _ORACLE_ANIME_POOLS: Dict[str, Tuple[str, ...]] = {
         "Tsuki ga Kirei",
         "Wotakoi: Love is Hard for Otaku",
     ),
+    "romcom": (
+        "Kaguya-sama: Love is War",
+        "Horimiya",
+        "Wotakoi: Love is Hard for Otaku",
+        "My Dress-Up Darling",
+        "Tomo-chan Is a Girl!",
+        "The Dangers in My Heart",
+        "Toradora!",
+        "Rascal Does Not Dream of Bunny Girl Senpai",
+    ),
     "shonen": (
         "Hunter x Hunter (2011)",
         "My Hero Academia",
@@ -120,7 +130,8 @@ _ORACLE_ANIME_POOLS: Dict[str, Tuple[str, ...]] = {
 
 _HINT_TO_POOL: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("isekai", ("isekai", "iseskai", "reencarn", "otro mundo", "truck")),
-    ("romance", ("romance", "romántic", "romantic", "amor", "pareja", "romcom", "rom-com", "comedia romant")),
+    ("romcom", ("romcom", "rom-com", "romcoms", "comedia romant", "comedia románt", "romance comedy", "romantic comedy")),
+    ("romance", ("romance", "romántic", "romantic", "amor", "pareja")),
     ("shonen", ("shonen", "shōnen", "shounen", "batallas", "poderes")),
     ("seinen", ("seinen", "adulto", "maduro")),
     ("mecha", ("mecha", "robot", "gundam", "eva")),
@@ -165,6 +176,7 @@ def _expand_known_title_abbrev(q: str) -> str:
 _ANILIST_BROWSE: Dict[str, Tuple[List[str], List[str]]] = {
     "isekai": ([], ["Isekai"]),
     "romance": (["Romance"], []),
+    "romcom": (["Romance", "Comedy"], []),
     "shonen": (["Shounen"], []),
     "seinen": (["Seinen"], []),
     "mecha": (["Mecha"], []),
@@ -199,6 +211,9 @@ def _detect_hint_pools(q: str) -> List[str]:
     for pool_key, needles in _HINT_TO_POOL:
         if any(n in low for n in needles):
             found.append(pool_key)
+    # Si detectamos romcom, preferirlo por sobre romance/comedia sueltas.
+    if "romcom" in found:
+        return ["romcom"]
     return found
 
 
@@ -209,6 +224,7 @@ _REC_BOLD_SKIP: Set[str] = {
         "AniList",
         "isekai",
         "romance",
+        "romcom",
         "shonen",
         "shōnen",
         "seinen",
@@ -309,7 +325,13 @@ async def _anilist_post(query: str, variables: Optional[Dict[str, Any]] = None) 
         "Accept": "application/json",
         "User-Agent": _anilist_ua(),
     }
-    timeout = aiohttp.ClientTimeout(total=14.0, connect=7.0, sock_read=10.0)
+    # Más rápido por defecto; configurable por env.
+    try:
+        total = float((os.getenv("ORACLE_ANILIST_TIMEOUT") or "5.5").strip())
+    except ValueError:
+        total = 5.5
+    total = max(3.0, min(12.0, total))
+    timeout = aiohttp.ClientTimeout(total=total, connect=min(4.0, total), sock_read=min(4.0, total))
     try:
         async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
             async with session.post(_ANILIST_GQL, json=payload) as resp:
@@ -629,6 +651,13 @@ def _is_anime_recommendation_text(q: str) -> bool:
         return True
     if re.search(r"\bsuger(?:ime|í|i)\w*\b", s) and _MEDIA_REC_GENRE_WORD.search(s):
         return True
+    # Heurística: mensajes cortos con género/tag, aunque no digan "recomendame"
+    low = s.lower()
+    if _MEDIA_REC_GENRE_WORD.search(low):
+        if len(low) <= 28:
+            return True
+        if re.search(r"(?is)\b(un|una|alg[uú]n|algun|dame|tirame|pasame)\b", low) and re.search(r"\banime\b", low):
+            return True
     return False
 
 
