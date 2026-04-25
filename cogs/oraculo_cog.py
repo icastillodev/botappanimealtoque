@@ -103,6 +103,16 @@ _ORACLE_PRAISE_RE = re.compile(
     r"epic+|basad[oa]|based)\s*[!.…]*\s*$"
 )
 
+_ORACLE_FAST_SMALLTALK_RE = re.compile(
+    r"(?is)^\s*("
+    r"no\s+me\s+gusta|no\s+me\s+va|no\s+me\s+copa|"
+    r"odio|meh|malo|mal[íi]simo|"
+    r"dale|ok|oka|oki|listo|"
+    r"decile|d[ií]selo|diselo|"
+    r"jaja+|xd+|lmao|lol"
+    r")\b.*$"
+)
+
 
 def _oracle_pick_fun_emoji() -> str:
     """Emote/emoji para quips (usa el mismo pool que saludos si está seteado)."""
@@ -132,6 +142,35 @@ def _oracle_praise_quip(nombre_visible: str) -> str:
             f"Gracias {e} (ahora mi ego pesa más que mi latency).",
         ]
     )
+
+def _oracle_smalltalk_quip(user_line: str) -> str:
+    low = " ".join((user_line or "").lower().split())
+    e = _oracle_pick_fun_emoji()
+    if any(x in low for x in ("no me gusta", "no me va", "no me copa", "odio", "meh")):
+        return random.choice(
+            [
+                f"{e} Ok, cero romcom. ¿Querés **isekai**, **seinen**, **thriller** o **comedia**?",
+                f"Ta, romcom fuera {e} Decime mood: **chill**, **acción**, **oscuro** o **llorar**.",
+                f"{e} Perfecto. Tirame 2 keywords (ej. ‘isekai oscuro’, ‘seinen thriller’) y te lo afino.",
+            ]
+        )
+    if any(x in low for x in ("decile", "díselo", "diselo")):
+        return random.choice(
+            [
+                f"{e} *Se lo dije con el poder de la telepatía (mentira).*",
+                f"{e} Listo, transmitido al multiverso. Si no entiende, es filler.",
+                f"{e} Hecho. Si se hace el boludo, ya no es mi arco.",
+            ]
+        )
+    if any(x in low for x in ("jaja", "xd", "lol", "lmao")):
+        return random.choice(
+            [
+                f"{e} jsjs",
+                f"{e} y sí",
+                f"{e} real",
+            ]
+        )
+    return f"{e} ok"
 
 try:
     from cogs.oracle_llm import oracle_local_reply, oracle_local_reply_followup
@@ -1780,6 +1819,10 @@ class OraculoCog(commands.Cog, name="Oraculo"):
         # Halagos / thanks: responder rápido, jocoso, con emote.
         if _ORACLE_PRAISE_RE.match(user_line or ""):
             return _oracle_praise_quip(nombre_visible="amigo"), "open"
+
+        # Smalltalk / reacciones cortas: evitar IA (rápido).
+        if _ORACLE_FAST_SMALLTALK_RE.match(user_line or "") and len((user_line or "").strip()) <= 80:
+            return _oracle_smalltalk_quip(user_line), "open"
         if _is_simple_arithmetic_question(user_line):
             expr = _extract_arithmetic_expression_for_eval(user_line)
             val = _safe_eval_arithmetic(expr) if expr else None

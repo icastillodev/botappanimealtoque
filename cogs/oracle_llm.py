@@ -260,6 +260,19 @@ def _ollama_options(*, num_predict: int) -> Dict[str, Any]:
         "num_predict": np,
         "num_ctx": num_ctx,
     }
+    # Performance knobs (Ollama options): threads y batch.
+    try:
+        num_thread = int((os.getenv("ORACLE_NUM_THREAD") or "").strip() or 0)
+    except ValueError:
+        num_thread = 0
+    if 1 <= num_thread <= 64:
+        opts["num_thread"] = num_thread
+    try:
+        num_batch = int((os.getenv("ORACLE_NUM_BATCH") or "").strip() or 0)
+    except ValueError:
+        num_batch = 0
+    if 1 <= num_batch <= 2048:
+        opts["num_batch"] = num_batch
     # Menos lag entre consultas: deja el modelo cargado en Ollama (desactivá con ORACLE_KEEP_ALIVE=0).
     try:
         top_p = float((os.getenv("ORACLE_TOP_P") or "0.9").strip())
@@ -517,7 +530,7 @@ async def oracle_local_reply_followup(
     url = _normalize_generate_url(os.getenv("ORACLE_LLM_URL") or "")
     if not url:
         return None
-    model = (os.getenv("ORACLE_MODEL") or "tinyllama").strip()
+    model = (os.getenv("ORACLE_MODEL_FOLLOWUP") or os.getenv("ORACLE_MODEL") or "tinyllama").strip()
     try:
         timeout_sec = float((os.getenv("ORACLE_TIMEOUT_FOLLOWUP") or os.getenv("ORACLE_TIMEOUT") or "12").strip())
     except ValueError:
