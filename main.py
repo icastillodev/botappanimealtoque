@@ -8,7 +8,7 @@ import logging.handlers
 import discord
 from discord import app_commands
 from discord.ext import commands
-from typing import Any, Optional
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -115,31 +115,6 @@ class MiBot(commands.Bot):
         
         self.hokage_role_id = HOKAGE_ID
         self.task_config, self.shop_config = load_task_and_shop_config(log)
-        # Slash públicos permitidos para usuarios comunes (por ahora: SOLO cartas).
-        self.public_slash_allowlist = frozenset(
-            {
-                "usar",
-                "vercarta",
-                "aat-miscartas",
-                "aat-abrirblister",
-                "aat-catalogo",
-                "aat-puntos",
-                "aat-inventario",
-            }
-        )
-
-    def _is_staff_member(self, member: Optional[discord.abc.User], *, guild: Optional[discord.Guild]) -> bool:
-        if not guild or not isinstance(member, discord.Member):
-            return False
-        if member.guild_permissions.administrator:
-            return True
-        hokage_id = getattr(self, "hokage_role_id", None)
-        if not hokage_id:
-            return False
-        role = guild.get_role(int(hokage_id))
-        if role is None:
-            return False
-        return role in member.roles
 
     async def on_command_completion(self, ctx: commands.Context) -> None:
         cmd = ctx.command.name if ctx.command else "?"
@@ -250,23 +225,6 @@ class MiBot(commands.Bot):
         )
 
     async def setup_hook(self):
-        # Gate global para slash: usuarios comunes NO pueden ejecutar nada salvo cartas.
-        async def _slash_interaction_check(interaction: discord.Interaction) -> bool:
-            guild = interaction.guild
-            user = interaction.user
-            # Solo en servidor; en DM nada de slash público.
-            if not guild or not isinstance(user, discord.Member):
-                return False
-            if self._is_staff_member(user, guild=guild):
-                return True
-            cmd = interaction.command
-            name = getattr(cmd, "name", None) if cmd else None
-            if not name:
-                return False
-            return str(name) in self.public_slash_allowlist
-
-        self.tree.interaction_check(_slash_interaction_check)
-
         self.log.info("Cargando vistas persistentes de votaciones...")
         active_polls = self.db_manager.get_active_polls()
         

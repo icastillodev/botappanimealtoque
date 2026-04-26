@@ -69,10 +69,22 @@ class EconomiaHelpView(discord.ui.View):
             inline=False,
         )
         embed.add_field(name="`/aat-abrirblister`", value="¡Abre los blisters que ganaste! Cada uno da 3 cartas aleatorias.", inline=False)
-        embed.add_field(name="`/aat-miscartas`", value="Muestra tu colección de cartas (verás el ID de cada carta).", inline=False)
+        embed.add_field(
+            name="`/aat-miscartas`",
+            value="Muestra tu colección de cartas (verás el ID de cada carta). En texto: `?miscartas` / `?vercartas` (público en el canal).",
+            inline=False,
+        )
         # --- MODIFICADO: Nombre actualizado ---
-        embed.add_field(name="`/vercarta`", value="Inspecciona una carta de tu inventario (usa el ID o el nombre).", inline=False)
-        embed.add_field(name="`/aat-catalogo`", value="Muestra todas las cartas que existen en el juego.", inline=False)
+        embed.add_field(
+            name="`/vercarta`",
+            value="Inspecciona una carta de tu inventario (usa el ID o el nombre). En texto: `?vercarta` (alias `?carta`).",
+            inline=False,
+        )
+        embed.add_field(
+            name="`/aat-catalogo`",
+            value="Muestra todas las cartas del juego con **numeración**, **rareza** y **tipo** (paginado).",
+            inline=False,
+        )
         return embed
         
     def _create_page_3(self) -> discord.Embed:

@@ -94,36 +94,41 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         self.card_db: CardDBManager = bot.card_db
         self.task_config = bot.task_config
 
-    def _is_staff(self, member: discord.abc.User) -> bool:
-        """Admin o rol Hokage (si existe)."""
-        if not isinstance(member, discord.Member) or not member.guild:
-            return False
-        if member.guild_permissions.administrator:
-            return True
-        hokage_id = getattr(self.bot, "hokage_role_id", None)
-        if not hokage_id:
-            return False
-        role = member.guild.get_role(int(hokage_id))
-        return bool(role and role in member.roles)
+    @staticmethod
+    def _clip(s: str, limit: int) -> str:
+        s = (s or "").strip()
+        if len(s) <= limit:
+            return s
+        return s[: max(0, limit - 1)].rstrip() + "…"
 
-    async def cog_check(self, ctx: commands.Context) -> bool:
-        """
-        Restricción global del set de comandos `?`:
-        - Staff: todo
-        - Usuarios: solo roll/retos y oráculo (por ahora).
-        """
-        if not ctx.command:
-            return True
-        if ctx.guild and isinstance(ctx.author, discord.Member) and self._is_staff(ctx.author):
-            return True
-        allowed = {
-            "roll",
-            "rollp",
-            "rollc",
-            "rollpaceptar",
-            "pregunta",
-        }
-        return ctx.command.name in allowed
+    def _embed_owned_carta_detail(
+        self,
+        *,
+        carta: dict,
+        cantidad: int,
+        viewer: discord.abc.User,
+        footer: Optional[str] = None,
+    ) -> discord.Embed:
+        nombre = str(carta.get("nombre") or "?")
+        cid = int(carta.get("carta_id") or 0)
+        embed = discord.Embed(
+            title=f"Carta: {nombre} (Tenés x{cantidad})",
+            description=self._clip(str(carta.get("descripcion") or ""), 3500) or "—",
+            color=discord.Color.dark_purple(),
+        )
+        if carta.get("url_imagen"):
+            embed.set_image(url=str(carta["url_imagen"]))
+        embed.add_field(name="ID (stock / inventario)", value=f"`{cid}`", inline=False)
+        embed.add_field(name="Efecto", value=self._clip(str(carta.get("efecto") or "—"), 1024), inline=False)
+        embed.add_field(name="Rareza", value=str(carta.get("rareza") or "—"), inline=True)
+        embed.add_field(name="Tipo", value=str(carta.get("tipo_carta") or "—"), inline=True)
+        embed.add_field(name="Numeración", value=str(carta.get("numeracion") or "—"), inline=True)
+        embed.add_field(name="Poder", value=str(carta.get("poder", 50)), inline=True)
+        if footer:
+            embed.set_footer(text=footer)
+        else:
+            embed.set_footer(text=f"Pedido por {viewer}")
+        return embed
 
     def _pages_inicial(self, ctx: commands.Context) -> List[List[discord.Embed]]:
         return build_pages_inicial(self.db, self.task_config or {}, ctx.author.id)
@@ -140,11 +145,12 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
             title="Comandos del bot (Anime al Toque)",
             description=(
                 "**Guía larga** (una **sección por página**, Anterior/Siguiente): **`?ayuda`** · **`?guia`** · **`/aat-guia`**.\n"
-                "**En #general** solo: `?roll` · `?rollp` / `?rollc` / `?rollpaceptar` · `?abrir` · `?usar` · `?cartas` · oráculo · trivia · `?impostor` · `?animetop` · `?comandos`.\n"
-                "**Economía y tareas** (`?reclamar` = guía + botones; `?reclamar diaria`…; `?progreso`…):** en el **canal del bot** o con **slash** (no en #general).\n"
+                "**En #general** (anti-spam): muchos `?` van; si Discord borra el mensaje, probá en el **canal del bot**. "
+                "Tip rápido: `?roll*` · cartas (`?cartas` · `?miscartas`/`?vercartas` · `?catalogo` · `?vercarta`/`?carta` · `?abrir` · `?usar`) · oráculo · trivia · `?impostor` · `?animetop` · economía básica (`?puntos` · `?mi` · `?reclamar` · `?progreso`…) · `?comandos`.\n"
+                "**Guías largas / embeds grandes:** preferible en el **canal del bot** (más cómodo); en #general puede haber límites.\n"
                 "**Con `/`** — versión completa (Discord te autocompleta).\n\n"
-                "**Economía (canal del bot o slash):** `?puntos` · `?inventario` · `?mi` · `?top` · `?tophist` · `?ranking` (tablas paginadas + botones) · `?reclamar` · `?progreso` · `?progresoayuda` · "
-                "`?diario` / `?diaria` (*daily*) · `?semanal` (*weekly*) · `?inicial` · `?cartas` · `?abrir` · `?miscartas` · `?catalogo` · `?usar`\n"
+                "**Economía (`?` y `/`):** `?puntos` · `?inventario` · `?mi` · `?top` · `?tophist` · `?ranking` (tablas paginadas + botones) · `?reclamar` · `?progreso` · `?progresoayuda` · "
+                "`?diario` / `?diaria` (*daily*) · `?semanal` (*weekly*) · `?inicial` · `?cartas` · `?abrir` · `?miscartas` / `?vercartas` · `?catalogo` · `?vercarta` / `?carta` · `?usar`\n"
                 "**Impostor:** `?impostor` — avisá que buscás gente / ver lobbies abiertos.\n"
                 "**Oráculo:** arrobá al bot + tu pregunta en el mismo mensaje · `?pregunta` + texto · `/aat-consulta` — sí / no / a veces %. Cuenta para el **diario** (*daily*) y puede dar **Toque points** extra.\n"
                 "**Top anime:** `?animetop` · `?animetop @usuario` — editar: `?topset <1-33> <título>` · `?topquitar <n>` — slash: `/aat-anime-top_*`\n"
@@ -440,7 +446,7 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
                     hint + "\n\nPara **diario** / **semanal**: `?diario` · `?semanal` · `?progreso` o `/aat-progreso-*`."
                 )
 
-    @commands.command(aliases=["carta"])
+    @commands.command()
     async def cartas(self, ctx: commands.Context, *, args: str = ""):
         """Mini-guía paginada: blisters, abrir, colección y uso (`?cartas trampa` = foco trampas)."""
         parts = (args or "").strip().split()
@@ -450,8 +456,84 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         view = GuiaEmbedsPaginator(ctx.author.id, pages, label=label)
         await ctx.send(content=view.header(), embeds=pages[0], view=view)
 
-    @commands.command()
-    async def miscartas(self, ctx: commands.Context):
+    # Nota: `?vercartas` es un comando aparte (misma salida que `?miscartas`); no duplicar como alias de `vercarta`.
+    @commands.command(name="vercarta", aliases=["carta"])
+    async def vercarta_prefijo(self, ctx: commands.Context, *, query: Optional[str] = None):
+        """Detalle de una carta de TU inventario: `?vercarta 12` o `?vercarta nombre` (también `?carta`)."""
+        q = (query or "").strip()
+        if not q:
+            await ctx.send(
+                "Usá: **`?vercarta <id>`** o **`?vercarta <nombre>`** (también **`?carta …`**). "
+                "Los IDs salen en **`?miscartas`** / **`?vercartas`**."
+            )
+            return
+
+        user_id = ctx.author.id
+
+        if q.isdigit():
+            cid = int(q)
+            inv = self.db.get_card_from_inventory(user_id, cid)
+            if not inv:
+                await ctx.send("No tenés esa carta en tu inventario (revisá el ID con `?miscartas`).")
+                return
+            stock = self.card_db.get_carta_stock_by_id(cid)
+            if not stock:
+                await ctx.send("Error interno: esa carta está en tu inventario pero no existe en el stock. Avisá al staff.")
+                return
+            embed = self._embed_owned_carta_detail(carta=stock, cantidad=int(inv.get("cantidad") or 0), viewer=ctx.author)
+            await ctx.send(embed=embed)
+            return
+
+        matches = self.card_db.get_cartas_stock_by_name(q)
+        if not matches:
+            await ctx.send("No encontré ninguna carta en el catálogo con ese texto. Probá otra búsqueda o usá el **ID**.")
+            return
+
+        owned: List[tuple[dict, dict]] = []
+        for m in matches:
+            cid = int(m.get("carta_id") or 0)
+            inv = self.db.get_card_from_inventory(user_id, cid)
+            if not inv:
+                continue
+            full = self.card_db.get_carta_stock_by_id(cid)
+            if full:
+                owned.append((full, inv))
+
+        if len(owned) == 1:
+            full, inv = owned[0]
+            embed = self._embed_owned_carta_detail(
+                carta=full,
+                cantidad=int(inv.get("cantidad") or 0),
+                viewer=ctx.author,
+            )
+            await ctx.send(embed=embed)
+            return
+
+        if len(owned) > 1:
+            lines = []
+            for full, inv in owned[:10]:
+                lines.append(f"• **`{full.get('nombre')}`** — ID `{int(full.get('carta_id') or 0)}` — x{int(inv.get('cantidad') or 0)}")
+            extra = f"\n\n…y {len(owned) - 10} más." if len(owned) > 10 else ""
+            await ctx.send(
+                "Hay **varias** coincidencias en tu inventario. Repetí el comando con el **ID** exacto:\n"
+                + "\n".join(lines)
+                + extra
+            )
+            return
+
+        # Hay matches en catálogo, pero ninguna la tenés.
+        lines = []
+        for m in matches[:10]:
+            lines.append(f"• **`{m.get('nombre')}`** — ID `{int(m.get('carta_id') or 0)}`")
+        extra = f"\n\n…y {len(matches) - 10} más." if len(matches) > 10 else ""
+        await ctx.send(
+            "Encontré cartas en el catálogo, pero **no tenés ninguna de esas** en tu inventario.\n"
+            + "\n".join(lines)
+            + extra
+            + "\n\nTip: mirá tu lista con **`?miscartas`** y usá **`?vercarta <id>`**."
+        )
+
+    async def _send_miscartas_list(self, ctx: commands.Context) -> None:
         cartas = self.db.get_cards_in_inventory(ctx.author.id)
         if not cartas:
             await ctx.send(
@@ -464,7 +546,22 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
             c_data = self.card_db.get_carta_stock_by_id(c["carta_id"])
             if c_data:
                 lines.append(f"#{c['carta_id']} **{c_data['nombre']}** (x{c['cantidad']})")
-        await ctx.send(embed=discord.Embed(title="Tus cartas", description="\n".join(lines[:25]) or "—", color=discord.Color.blue()))
+        embed = discord.Embed(
+            title="Tus cartas",
+            description="\n".join(lines[:25]) or "—",
+            color=discord.Color.blue(),
+        )
+        embed.set_footer(text="Detalle: ?vercarta <id> · ?vercarta <nombre>  (alias: ?carta)")
+        await ctx.send(embed=embed)
+
+    @commands.command()
+    async def miscartas(self, ctx: commands.Context):
+        await self._send_miscartas_list(ctx)
+
+    @commands.command()
+    async def vercartas(self, ctx: commands.Context):
+        """Alias pedido por la comunidad: mismo texto que `?miscartas`."""
+        await self._send_miscartas_list(ctx)
 
     @commands.command()
     async def catalogo(self, ctx: commands.Context):
@@ -512,7 +609,7 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
     @commands.cooldown(1, 10, commands.BucketType.user)
     async def usar(self, ctx: commands.Context, carta_id: str, target: Optional[discord.Member] = None):
         if not carta_id.isdigit():
-            await ctx.send("Usá: `?usar <id_carta> [@alguien]` (el ID sale en `?miscartas`).")
+            await ctx.send("Usá: `?usar <id_carta> [@alguien]` (el ID sale en `?miscartas` / `?vercartas`).")
             return
         cid = int(carta_id)
         user_id = ctx.author.id

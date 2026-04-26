@@ -248,10 +248,11 @@ def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
     r0a = discord.Embed(
         title="📋 Comandos con prefijo ? (1/2)",
         description=(
-            "**En #general** solo: `?roll` · `?rollp` / `?rollc` / `?rollpaceptar` · `?abrir` · `?usar` / `?usarcarta` · oráculo (`?pregunta`… o @bot) · "
+            "**En #general** solo: `?roll` · `?rollp` / `?rollc` / `?rollpaceptar` · `?abrir` · `?usar` / `?usarcarta` · `?cartas` · `?miscartas` / `?vercartas` · `?catalogo` · `?vercarta` / `?carta` · "
+            "oráculo (`?pregunta`… o @bot) · "
             "trivia (`?r` / `?respuestapregunta`; opcional línea/`responder …` sin `?` si el bot lo tiene activado) · `?impostor` · `?animetop` · `?comandos` (**lista corta**; distinto de la guía larga).\n"
-            "**No en #general:** reclamar, progreso, diaria/semanal/inicial, puntos, inventario, tops, tienda, guía larga… "
-            f"usalos en el canal del bot o con slash.\n\n"
+            "**Tip #general:** si un `?` “largo” molesta/spamea, usalo en el canal del bot; igual, muchos comandos están permitidos ahí "
+            "(ver `?comandos`).\n\n"
             f"{canal_prefijo}"
             "**Economía y cartas (canal del bot o donde el staff indique)**\n"
             "• `?puntos` — tus Toque points · `?inventario` — saldo, pins y blisters\n"
@@ -265,7 +266,9 @@ def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
             "• `?semanal` · `?weekly` · `?inicial` · `?starter` · `?iniciacion` — ver qué falta\n"
             "• `?abrir` — abrir blister (en #general también va)\n"
             "• `?miscartas` — lista de cartas (**visible para todos** en ese canal)\n"
-            "• `?catalogo` — todas las cartas del juego\n"
+            "• `?vercartas` — alias de `?miscartas` (mismo listado)\n"
+            "• `?catalogo` — todas las cartas del juego (numeración, rareza y tipo)\n"
+            "• `?vercarta` / `?carta` — detalle de una carta **tuya** (`?vercarta <id>` o `?vercarta <nombre>`)\n"
             "• `?usar` · `?usarcarta` — usar carta trampa (`?usar <id> [@alguien]`)\n\n"
             "**Resúmenes y guía larga**\n"
             "• `?comandos` · `?aat` · `?cmds` · `?cmd` · `?ayudabot` — **resumen corto** (no pagina por sección)\n"
@@ -300,7 +303,7 @@ def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
             "**Toque points e inventario:** `/aat-puntos` · `/aat-inventario`\n"
             "**Reclamar y progreso:** `/aat-reclamar` · `/aat-progreso-iniciacion` · `/aat-progreso-diaria` · `/aat-progreso-semanal`\n"
             "**Ranking:** `/aat-ranking-top` · `/aat-mi` · `/aat-top-hist`\n"
-            "**Cartas:** `/aat-abrirblister` · `/aat-miscartas` · `/aat-catalogo` · `/vercarta` · `/usar`\n"
+            "**Cartas:** `/aat-abrirblister` · `/aat-miscartas` · `/aat-catalogo` · `/vercarta` · `/usar` — también `?abrir` · `?miscartas` / `?vercartas` · `?catalogo` · `?vercarta` / `?carta` · `?usar`\n"
             "**Tienda:** `/aat-tienda-ver` · `/aat-tienda-canjear` · `/aat-tienda-fijar` · `/aat-tienda-pin-general` · "
             "`/aat-tienda-encuesta` · `/aat-tienda-rol-temporal`\n"
             "**Público en el canal:** `/aat-canjes` · `/aat-ganar-puntos` (cómo sumar Toque points)\n"
@@ -459,14 +462,15 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
             "**Para que solo vos veas tu colección:** usá **`/aat-miscartas`** "
             "(en el canal de comandos del bot). Discord muestra la respuesta como **solo para vos** "
             "(mensaje privado / *ephemeral*; el resto del servidor no ve qué cartas tenés).\n"
-            "**Ojo:** **`?miscartas`** deja el embed **en el canal** → **lo ven todos**; usalo solo si te da igual mostrar la lista."
+            "**Ojo:** **`?miscartas`** / **`?vercartas`** dejan el embed **en el canal** → **lo ven todos**; "
+            "usalo solo si te da igual mostrar la lista."
         ),
         inline=False,
     )
     e3.add_field(
         name="Abrir sobres · catálogo · detalle · usar",
         value=(
-            "**Todos:** `?abrir` · `?catalogo` · `?usar <id> [@alguien]`\n"
+            "**Todos:** `?abrir` · `?catalogo` · `?vercarta` / `?carta` · `?usar <id> [@alguien]`\n"
             "**Solo vos:** `/aat-abrirblister` · `/aat-catalogo` · `/vercarta` · `/usar` "
             "(el aviso *¡Carta usada!* es privado; el **embed del efecto** se publica en el canal para que se vea la jugada)."
         ),

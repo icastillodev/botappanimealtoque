@@ -1,34 +1,24 @@
 Anime al Toque — reglas/comandos (resumen corto para el Oráculo)
 
-Regla de oro (seguridad):
-- Los comandos slash (/) están restringidos al staff (admin o rol Hokage), EXCEPTO cartas.
-- Para usuarios normales, por ahora lo “usable” es: oráculo y roll. El resto se considera staff o deshabilitado.
+Seguridad / permisos (idea general):
+- Los comandos **admin** (crear/editar cosas del servidor, DB, tienda “staff”, etc.) suelen estar restringidos a **administrador** o rol **Hokage** (según el bot).
+- Fuera de eso, usuarios comunes pueden usar **prefijo `?`** y **slash `/`** normalmente.
+- En **#general** el bot puede borrar algunos `?` “pesados” para no spamear; si alguien se queja, sugerí **`?comandos`** o el **canal del bot**.
 
 Oráculo:
 - Preguntar: `?pregunta <texto>` o mencionar al bot con la pregunta en el mismo mensaje.
-- El oráculo responde sí/no/% o en “modo charla” según la pregunta.
+- Slash: `/aat-consulta` (si está habilitado en el servidor).
 
-Prefijo `?` (usuarios normales, por ahora):
-- `?pregunta <texto>`: oráculo.
-- `?roll [min] [max]`: dado casual.
-- `?rollp @usuario`: reto sin apuesta.
-- `?rollc @usuario <puntos>`: reto con apuesta.
-- `?rollpaceptar`: aceptar reto.
+Cartas (muy usado):
+- Lista pública: `?miscartas` o `?vercartas` (muestra IDs en el canal).
+- Catálogo: `?catalogo` (paginado: numeración, rareza y tipo por carta).
+- Detalle de una carta tuya: `?vercarta <id>` o `?vercarta <nombre>` (alias: `?carta …`).
+- Equivalentes slash (más “privados” en varios casos): `/aat-miscartas`, `/aat-catalogo`, `/vercarta`, `/aat-abrirblister`, `/usar`.
 
-Slash públicos permitidos (usuarios normales; SOLO cartas):
-- `/usar` (carta trampa consumible)
-- `/vercarta`
-- `/aat-miscartas`
-- `/aat-abrirblister`
-- `/aat-catalogo`
-- `/aat-puntos`
-- `/aat-inventario`
-
-Economía / tienda / progreso / ayuda grande:
-- Si el usuario pide “guía”, “ayuda”, “progreso”, “reclamar”, “tienda”, etc., está restringido o se maneja por staff.
-- En #general hay límites de comandos para no llenar el chat.
+Economía / progreso / guía grande:
+- Muchas cosas existen en **`?`** y en **`/`** (Discord autocompleta).
+- Guía larga: `?ayuda` / `?guia` / `/aat-guia`.
 
 Respuesta esperada del Oráculo cuando le preguntan por comandos:
-- Indicar el comando exacto (con `?` o `/`) y una línea de explicación.
-- Si algo está restringido: decir “eso es staff por ahora” y sugerir alternativa (roll/oráculo/cartas).
-
+- Dar el comando exacto (`?…` o `/…`) + una línea de qué hace.
+- Si algo falla por canal (#general): decir “probá en el canal del bot” o “mirá `?comandos`”.

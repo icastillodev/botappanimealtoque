@@ -38,18 +38,35 @@ class StockCatalogView(discord.ui.View):
         start_index = self.current_page * self.cards_per_page
         end_index = start_index + self.cards_per_page
         cards_on_page = self.all_cards[start_index:end_index]
-        
+
+        header = (
+            "_Cada línea incluye **rareza** y **tipo**._ "
+            "Detalle de una carta tuya: `?vercarta <id>` · `?vercarta <nombre>`.\n\n"
+        )
+        lines: List[str] = []
+        for card in cards_on_page:
+            num = str(card.get("numeracion") or "—").strip()
+            nombre = str(card.get("nombre") or "?").strip()
+            rareza = str(card.get("rareza") or "—").strip()
+            tipo = str(card.get("tipo_carta") or "—").strip()
+            cid = card.get("carta_id")
+            id_part = f" · id `{cid}`" if cid is not None else ""
+            lines.append(
+                f"• **`{num}`** — **{nombre}**\n"
+                f"　Rareza: **{rareza}** · Tipo: **{tipo}**{id_part}"
+            )
+
+        body = "\n".join(lines) if lines else "_(Sin cartas en esta página)_"
+        desc = header + body
+        if len(desc) > 4096:
+            desc = desc[:4093] + "…"
+
         embed = discord.Embed(
             title=self.title,
-            color=discord.Color.blue()
+            description=desc,
+            color=discord.Color.blue(),
         )
-        
-        desc = ""
-        for card in cards_on_page:
-            desc += f"• (`{card['numeracion']}`) **{card['nombre']}** ({card['rareza']} | {card['tipo_carta']})\n"
-            
-        embed.description = desc
-        embed.set_footer(text=f"Página {self.current_page + 1} / {self.max_pages} ({len(self.all_cards)} cartas en total)")
+        embed.set_footer(text=f"Página {self.current_page + 1} / {self.max_pages} · {len(self.all_cards)} cartas en total")
         return embed
 
     def _update_buttons(self):
@@ -204,7 +221,7 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
         for nombre, num in conteo_cartas.items():
             desc += f"• {nombre} (x{num})\n"
         embed.description = desc
-        embed.set_footer(text="Puedes ver tu colección completa con /aat-miscartas")
+        embed.set_footer(text="Colección: /aat-miscartas (privado) · ?miscartas / ?vercartas (público) · detalle: ?vercarta")
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="aat-miscartas", description="Muestra tu inventario de cartas.")
@@ -225,7 +242,7 @@ class CartasCog(commands.Cog, name="Economia Cartas"):
              embed.description = "Tus cartas parecen no existir en el stock. Contacta a un admin."
         else:
             embed.description = desc
-        embed.set_footer(text="Usa /vercarta [carta] para ver el detalle de una carta.")
+        embed.set_footer(text="Detalle: /vercarta · ?vercarta (alias ?carta)")
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     # --- MODIFICADO: Nombre cambiado a 'usar' (sin aat_) ---

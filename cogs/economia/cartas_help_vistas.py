@@ -28,9 +28,12 @@ def build_cartas_help_pages(*, trampa_focus: bool = False) -> List[List[discord.
         description=(
             "**Ver qué tenés**\n"
             "• **`?miscartas`** — lista en el canal (**visible para todos**).\n"
+            "• **`?vercartas`** — alias: mismo listado que **`?miscartas`**.\n"
             "• **`/aat-miscartas`** — lo mismo pero **solo vos** (*ephemeral*).\n\n"
             "**Catálogo**\n"
-            "• **`?catalogo`** / **`/aat-catalogo`** — todas las cartas del servidor con numeración.\n\n"
+            "• **`?catalogo`** / **`/aat-catalogo`** — todas las cartas del servidor (**numeración**, **rareza** y **tipo** por carta).\n\n"
+            "**Detalle (una carta tuya)**\n"
+            "• **`?vercarta <id>`** / **`?vercarta <nombre>`** — también **`?carta …`**.\n\n"
             "**Dónde se juega más**\n"
             "Canal del bot o donde indique el staff — en **#general** solo van algunos comandos (`?comandos`)."
         ),
@@ -41,7 +44,7 @@ def build_cartas_help_pages(*, trampa_focus: bool = False) -> List[List[discord.
         title="?cartas (3/3) — Usar cartas",
         description=(
             "**Gastar una carta del inventario**\n"
-            "`?usar <id> [@mención]` — el **id** sale en `?miscartas` / `/aat-miscartas`.\n\n"
+            "`?usar <id> [@mención]` — el **id** sale en `?miscartas` / `?vercartas` / `/aat-miscartas`.\n\n"
             "**Cartas tipo Trampa** (resumen)\n"
             "• **Con @** — usás la carta **contra** alguien; suele contar para la **diaria** (bloque trampa).\n"
             "• **Sin mención** — uso **sin objetivo**; también puede contar para la diaria según reglas del bot.\n\n"
@@ -71,7 +74,7 @@ def build_cartas_help_pages(*, trampa_focus: bool = False) -> List[List[discord.
     e_trap_extra = discord.Embed(
         title="?cartas trampa (2/2) — Recordatorios",
         description=(
-            "**IDs** — Los números `#` los ves en `?miscartas` o `/aat-miscartas`.\n\n"
+            "**IDs** — Los números `#` los ves en `?miscartas` / `?vercartas` o `/aat-miscartas`.\n\n"
             "**Privacidad** — Si no querés mostrar tu cole en público, usá **`/aat-miscartas`**.\n\n"
             "**Abrir más cartas** — `?abrir` gasta **todos** los blisters que tengás de una vez; "
             "`/aat-abrirblister` permite elegir.\n\n"
