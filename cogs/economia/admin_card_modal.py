@@ -13,6 +13,13 @@ class CartaEditModal(discord.ui.Modal):
         self.carta_data = carta_data
 
         self.nombre = discord.ui.TextInput(label="Nombre", default=carta_data["nombre"], max_length=100)
+        self.descripcion = discord.ui.TextInput(
+            label="Descripción",
+            style=discord.TextStyle.paragraph,
+            default=carta_data.get("descripcion") or "",
+            required=False,
+            max_length=4000,
+        )
         self.efecto = discord.ui.TextInput(
             label="Efecto (código)",
             style=discord.TextStyle.paragraph,
@@ -31,6 +38,7 @@ class CartaEditModal(discord.ui.Modal):
         )
 
         self.add_item(self.nombre)
+        self.add_item(self.descripcion)
         self.add_item(self.efecto)
         self.add_item(self.url_imagen)
         self.add_item(self.numeracion)
@@ -49,7 +57,7 @@ class CartaEditModal(discord.ui.Modal):
             ok, err = self.db.update_carta_stock(
                 carta_id=self.carta_data["carta_id"],
                 nombre=self.nombre.value,
-                descripcion=self.carta_data.get("descripcion") or "Sin descripción.",
+                descripcion=(self.descripcion.value or "").strip() or "Sin descripción.",
                 efecto=self.efecto.value or "Sin efecto.",
                 url_imagen=self.url_imagen.value,
                 numeracion=self.numeracion.value,
