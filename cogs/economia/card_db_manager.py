@@ -58,6 +58,106 @@ class CardDBManager:
                 cursor.execute("ALTER TABLE cartas_stock ADD COLUMN poder INTEGER NOT NULL DEFAULT 50")
                 conn.commit()
                 print("DATABASE MIGRATED: Added 'poder' to cartas_stock.")
+            self._migrate_numeracion_unique_index(conn)
+
+    def _migrate_numeracion_unique_index(self, conn) -> None:
+        """
+        Una sola carta por numeración (comparación sin distinguir mayúsculas / espacios laterales).
+        Si ya había duplicados, se renombran las “extra” a `CODIGO ·#<carta_id>` para poder crear el índice.
+        """
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_cartas_stock_numeracion_norm_unique'"
+        )
+        if cursor.fetchone():
+            return
+
+        cursor.execute(
+            """
+            SELECT lower(trim(numeracion)) AS nk, group_concat(carta_id ORDER BY carta_id) AS ids
+            FROM cartas_stock
+            WHERE numeracion IS NOT NULL AND length(trim(numeracion)) > 0
+            GROUP BY lower(trim(numeracion))
+            HAVING COUNT(*) > 1
+            """
+        )
+        for nk, id_blob in cursor.fetchall():
+            ids = [int(x) for x in str(id_blob).split(",") if str(x).strip().isdigit()]
+            if len(ids) < 2:
+                continue
+            keeper = ids[0]
+            for cid in ids[1:]:
+                cursor.execute("SELECT numeracion FROM cartas_stock WHERE carta_id = ?", (cid,))
+                row = cursor.fetchone()
+                base = (row[0] if row else nk or "").strip()
+                new_val = f"{base} ·#{cid}"
+                cursor.execute(
+                    "UPDATE cartas_stock SET numeracion = ? WHERE carta_id = ?",
+                    (new_val, cid),
+                )
+                print(f"DATABASE MIGRATED: numeración duplicada resuelta carta_id={cid} -> {new_val!r}")
+
+        # Guardar deduplicación aunque falle el CREATE INDEX (DDL puede ir en otra transacción).
+        conn.commit()
+
+        try:
+            cursor.execute(
+                """
+                CREATE UNIQUE INDEX idx_cartas_stock_numeracion_norm_unique
+                ON cartas_stock (lower(trim(numeracion)))
+                WHERE numeracion IS NOT NULL AND length(trim(numeracion)) > 0
+                """
+            )
+            conn.commit()
+            print("DATABASE MIGRATED: índice único idx_cartas_stock_numeracion_norm_unique creado.")
+        except sqlite3.OperationalError as e:
+            print(f"DATABASE MIGRATE WARN: no se pudo crear índice único de numeración: {e}")
+
+    @staticmethod
+    def _norm_num_key(numeracion: Optional[str]) -> str:
+        return (numeracion or "").strip().lower()
+
+    def _numeracion_en_uso(self, conn, numeracion: str, exclude_id: Optional[int]) -> bool:
+        key = self._norm_num_key(numeracion)
+        if not key:
+            return False
+        cursor = conn.cursor()
+        if exclude_id is None:
+            cursor.execute(
+                """
+                SELECT 1 FROM cartas_stock
+                WHERE numeracion IS NOT NULL AND length(trim(numeracion)) > 0
+                  AND lower(trim(numeracion)) = ?
+                LIMIT 1
+                """,
+                (key,),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT 1 FROM cartas_stock
+                WHERE carta_id != ? AND numeracion IS NOT NULL AND length(trim(numeracion)) > 0
+                  AND lower(trim(numeracion)) = ?
+                LIMIT 1
+                """,
+                (exclude_id, key),
+            )
+        return cursor.fetchone() is not None
+
+    @staticmethod
+    def _nombre_en_uso(conn, nombre: str, exclude_id: Optional[int]) -> bool:
+        nombre = (nombre or "").strip()
+        if not nombre:
+            return False
+        cursor = conn.cursor()
+        if exclude_id is None:
+            cursor.execute("SELECT 1 FROM cartas_stock WHERE nombre = ? LIMIT 1", (nombre,))
+        else:
+            cursor.execute(
+                "SELECT 1 FROM cartas_stock WHERE nombre = ? AND carta_id != ? LIMIT 1",
+                (nombre, exclude_id),
+            )
+        return cursor.fetchone() is not None
 
     def add_carta_stock(
         self,
@@ -69,9 +169,15 @@ class CardDBManager:
         tipo_carta: str,
         numeracion: str,
         poder: int = 50,
-    ) -> bool:
+    ) -> Tuple[bool, str]:
+        nombre = (nombre or "").strip()
+        numeracion = (numeracion or "").strip()
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            if self._nombre_en_uso(conn, nombre, None):
+                return False, "Ya existe otra carta con ese **nombre**."
+            if self._numeracion_en_uso(conn, numeracion, None):
+                return False, "Ya existe otra carta con esa **numeración** (código duplicado)."
             try:
                 cursor.execute(
                     """
@@ -90,9 +196,10 @@ class CardDBManager:
                     ),
                 )
                 conn.commit()
-                return True
+                return True, ""
             except sqlite3.IntegrityError:
-                return False
+                conn.rollback()
+                return False, "No se pudo crear (nombre o numeración duplicada según la base de datos)."
 
     def update_carta_stock(
         self,
@@ -105,9 +212,18 @@ class CardDBManager:
         tipo_carta: str,
         numeracion: str,
         poder: int = 50,
-    ) -> bool:
+    ) -> Tuple[bool, str]:
+        nombre = (nombre or "").strip()
+        numeracion = (numeracion or "").strip()
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            if self._nombre_en_uso(conn, nombre, int(carta_id)):
+                return False, "Ese **nombre** ya lo usa otra carta (cambiá uno de los dos)."
+            if self._numeracion_en_uso(conn, numeracion, int(carta_id)):
+                return (
+                    False,
+                    "Esa **numeración** ya la usa otra carta (no pueden repetirse; elegí otro código o editá la otra con `/aat-admin-modificar-carta`).",
+                )
             try:
                 cursor.execute(
                     """
@@ -127,10 +243,14 @@ class CardDBManager:
                         carta_id,
                     ),
                 )
+                if cursor.rowcount == 0:
+                    conn.rollback()
+                    return False, "No se encontró esa carta (id inválido)."
                 conn.commit()
-                return True
+                return True, ""
             except sqlite3.IntegrityError:
-                return False
+                conn.rollback()
+                return False, "Conflicto en la base de datos (nombre o numeración duplicada)."
 
     def delete_carta_stock(self, carta_id: int) -> bool:
         with self._get_connection() as conn:
@@ -147,7 +267,7 @@ class CardDBManager:
                 """
                 SELECT carta_id, nombre, numeracion FROM cartas_stock
                 WHERE nombre LIKE ? OR numeracion LIKE ?
-                ORDER BY numeracion
+                ORDER BY carta_id ASC
                 LIMIT 25
                 """,
                 (f"%{query}%", f"%{query}%"),

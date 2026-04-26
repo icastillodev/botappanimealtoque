@@ -46,7 +46,7 @@ class CartaEditModal(discord.ui.Modal):
             except ValueError:
                 poder_val = int(self.carta_data.get("poder", 50))
 
-            success = self.db.update_carta_stock(
+            ok, err = self.db.update_carta_stock(
                 carta_id=self.carta_data["carta_id"],
                 nombre=self.nombre.value,
                 descripcion=self.carta_data.get("descripcion") or "Sin descripción.",
@@ -58,9 +58,9 @@ class CartaEditModal(discord.ui.Modal):
                 poder=poder_val,
             )
 
-            if success:
+            if ok:
                 await interaction.followup.send("✅ Carta actualizada con éxito.", ephemeral=True)
             else:
-                await interaction.followup.send("❌ Error: Ya existe una carta con ese nombre.", ephemeral=True)
+                await interaction.followup.send(err or "❌ No se pudo guardar la carta.", ephemeral=True)
         except Exception as e:
             await interaction.followup.send(f"❌ Error al guardar: `{type(e).__name__}` — {e}", ephemeral=True)

@@ -121,10 +121,16 @@ class AdminCog(commands.Cog, name="Economia Admin"):
 
     async def card_stock_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
         cartas = self.card_db.get_cartas_stock_by_name(current)
-        return [
-            app_commands.Choice(name=f"{c['numeracion']} | {c['nombre']}", value=str(c['carta_id']))
-            for c in cartas
-        ]
+        choices: List[app_commands.Choice[str]] = []
+        for c in cartas:
+            cid = int(c["carta_id"])
+            num = (c.get("numeracion") or "—").strip()
+            nom = (c.get("nombre") or "?").strip()
+            label = f"#{cid} · {num} · {nom}"
+            if len(label) > 100:
+                label = label[:97] + "…"
+            choices.append(app_commands.Choice(name=label, value=str(cid)))
+        return choices[:25]
 
     @app_commands.command(name="aat-admin-darpuntos", description="[ADMIN] Da puntos a un usuario.")
     @app_commands.describe(usuario="El usuario", cantidad="Cuántos puntos dar", razon="Opcional: Razón")
@@ -206,9 +212,11 @@ class AdminCog(commands.Cog, name="Economia Admin"):
         poder: int = 50,
     ):
         await interaction.response.defer(ephemeral=True)
-        success = self.card_db.add_carta_stock(nombre, descripcion, efecto, url_imagen, rareza, tipo_carta, numeracion, poder=int(poder))
-        if not success:
-            await interaction.followup.send(f"❌ Error: Ya existe una carta con el nombre '{nombre}'.", ephemeral=True)
+        ok, err = self.card_db.add_carta_stock(
+            nombre, descripcion, efecto, url_imagen, rareza, tipo_carta, numeracion, poder=int(poder)
+        )
+        if not ok:
+            await interaction.followup.send(err or "❌ No se pudo crear la carta.", ephemeral=True)
             return
         embed = discord.Embed(title=f"Nueva Carta Creada: {nombre}", description=f"*{descripcion}*", color=discord.Color.green())
         embed.set_image(url=url_imagen)
