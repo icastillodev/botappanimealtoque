@@ -50,7 +50,7 @@ class PollEditModal(discord.ui.Modal):
         self.add_item(self.image_input)
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
 
         new_title = self.title_input.value
         new_desc = self.desc_input.value or None

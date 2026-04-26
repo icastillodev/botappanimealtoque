@@ -1,10 +1,26 @@
 # cogs/economia/card_db_manager.py
+import re
 import sqlite3
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import random
 
 DB_FILE = Path(__file__).parent / "cartas.db"
+
+# Sufijo numérico al final de `numeracion` (p.ej. AAT-2 vs AAT-10 → 2 antes que 10).
+_NUM_TAIL = re.compile(r"(\d+)\s*$")
+
+
+def _catalog_sort_key(card: Dict[str, Any]) -> Tuple[str, int, int]:
+    raw = str(card.get("numeracion") or "").strip()
+    cid = int(card.get("carta_id") or 0)
+    m = _NUM_TAIL.search(raw)
+    if m:
+        prefix = raw[: m.start(1)].lower()
+        tail = int(m.group(1))
+        return (prefix, tail, cid)
+    # Sin número final reconocible: al final, estable por id.
+    return ("\uffff", 0, cid)
 
 
 class CardDBManager:
@@ -213,8 +229,10 @@ class CardDBManager:
         with self._get_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM cartas_stock ORDER BY numeracion ASC")
-            return [dict(row) for row in cursor.fetchall()]
+            cursor.execute("SELECT * FROM cartas_stock")
+            rows = [dict(row) for row in cursor.fetchall()]
+            rows.sort(key=_catalog_sort_key)
+            return rows
 
     def get_stock_by_type(self, tipo_carta: str) -> List[Dict[str, Any]]:
         with self._get_connection() as conn:
@@ -222,10 +240,11 @@ class CardDBManager:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT nombre, rareza, numeracion, tipo_carta FROM cartas_stock
+                SELECT carta_id, nombre, rareza, numeracion, tipo_carta FROM cartas_stock
                 WHERE LOWER(tipo_carta) = LOWER(?)
-                ORDER BY numeracion ASC
                 """,
                 (tipo_carta,),
             )
-            return [dict(row) for row in cursor.fetchall()]
+            rows = [dict(row) for row in cursor.fetchall()]
+            rows.sort(key=_catalog_sort_key)
+            return rows

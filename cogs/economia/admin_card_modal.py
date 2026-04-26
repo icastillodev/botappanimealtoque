@@ -37,25 +37,30 @@ class CartaEditModal(discord.ui.Modal):
         self.add_item(self.poder)
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        # En `modal_submit`, `defer(ephemeral=True)` sin `thinking=True` usa deferred_message_update
+        # (válido para botones en un mensaje), no canal → Discord muestra "La aplicación no ha respondido".
+        await interaction.response.defer(ephemeral=True, thinking=True)
         try:
-            poder_val = int(str(self.poder.value).strip())
-        except ValueError:
-            poder_val = int(self.carta_data.get("poder", 50))
+            try:
+                poder_val = int(str(self.poder.value).strip())
+            except ValueError:
+                poder_val = int(self.carta_data.get("poder", 50))
 
-        success = self.db.update_carta_stock(
-            carta_id=self.carta_data["carta_id"],
-            nombre=self.nombre.value,
-            descripcion=self.carta_data.get("descripcion") or "Sin descripción.",
-            efecto=self.efecto.value or "Sin efecto.",
-            url_imagen=self.url_imagen.value,
-            numeracion=self.numeracion.value,
-            rareza=self.carta_data["rareza"],
-            tipo_carta=self.carta_data["tipo_carta"],
-            poder=poder_val,
-        )
+            success = self.db.update_carta_stock(
+                carta_id=self.carta_data["carta_id"],
+                nombre=self.nombre.value,
+                descripcion=self.carta_data.get("descripcion") or "Sin descripción.",
+                efecto=self.efecto.value or "Sin efecto.",
+                url_imagen=self.url_imagen.value,
+                numeracion=self.numeracion.value,
+                rareza=self.carta_data["rareza"],
+                tipo_carta=self.carta_data["tipo_carta"],
+                poder=poder_val,
+            )
 
-        if success:
-            await interaction.followup.send("✅ Carta actualizada con éxito.", ephemeral=True)
-        else:
-            await interaction.followup.send("❌ Error: Ya existe una carta con ese nombre.", ephemeral=True)
+            if success:
+                await interaction.followup.send("✅ Carta actualizada con éxito.", ephemeral=True)
+            else:
+                await interaction.followup.send("❌ Error: Ya existe una carta con ese nombre.", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error al guardar: `{type(e).__name__}` — {e}", ephemeral=True)
