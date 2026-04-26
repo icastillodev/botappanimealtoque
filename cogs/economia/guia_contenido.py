@@ -265,11 +265,17 @@ def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
             "• `?diaria` · `?daily` — **dos bloques** con **dos premios** distintos: `?reclamar diaria 1` y `diaria 2`\n"
             "• `?semanal` · `?weekly` · `?inicial` · `?starter` · `?iniciacion` — ver qué falta\n"
             "• `?abrir` — abrir blister (en #general también va)\n"
+            "• `?blisters` — ver cuántos sobres/blisters tenés para abrir\n"
             "• `?miscartas` — lista de cartas (**visible para todos** en ese canal)\n"
             "• `?vercartas` — alias de `?miscartas` (mismo listado)\n"
             "• `?catalogo` — todas las cartas del juego (numeración, rareza y tipo)\n"
             "• `?vercarta` / `?carta` — detalle de una carta **tuya** (`?vercarta <id>` o `?vercarta <nombre>`)\n"
             "• `?usar` · `?usarcarta` — usar carta trampa (`?usar <id> [@alguien]`)\n\n"
+            "**Perfil (solo con `?`)**\n"
+            "• `?wishlist` · `?wishlist @usuario` — ver wishlist\n"
+            "• `?wishlistset <1-33> <título>` · `?wishlistquitar <pos>` — editar wishlist\n"
+            "• `?odiados` · `?odiados @usuario` — ver odiados\n"
+            "• `?odiadosset <1-10> <título>` · `?odiadosquitar <pos>` — editar odiados\n\n"
             "**Resúmenes y guía larga**\n"
             "• `?comandos` · `?aat` · `?cmds` · `?cmd` · `?ayudabot` — **resumen corto** (no pagina por sección)\n"
             "• `?ayuda` · `?guia` — guía larga: **una sección por página** (Anterior / Siguiente)\n"
@@ -300,6 +306,7 @@ def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
     r1 = discord.Embed(
         title="⚙️ Slash — economía, cartas y tienda",
         description=(
+            "⚠️ **Nota:** en este servidor los comandos `/` son **solo staff**. Usuarios: usen los comandos con **`?`**.\n\n"
             "**Toque points e inventario:** `/aat-puntos` · `/aat-inventario`\n"
             "**Reclamar y progreso:** `/aat-reclamar` · `/aat-progreso-iniciacion` · `/aat-progreso-diaria` · `/aat-progreso-semanal`\n"
             "**Ranking:** `/aat-ranking-top` · `/aat-mi` · `/aat-top-hist`\n"

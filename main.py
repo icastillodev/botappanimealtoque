@@ -8,7 +8,7 @@ import logging.handlers
 import discord
 from discord import app_commands
 from discord.ext import commands
-from typing import Any
+from typing import Any, Optional
 
 from dotenv import load_dotenv
 
@@ -116,6 +116,17 @@ class MiBot(commands.Bot):
         self.hokage_role_id = HOKAGE_ID
         self.task_config, self.shop_config = load_task_and_shop_config(log)
 
+    def _is_staff_member(self, member: discord.abc.User, *, guild: Optional[discord.Guild]) -> bool:
+        if not guild or not isinstance(member, discord.Member):
+            return False
+        if member.guild_permissions.administrator:
+            return True
+        hokage_id = getattr(self, "hokage_role_id", None)
+        if not hokage_id:
+            return False
+        role = guild.get_role(int(hokage_id))
+        return bool(role and role in member.roles)
+
     async def on_command_completion(self, ctx: commands.Context) -> None:
         cmd = ctx.command.name if ctx.command else "?"
         gid = ctx.guild.id if ctx.guild else None
@@ -196,12 +207,12 @@ class MiBot(commands.Bot):
             try:
                 if not interaction.response.is_done():
                     await interaction.response.send_message(
-                        "🚫 Ese comando `/` está restringido al staff por ahora.",
+                        "🚫 Los comandos `/` están restringidos al **staff**. Usá los comandos con **`?`**.",
                         ephemeral=True,
                     )
                 else:
                     await interaction.followup.send(
-                        "🚫 Ese comando `/` está restringido al staff por ahora.",
+                        "🚫 Los comandos `/` están restringidos al **staff**. Usá los comandos con **`?`**.",
                         ephemeral=True,
                     )
             except Exception:
@@ -225,6 +236,16 @@ class MiBot(commands.Bot):
         )
 
     async def setup_hook(self):
+        # Gate global para slash: si no sos staff, no uses `/` (los usuarios van por `?`).
+        async def _slash_interaction_check(interaction: discord.Interaction) -> bool:
+            guild = interaction.guild
+            user = interaction.user
+            if not guild or not isinstance(user, discord.Member):
+                return False
+            return self._is_staff_member(user, guild=guild)
+
+        self.tree.interaction_check(_slash_interaction_check)
+
         self.log.info("Cargando vistas persistentes de votaciones...")
         active_polls = self.db_manager.get_active_polls()
         

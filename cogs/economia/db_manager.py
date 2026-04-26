@@ -369,6 +369,36 @@ class EconomiaDBManagerV2:
             cursor.execute("SELECT puntos_actuales FROM economia_usuarios WHERE user_id = ?", (user_id,))
             return cursor.fetchone()[0]
 
+    def remove_historic_points(self, user_id: int, cantidad: int) -> Dict[str, int]:
+        """
+        Quita puntos del histórico (puntos_conseguidos) sin tocar puntos_gastados.
+        Si al bajar el histórico quedara `puntos_actuales > puntos_conseguidos`, ajusta `puntos_actuales` hacia abajo
+        para mantener consistencia básica.
+        """
+        self.ensure_user_exists(user_id)
+        qty = abs(int(cantidad))
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT puntos_actuales, puntos_conseguidos, puntos_gastados FROM economia_usuarios WHERE user_id = ?",
+                (user_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return {"actual": 0, "conseguidos": 0, "gastados": 0}
+            actual = int(row["puntos_actuales"] or 0)
+            conseg = int(row["puntos_conseguidos"] or 0)
+            gast = int(row["puntos_gastados"] or 0)
+            new_conseg = max(0, conseg - qty)
+            new_actual = min(actual, new_conseg)
+            cur.execute(
+                "UPDATE economia_usuarios SET puntos_conseguidos = ?, puntos_actuales = ? WHERE user_id = ?",
+                (new_conseg, new_actual, user_id),
+            )
+            conn.commit()
+            return {"actual": int(new_actual), "conseguidos": int(new_conseg), "gastados": int(gast)}
+
     def modify_blisters(self, user_id: int, blister_tipo: str, cantidad: int) -> Tuple[int, List[str]]:
         self.ensure_user_exists(user_id)
         blister_tipo = blister_tipo.lower().strip()

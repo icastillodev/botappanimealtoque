@@ -2,7 +2,7 @@ Anime al Toque — reglas/comandos (resumen corto para el Oráculo)
 
 Seguridad / permisos (idea general):
 - Los comandos **admin** (crear/editar cosas del servidor, DB, tienda “staff”, etc.) suelen estar restringidos a **administrador** o rol **Hokage** (según el bot).
-- Fuera de eso, usuarios comunes pueden usar **prefijo `?`** y **slash `/`** normalmente.
+- En este servidor, los comandos **slash `/`** se usan **solo por staff**. Usuarios comunes: usen **prefijo `?`**.
 - En **#general** el bot puede borrar algunos `?` “pesados” para no spamear; si alguien se queja, sugerí **`?comandos`** o el **canal del bot**.
 
 Oráculo:
@@ -16,7 +16,7 @@ Cartas (muy usado):
 - Equivalentes slash (más “privados” en varios casos): `/aat-miscartas`, `/aat-catalogo`, `/vercarta`, `/aat-abrirblister`, `/usar`.
 
 Economía / progreso / guía grande:
-- Muchas cosas existen en **`?`** y en **`/`** (Discord autocompleta).
+- La mayoría de cosas de usuarios están en **`?`** (Discord no autocompleta, pero `?comandos` y `?ayuda` guían).
 - Guía larga: `?ayuda` / `?guia` / `/aat-guia`.
 
 Respuesta esperada del Oráculo cuando le preguntan por comandos:

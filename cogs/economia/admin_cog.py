@@ -160,6 +160,37 @@ class AdminCog(commands.Cog, name="Economia Admin"):
             await usuario.send(msg)
         except discord.Forbidden: pass
 
+    @app_commands.command(
+        name="aat-admin-quitarhistorico",
+        description="[ADMIN] Quita puntos del histórico (total conseguido) de un usuario.",
+    )
+    @app_commands.describe(usuario="El usuario", cantidad="Cuántos puntos históricos quitar", razon="Opcional: Razón")
+    async def quitar_historico(
+        self,
+        interaction: discord.Interaction,
+        usuario: discord.Member,
+        cantidad: int,
+        razon: Optional[str] = None,
+    ):
+        if cantidad <= 0:
+            await interaction.response.send_message("La cantidad debe ser positiva.", ephemeral=True)
+            return
+        res = self.economia_db.remove_historic_points(usuario.id, int(cantidad))
+        await interaction.response.send_message(
+            (
+                f"🧾 Se quitaron **{cantidad}** puntos del **histórico** de {usuario.mention}.\n"
+                f"Ahora: actuales **{res['actual']}** · histórico **{res['conseguidos']}** · gastados **{res['gastados']}**."
+            ),
+            ephemeral=True,
+        )
+        try:
+            msg = f"Un admin ajustó tu **histórico**: -{cantidad} puntos."
+            if razon:
+                msg += f"\n**Razón:** {razon}"
+            await usuario.send(msg)
+        except discord.Forbidden:
+            pass
+
     @app_commands.command(name="aat-admin-darblister", description="[ADMIN] Da blisters (sobres) a un usuario.")
     @app_commands.rename(tipo_blister="tipo-blister")
     @app_commands.describe(usuario="El usuario", tipo_blister="El tipo de blister (ej: 'trampa')", cantidad="Cuántos blisters dar")
@@ -177,6 +208,28 @@ class AdminCog(commands.Cog, name="Economia Admin"):
         try:
             await usuario.send(f"¡Has recibido **{cantidad} Blister(s) de tipo '{tipo_blister}'** de un administrador!")
         except discord.Forbidden: pass
+
+    @app_commands.command(name="aat-admin-quitarblister", description="[ADMIN] Quita blisters (sobres) a un usuario.")
+    @app_commands.rename(tipo_blister="tipo-blister")
+    @app_commands.describe(
+        usuario="El usuario",
+        tipo_blister="El tipo de blister (ej: 'trampa')",
+        cantidad="Cuántos blisters quitar (si no tiene, queda en 0)",
+    )
+    async def quitar_blister(self, interaction: discord.Interaction, usuario: discord.Member, tipo_blister: str, cantidad: int):
+        if cantidad <= 0:
+            await interaction.response.send_message("La cantidad debe ser positiva.", ephemeral=True)
+            return
+        tipo_blister = tipo_blister.lower().strip()
+        nuevo_total, _ = self.economia_db.modify_blisters(usuario.id, tipo_blister, -abs(int(cantidad)))
+        await interaction.response.send_message(
+            f"🗑️ Se quitaron {cantidad} blister(s) de tipo '{tipo_blister}' a {usuario.mention}. Ahora tiene {nuevo_total}.",
+            ephemeral=True,
+        )
+        try:
+            await usuario.send(f"Un admin te quitó **{cantidad}** blister(s) de tipo '{tipo_blister}'. Ahora tenés {nuevo_total}.")
+        except discord.Forbidden:
+            pass
 
     @app_commands.command(name="aat-admin-setcreditos", description="[ADMIN] Establece los créditos para fijar mensajes de un usuario.")
     @app_commands.describe(usuario="El usuario", cantidad="El número total de créditos que tendrá")

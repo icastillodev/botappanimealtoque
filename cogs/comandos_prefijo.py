@@ -148,13 +148,13 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
                 "**En #general** (anti-spam): muchos `?` van; si Discord borra el mensaje, probá en el **canal del bot**. "
                 "Tip rápido: `?roll*` · cartas (`?cartas` · `?miscartas`/`?vercartas` · `?catalogo` · `?vercarta`/`?carta` · `?abrir` · `?usar`) · oráculo · trivia · `?impostor` · `?animetop` · economía básica (`?puntos` · `?mi` · `?reclamar` · `?progreso`…) · `?comandos`.\n"
                 "**Guías largas / embeds grandes:** preferible en el **canal del bot** (más cómodo); en #general puede haber límites.\n"
-                "**Con `/`** — versión completa (Discord te autocompleta).\n\n"
+                "**Con `/`** — **solo staff**. Usuarios: usen comandos con **`?`**.\n\n"
                 "**Economía (`?` y `/`):** `?puntos` · `?inventario` · `?mi` · `?top` · `?tophist` · `?ranking` (tablas paginadas + botones) · `?reclamar` · `?progreso` · `?progresoayuda` · "
                 "`?diario` / `?diaria` (*daily*) · `?semanal` (*weekly*) · `?inicial` · `?cartas` · `?abrir` · `?miscartas` / `?vercartas` · `?catalogo` · `?vercarta` / `?carta` · `?usar`\n"
                 "**Impostor:** `?impostor` — avisá que buscás gente / ver lobbies abiertos.\n"
                 "**Oráculo:** arrobá al bot + tu pregunta en el mismo mensaje · `?pregunta` + texto · `/aat-consulta` — sí / no / a veces %. Cuenta para el **diario** (*daily*) y puede dar **Toque points** extra.\n"
                 "**Top anime:** `?animetop` · `?animetop @usuario` — editar: `?topset <1-33> <título>` · `?topquitar <n>` — slash: `/aat-anime-top_*`\n"
-                "**Perfil:** `/aat-wishlist_*` · `/aat-hated_*` · `/aat-chars_*` (wishlist 1–33, odiados 1–10, personajes 1–10).\n"
+                "**Perfil (con `?`):** `?wishlist` / `?wishlistset` / `?wishlistquitar` · `?odiados` / `?odiadosset` / `?odiadosquitar`.\n"
                 "**Trivia anime:** el bot publica en **#general** (varias al día, tiempo límite configurable); "
                 "`?r` / `?respuestapregunta` + respuesta (a veces también sin `?` en #general, según bot) · `?triviatop` / `?triviami` ranking.\n"
                 "**Slash útiles:** `/aat-ayuda` · `/crearsimpostor` · `/entrar` · `/aat-tienda-ver`"
@@ -234,6 +234,22 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         )
         await ctx.send(embed=embed)
 
+    @commands.command(name="blisters", aliases=["blister", "sobres", "misblisters", "missobres"])
+    async def blisters_cmd(self, ctx: commands.Context):
+        """Ver blisters/sobres que tenés para abrir."""
+        self.db.ensure_user_exists(ctx.author.id)
+        blisters = self.db.get_blisters_for_user(ctx.author.id)
+        if not blisters:
+            await ctx.send("No tenés blisters. Ganás con tareas (`?reclamar`) o tienda (`?canjes`).")
+            return
+        lines = "\n".join(f"• **{b['blister_tipo']}**: x**{b['cantidad']}**" for b in blisters if int(b.get("cantidad") or 0) > 0) or "Ninguno"
+        embed = discord.Embed(
+            title=f"🎁 Blisters de {ctx.author.display_name}",
+            description=lines + "\n\nPara abrir: **`?abrir`** (abre todos los que tengas).",
+            color=discord.Color.gold(),
+        )
+        await ctx.send(embed=embed)
+
     @commands.command(name="roll")
     async def roll_cmd(self, ctx: commands.Context, minimo: int = 1, maximo: int = 100):
         """Roll público simple para #general."""
@@ -294,6 +310,83 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         rows = self.db.anime_top_list(target.id)
         emb = _embed_top_for(self.bot, target, rows, viewer_is_target=target.id == ctx.author.id)
         await ctx.send(embed=emb)
+
+    def _fmt_pos_list(self, rows: List[dict], *, cap: int) -> str:
+        out: List[str] = []
+        for r in rows:
+            try:
+                pos = int(r.get("pos") or 0)
+            except Exception:
+                continue
+            title = str(r.get("title") or "").strip()
+            if not title:
+                continue
+            out.append(f"**{pos}.** {title}")
+        return "\n".join(out[:cap]) if out else "—"
+
+    @commands.command(name="wishlist", aliases=["wl", "deseos", "wish"])
+    async def wishlist_ver(self, ctx: commands.Context, quien: Optional[discord.Member] = None):
+        """Ver tu wishlist (o la de otro)."""
+        target = quien or ctx.author
+        rows = self.db.wishlist_list(target.id)
+        embed = discord.Embed(
+            title=f"⭐ Wishlist — {target.display_name}",
+            description=self._fmt_pos_list(rows, cap=33),
+            color=discord.Color.blurple(),
+        )
+        embed.set_footer(text="Editar: ?wishlistset <1-33> <título> · borrar: ?wishlistquitar <pos>")
+        await ctx.send(embed=embed)
+
+    @commands.command(name="wishlistset", aliases=["wlset", "wishlistadd", "wishlistponer"])
+    async def wishlist_set_cmd(self, ctx: commands.Context, pos: int, *, titulo: str):
+        """Setear una posición de wishlist (1–33)."""
+        try:
+            self.db.wishlist_set(ctx.author.id, int(pos), str(titulo))
+        except ValueError as e:
+            await ctx.send(str(e), delete_after=10)
+            return
+        await ctx.send(f"✅ Wishlist guardada: posición **{pos}**.")
+
+    @commands.command(name="wishlistquitar", aliases=["wlquitar", "wldel", "wishlistdel", "wishlistremove"])
+    async def wishlist_quitar_cmd(self, ctx: commands.Context, pos: int):
+        """Borrar una posición de wishlist."""
+        if pos < 1 or pos > 33:
+            await ctx.send("La posición debe ser entre 1 y 33.", delete_after=8)
+            return
+        self.db.wishlist_remove(ctx.author.id, int(pos))
+        await ctx.send(f"🗑️ Wishlist: posición **{pos}** vaciada.")
+
+    @commands.command(name="odiados", aliases=["odio", "hated", "hates"])
+    async def odiados_ver(self, ctx: commands.Context, quien: Optional[discord.Member] = None):
+        """Ver tu lista de odiados (o la de otro)."""
+        target = quien or ctx.author
+        rows = self.db.hated_list(target.id)
+        embed = discord.Embed(
+            title=f"💢 Odiados — {target.display_name}",
+            description=self._fmt_pos_list(rows, cap=10),
+            color=discord.Color.red(),
+        )
+        embed.set_footer(text="Editar: ?odiadosset <1-10> <título> · borrar: ?odiadosquitar <pos>")
+        await ctx.send(embed=embed)
+
+    @commands.command(name="odiadosset", aliases=["odioset", "hatedset"])
+    async def odiados_set_cmd(self, ctx: commands.Context, pos: int, *, titulo: str):
+        """Setear una posición de odiados (1–10)."""
+        try:
+            self.db.hated_set(ctx.author.id, int(pos), str(titulo))
+        except ValueError as e:
+            await ctx.send(str(e), delete_after=10)
+            return
+        await ctx.send(f"✅ Odiados guardado: posición **{pos}**.")
+
+    @commands.command(name="odiadosquitar", aliases=["odioquitar", "hatedquitar", "hateddel", "odiodl"])
+    async def odiados_quitar_cmd(self, ctx: commands.Context, pos: int):
+        """Borrar una posición de odiados."""
+        if pos < 1 or pos > 10:
+            await ctx.send("La posición debe ser entre 1 y 10.", delete_after=8)
+            return
+        self.db.hated_remove(ctx.author.id, int(pos))
+        await ctx.send(f"🗑️ Odiados: posición **{pos}** vaciada.")
 
     @commands.command(name="topset", aliases=["topanimeset", "animetopset"])
     async def topset_cmd(self, ctx: commands.Context, posicion: int, *, titulo: str):
