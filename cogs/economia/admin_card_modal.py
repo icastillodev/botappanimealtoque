@@ -31,28 +31,21 @@ class CartaEditModal(discord.ui.Modal):
         self.numeracion = discord.ui.TextInput(
             label="Numeración (ej: AAT-001)", default=carta_data.get("numeracion") or ""
         )
-        self.poder = discord.ui.TextInput(
-            label="Poder (duelos)",
-            default=str(carta_data.get("poder", 50)),
-            max_length=4,
-        )
+        # Nota: Discord permite máximo 5 inputs por modal.
+        # `poder` se conserva (no editable) para no romper el límite.
 
         self.add_item(self.nombre)
         self.add_item(self.descripcion)
         self.add_item(self.efecto)
         self.add_item(self.url_imagen)
         self.add_item(self.numeracion)
-        self.add_item(self.poder)
 
     async def on_submit(self, interaction: discord.Interaction):
         # En `modal_submit`, `defer(ephemeral=True)` sin `thinking=True` usa deferred_message_update
         # (válido para botones en un mensaje), no canal → Discord muestra "La aplicación no ha respondido".
         await interaction.response.defer(ephemeral=True, thinking=True)
         try:
-            try:
-                poder_val = int(str(self.poder.value).strip())
-            except ValueError:
-                poder_val = int(self.carta_data.get("poder", 50))
+            poder_val = int(self.carta_data.get("poder", 50))
 
             ok, err = self.db.update_carta_stock(
                 carta_id=self.carta_data["carta_id"],
