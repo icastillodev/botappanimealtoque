@@ -153,7 +153,7 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
                 "`?diario` / `?diaria` (*daily*) · `?semanal` (*weekly*) · `?inicial` · `?cartas` · `?abrir` · `?miscartas` / `?vercartas` · `?catalogo` · `?vercarta` / `?carta` · `?usar`\n"
                 "**Impostor:** `?impostor` — avisá que buscás gente / ver lobbies abiertos.\n"
                 "**Oráculo:** arrobá al bot + tu pregunta en el mismo mensaje · `?pregunta` + texto · `/aat-consulta` — sí / no / a veces %. Cuenta para el **diario** (*daily*) y puede dar **Toque points** extra.\n"
-                "**Top anime:** `?animetop` · `?animetop @usuario` — editar: `?topset <1-33> <título>` · `?topquitar <n>` — slash: `/aat-anime-top_*`\n"
+                "**Top anime:** `?animetop` / `?topanime` · `?animetop @usuario` / `?topanime @usuario` — editar: `?topset <1-33> <título>` · `?topquitar <n>` — slash: `/aat-anime-top_*`\n"
                 "**Perfil (con `?`):** `?wishlist` / `?wishlistset` / `?wishlistquitar` · `?odiados` / `?odiadosset` / `?odiadosquitar`.\n"
                 "**Trivia anime:** el bot publica en **#general** (varias al día, tiempo límite configurable); "
                 "`?r` / `?respuestapregunta` + respuesta (a veces también sin `?` en #general, según bot) · `?triviatop` / `?triviami` ranking.\n"
@@ -303,7 +303,7 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
             return
         await oc.oracle_pregunta_desde_prefijo(ctx, texto=texto)
 
-    @commands.command()
+    @commands.command(name="animetop", aliases=["topanime", "topanimes", "topdeanime"])
     async def animetop(self, ctx: commands.Context, quien: Optional[discord.Member] = None):
         """Ver top anime propio o de otro miembro (mismo texto que el slash)."""
         target = quien or ctx.author

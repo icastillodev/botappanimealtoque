@@ -242,7 +242,21 @@ class MiBot(commands.Bot):
             user = interaction.user
             if not guild or not isinstance(user, discord.Member):
                 return False
-            return self._is_staff_member(user, guild=guild)
+            if self._is_staff_member(user, guild=guild):
+                return True
+            # Excepción: Top Anime (sirve para iniciación) + oráculo.
+            cmd = interaction.command
+            name = getattr(cmd, "name", None) if cmd else None
+            if not name:
+                return False
+            public = {
+                "aat-anime-top-ver",
+                "aat-anime-top-set",
+                "aat-anime-top-quitar",
+                "aat-anime-top-guia",
+                "aat-consulta",
+            }
+            return str(name) in public
 
         self.tree.interaction_check(_slash_interaction_check)
 

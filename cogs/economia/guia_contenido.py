@@ -298,7 +298,8 @@ def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
             "• `?r` · `?respuestapregunta` · `?triviaresp` · `?rtrivia` + respuesta; en **#general** a veces también línea corta o `responder …` **sin** `?` (config del bot; si no, solo con `?`)\n"
             "• `?triviatop` · `?triviami` — ranking y tu puesto (solo cuentan aciertos ganadores)\n\n"
             "**Top anime**\n"
-            "• `?animetop` · `?animetop @usuario`"
+            "• `?animetop` / `?topanime` — ver tu top (en el canal)\n"
+            "• `?animetop @usuario` / `?topanime @usuario` — ver el top de otra persona"
         ),
         color=discord.Color.light_grey(),
     )
@@ -450,7 +451,7 @@ def build_guia_embeds(bot: Any) -> List[discord.Embed]:
     e2.description = (
         "Armá **tu ranking** (posiciones **1 a 33**); los bonos automáticos siguen al completar **10** y **30** títulos.\n"
         f"Bonos únicos: **10** primeras → {_fmt_pts(b10)} · **30** → {_fmt_pts(b30)}.\n\n"
-        "**Todos en el canal:** `?animetop` · `?animetop @usuario` (se ve el listado en el chat).\n"
+        "**Todos en el canal:** `?animetop` / `?topanime` · `?animetop @usuario` / `?topanime @usuario` (se ve el listado en el chat).\n"
         "**Solo vos (canal de comandos o slash):** `?topset <1-33> <título>` (repetís la posición para **modificar**) · "
         "`?topquitar <n>` · `/aat-anime-top-set` · `/aat-anime-top-quitar` · `/aat-anime-top-guia` · "
         "`/aat-anime-top-ver` **sin** elegir a nadie (tu top en privado). "
