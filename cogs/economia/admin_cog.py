@@ -231,6 +231,46 @@ class AdminCog(commands.Cog, name="Economia Admin"):
         except discord.Forbidden:
             pass
 
+    @app_commands.command(
+        name="aat-admin-vereconomia",
+        description="[ADMIN] Ver puntos (actual/hist/gastado) y blisters de un usuario.",
+    )
+    @app_commands.describe(usuario="El usuario")
+    async def ver_economia_usuario(self, interaction: discord.Interaction, usuario: discord.Member):
+        await interaction.response.defer(ephemeral=True)
+        self.economia_db.ensure_user_exists(usuario.id)
+        eco = self.economia_db.get_user_economy(usuario.id) or {}
+        blisters = self.economia_db.get_blisters_for_user(usuario.id)
+
+        puntos_actuales = int(eco.get("puntos_actuales") or 0)
+        puntos_conseguidos = int(eco.get("puntos_conseguidos") or 0)
+        puntos_gastados = int(eco.get("puntos_gastados") or 0)
+        creditos_pin = int(eco.get("creditos_pin") or 0)
+
+        if blisters:
+            b_lines = []
+            for b in blisters:
+                t = str(b.get("blister_tipo") or "?")
+                c = int(b.get("cantidad") or 0)
+                if c <= 0:
+                    continue
+                b_lines.append(f"• **{t}**: x**{c}**")
+            b_txt = "\n".join(b_lines) if b_lines else "—"
+        else:
+            b_txt = "—"
+
+        embed = discord.Embed(
+            title=f"📊 Economía — {usuario.display_name}",
+            description=f"ID: `{usuario.id}`",
+            color=discord.Color.dark_teal(),
+        )
+        embed.add_field(name="Toque points (actual)", value=str(puntos_actuales), inline=True)
+        embed.add_field(name="Histórico (conseguidos)", value=str(puntos_conseguidos), inline=True)
+        embed.add_field(name="Gastados", value=str(puntos_gastados), inline=True)
+        embed.add_field(name="Créditos pin", value=str(creditos_pin), inline=True)
+        embed.add_field(name="Blisters", value=b_txt, inline=False)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
     @app_commands.command(name="aat-admin-setcreditos", description="[ADMIN] Establece los créditos para fijar mensajes de un usuario.")
     @app_commands.describe(usuario="El usuario", cantidad="El número total de créditos que tendrá")
     async def set_creditos(self, interaction: discord.Interaction, usuario: discord.Member, cantidad: int):

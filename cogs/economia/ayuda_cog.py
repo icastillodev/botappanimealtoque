@@ -166,7 +166,7 @@ class EconomiaHelpView(discord.ui.View):
             title="Resumen: Toque points y reclamos 📋 (Página 6/6)",
             color=discord.Color.dark_green(),
         )
-        embed.description = "Checklist para no perderte."
+        embed.description = "Checklist para no perderte.\n\n**Staff (admin/Hokage):** `/aat-admin-vereconomia` para ver puntos + blisters de cualquiera."
         embed.add_field(
             name="Ganar",
             value=(
