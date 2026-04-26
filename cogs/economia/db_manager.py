@@ -1022,6 +1022,86 @@ class EconomiaDBManagerV2:
             )
             conn.commit()
 
+    def anime_top_find(self, user_id: int, query: str) -> List[Dict[str, Any]]:
+        """Buscar en el top por coincidencia parcial (case-insensitive)."""
+        self.ensure_user_exists(user_id)
+        q = (query or "").strip().lower()
+        if not q:
+            return []
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT pos, title FROM anime_top_entries
+                WHERE user_id = ? AND lower(title) LIKE ?
+                ORDER BY pos ASC
+                """,
+                (user_id, f"%{q}%"),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+    def anime_top_move_by_pos(self, user_id: int, pos_from: int, pos_to: int) -> None:
+        """
+        Mover una entrada del top de una posición a otra, desplazando el resto (shift).
+        Ej: mover 10 -> 7 desplaza 7..9 hacia abajo.
+        """
+        self.ensure_user_exists(user_id)
+        if pos_from < 1 or pos_from > 33 or pos_to < 1 or pos_to > 33:
+            raise ValueError("La posición debe ser entre 1 y 33.")
+        if pos_from == pos_to:
+            return
+
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT title FROM anime_top_entries WHERE user_id = ? AND pos = ?",
+                (user_id, int(pos_from)),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("No hay ningún título en esa posición para mover.")
+            title = str(row["title"] or "").strip()
+            if not title:
+                raise ValueError("No hay ningún título en esa posición para mover.")
+
+            ts = int(time.time())
+            # Borrar la casilla origen
+            cur.execute("DELETE FROM anime_top_entries WHERE user_id = ? AND pos = ?", (user_id, int(pos_from)))
+
+            if pos_to < pos_from:
+                # Subir: desplazar [pos_to..pos_from-1] hacia abajo (+1)
+                cur.execute(
+                    """
+                    UPDATE anime_top_entries
+                    SET pos = pos + 1, updated_ts = ?
+                    WHERE user_id = ? AND pos BETWEEN ? AND ?
+                    """,
+                    (ts, user_id, int(pos_to), int(pos_from - 1)),
+                )
+            else:
+                # Bajar: desplazar [pos_from+1..pos_to] hacia arriba (-1)
+                cur.execute(
+                    """
+                    UPDATE anime_top_entries
+                    SET pos = pos - 1, updated_ts = ?
+                    WHERE user_id = ? AND pos BETWEEN ? AND ?
+                    """,
+                    (ts, user_id, int(pos_from + 1), int(pos_to)),
+                )
+
+            # Insertar en destino
+            cur.execute(
+                """
+                INSERT INTO anime_top_entries (user_id, pos, title, updated_ts)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, pos) DO UPDATE SET title = excluded.title, updated_ts = excluded.updated_ts
+                """,
+                (user_id, int(pos_to), title, ts),
+            )
+            conn.commit()
+
     def get_anime_bonus_flags(self, user_id: int) -> Dict[str, int]:
         self.ensure_user_exists(user_id)
         with self._get_connection() as conn:

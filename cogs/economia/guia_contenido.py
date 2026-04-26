@@ -299,7 +299,8 @@ def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
             "• `?triviatop` · `?triviami` — ranking y tu puesto (solo cuentan aciertos ganadores)\n\n"
             "**Top anime**\n"
             "• `?animetop` / `?topanime` — ver tu top (en el canal)\n"
-            "• `?animetop @usuario` / `?topanime @usuario` — ver el top de otra persona"
+            "• `?animetop @usuario` / `?topanime @usuario` — ver el top de otra persona\n"
+            "• Mover posiciones (shift): `?topsubir <título>` · `?topbajar <título>` · `?topmover arriba|abajo <título>`"
         ),
         color=discord.Color.light_grey(),
     )

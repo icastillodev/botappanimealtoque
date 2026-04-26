@@ -420,6 +420,76 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
         emb = _embed_top_for(self.bot, ctx.author, rows, viewer_is_target=True)
         await ctx.send(content=f"Posición **{posicion}** vaciada.", embed=emb)
 
+    def _pick_single_top_match(self, rows: List[dict], query: str) -> Optional[dict]:
+        q = (query or "").strip().lower()
+        if not q:
+            return None
+        # Preferir match exacto si existe
+        exact = [r for r in rows if str(r.get("title") or "").strip().lower() == q]
+        if len(exact) == 1:
+            return exact[0]
+        if len(rows) == 1:
+            return rows[0]
+        return None
+
+    @commands.command(name="topsubir", aliases=["topup", "subirtop", "animesubir"])
+    async def topsubir_cmd(self, ctx: commands.Context, *, titulo: str):
+        """Subir un anime por nombre (mueve el resto). Ej: `?topsubir naruto`."""
+        matches = self.db.anime_top_find(ctx.author.id, titulo)
+        picked = self._pick_single_top_match(matches, titulo)
+        if not picked:
+            if not matches:
+                await ctx.send("No encontré ese título en tu top. Tip: `?animetop` / `?topanime` para ver la lista.")
+                return
+            opts = "\n".join(f"• **{m['pos']}.** {m['title']}" for m in matches[:8])
+            await ctx.send(
+                "Hay varias coincidencias. Copiá un texto más específico o usá el **número** con `?topmover`:\n" + opts
+            )
+            return
+        pos = int(picked["pos"])
+        if pos <= 1:
+            await ctx.send("Ese ya está en la posición **1**.")
+            return
+        self.db.anime_top_move_by_pos(ctx.author.id, pos, pos - 1)
+        rows = self.db.anime_top_list(ctx.author.id)
+        emb = _embed_top_for(self.bot, ctx.author, rows, viewer_is_target=True)
+        await ctx.send(content=f"⬆️ Movido a posición **{pos - 1}**.", embed=emb)
+
+    @commands.command(name="topbajar", aliases=["topdown", "bajartop", "animebajar"])
+    async def topbajar_cmd(self, ctx: commands.Context, *, titulo: str):
+        """Bajar un anime por nombre (mueve el resto). Ej: `?topbajar naruto`."""
+        matches = self.db.anime_top_find(ctx.author.id, titulo)
+        picked = self._pick_single_top_match(matches, titulo)
+        if not picked:
+            if not matches:
+                await ctx.send("No encontré ese título en tu top. Tip: `?animetop` / `?topanime` para ver la lista.")
+                return
+            opts = "\n".join(f"• **{m['pos']}.** {m['title']}" for m in matches[:8])
+            await ctx.send(
+                "Hay varias coincidencias. Copiá un texto más específico o usá el **número** con `?topmover`:\n" + opts
+            )
+            return
+        pos = int(picked["pos"])
+        if pos >= 33:
+            await ctx.send("Ese ya está en la posición **33**.")
+            return
+        self.db.anime_top_move_by_pos(ctx.author.id, pos, pos + 1)
+        rows = self.db.anime_top_list(ctx.author.id)
+        emb = _embed_top_for(self.bot, ctx.author, rows, viewer_is_target=True)
+        await ctx.send(content=f"⬇️ Movido a posición **{pos + 1}**.", embed=emb)
+
+    @commands.command(name="topmover", aliases=["movetop", "topmove"])
+    async def topmover_cmd(self, ctx: commands.Context, direccion: str, *, titulo: str):
+        """Mover un anime por nombre. Ej: `?topmover arriba naruto` / `?topmover abajo naruto`."""
+        d = (direccion or "").strip().lower()
+        if d not in ("arriba", "abajo", "up", "down", "subir", "bajar"):
+            await ctx.send("Usá: `?topmover arriba <título>` o `?topmover abajo <título>`.")
+            return
+        if d in ("arriba", "up", "subir"):
+            await self.topsubir_cmd(ctx, titulo=titulo)
+        else:
+            await self.topbajar_cmd(ctx, titulo=titulo)
+
     @commands.command()
     async def mi(self, ctx: commands.Context):
         """Saldo, posición en `?top` y `?tophist`, cartas en inventario y totales."""

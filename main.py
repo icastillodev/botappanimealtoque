@@ -254,6 +254,7 @@ class MiBot(commands.Bot):
                 "aat-anime-top-set",
                 "aat-anime-top-quitar",
                 "aat-anime-top-guia",
+                "aat-anime-top-mover",
                 "aat-consulta",
             }
             return str(name) in public

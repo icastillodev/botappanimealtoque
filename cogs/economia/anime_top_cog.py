@@ -134,6 +134,27 @@ class AnimeTopCog(commands.Cog, name="Anime top"):
             ephemeral=True,
         )
 
+    @app_commands.command(
+        name="aat-anime-top-mover",
+        description="Mover un título a otra posición y desplazar el resto (shift).",
+    )
+    @app_commands.describe(desde="Posición actual (1–33)", hacia="Nueva posición (1–33)")
+    async def anime_top_mover(
+        self,
+        interaction: discord.Interaction,
+        desde: app_commands.Range[int, 1, 33],
+        hacia: app_commands.Range[int, 1, 33],
+    ):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            self.db.anime_top_move_by_pos(interaction.user.id, int(desde), int(hacia))
+        except ValueError as e:
+            await interaction.followup.send(str(e), ephemeral=True)
+            return
+        rows = self.db.anime_top_list(interaction.user.id)
+        emb = _embed_top_for(self.bot, interaction.user, rows, viewer_is_target=True)
+        await interaction.followup.send(content=f"✅ Movido de **{desde}** a **{hacia}**.", embed=emb, ephemeral=True)
+
     @app_commands.command(name="aat-anime-top-guia", description="Mini guía para armar tu top.")
     async def anime_top_guia(self, interaction: discord.Interaction):
         b10, b30 = self._bonuses()
@@ -144,6 +165,7 @@ class AnimeTopCog(commands.Cog, name="Anime top"):
             "• Podés **cambiar** cualquier posición cuando quieras: misma posición y nuevo título "
             "(`/aat-anime-top-set` o `?topset`).\n"
             "• `/aat-anime-top-quitar` o `?topquitar` dejan vacía una casilla.\n"
+            "• Para **mover** y desplazar el resto: `/aat-anime-top-mover` o `?topsubir` / `?topbajar`.\n"
             f"• **Bonos únicos**: top 10 completo → {fmt_toque_line(b10)}; top 30 completo → {fmt_toque_line(b30)} extra.\n"
             "• Ver el de otro: `/aat-anime-top-ver` eligiendo usuario (mensaje público)."
         )
