@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
 import discord
 from discord import app_commands
@@ -176,6 +176,18 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
                     ephemeral=True,
                 )
                 return
+            if item_id == "akatsuki":
+                jonin_rid = self.config.get("jonin_role_id")
+                if jonin_rid:
+                    jr = interaction.guild.get_role(int(jonin_rid))
+                    if jr and jr not in interaction.user.roles:
+                        self.economia_db.modify_points(interaction.user.id, precio, gastar=False)
+                        await interaction.followup.send(
+                            "Para canjear **Akatsuki** necesitás tener antes el rol **Jōnin** "
+                            "(canjealo o conseguilo según las reglas del servidor). **Puntos devueltos.**",
+                            ephemeral=True,
+                        )
+                        return
             role = interaction.guild.get_role(int(role_id))
             if not role:
                 self.economia_db.modify_points(interaction.user.id, precio, gastar=False)
@@ -393,18 +405,20 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
 
     @app_commands.command(
         name="aat-tienda-rol-temporal",
-        description="Creás un rol con nombre personal y se lo das a alguien (o a vos) por 30 días.",
+        description="Creás un rol nuevo con nombre personal y color opcional (30 días). No reutiliza roles viejos.",
     )
-    @app_commands.rename(nombre_rol="nombre-rol")
+    @app_commands.rename(nombre_rol="nombre-rol", color_hex="color-hex")
     @app_commands.describe(
         nombre_rol="Nombre visible del rol (máx. 80 caracteres).",
         usuario="A quién se lo damos (podés elegirte).",
+        color_hex="Opcional: color #RRGGBB (ej. #FF5500) o decimal (9123456).",
     )
     async def tienda_rol_temporal(
         self,
         interaction: discord.Interaction,
         nombre_rol: str,
         usuario: discord.Member,
+        color_hex: Optional[str] = None,
     ):
         await interaction.response.defer(ephemeral=True)
         precio = self._cfg("price_temp_role", 0)
@@ -434,14 +448,30 @@ class TiendaCog(commands.Cog, name="Economia Tienda"):
         clean = nombre_rol.strip().replace("@", "")[:80] or "Rol tienda"
         role_name = f"{prefix}{clean}"[:100]
 
+        colour: Optional[discord.Colour] = None
+        if color_hex and str(color_hex).strip():
+            raw = str(color_hex).strip()
+            if raw.startswith("#"):
+                raw = raw[1:]
+            try:
+                if raw.isdigit():
+                    colour = discord.Colour(int(raw))
+                elif len(raw) == 6:
+                    colour = discord.Colour(int(raw, 16))
+            except (ValueError, TypeError):
+                colour = None
+
         self.economia_db.modify_points(interaction.user.id, precio, gastar=True)
         role = None
         try:
-            role = await interaction.guild.create_role(
+            create_kw: Dict[str, Any] = dict(
                 name=role_name,
                 mentionable=False,
                 reason=f"Tienda temporal — compra {interaction.user.id} → {usuario.id}",
             )
+            if colour is not None:
+                create_kw["colour"] = colour
+            role = await interaction.guild.create_role(**create_kw)
             try:
                 if me.top_role.position > 1:
                     await role.edit(position=max(1, me.top_role.position - 1))

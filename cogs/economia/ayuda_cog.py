@@ -200,13 +200,13 @@ class EconomiaHelpView(discord.ui.View):
         if isinstance(next_button, discord.ui.Button):
             next_button.disabled = (self.current_page == len(self.embeds) - 1)
 
-    @discord.ui.button(label="Anterior", style=discord.ButtonStyle.secondary, emoji="⬅️")
+    @discord.ui.button(label="Atrás", style=discord.ButtonStyle.secondary, emoji="◀")
     async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.current_page -= 1
         self._update_buttons()
         await interaction.response.edit_message(embed=self.embeds[self.current_page], view=self)
 
-    @discord.ui.button(label="Siguiente", style=discord.ButtonStyle.primary, emoji="➡️")
+    @discord.ui.button(label="Siguiente", style=discord.ButtonStyle.primary, emoji="▶")
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.current_page += 1
         self._update_buttons()

@@ -19,7 +19,7 @@ def build_reclamar_help_pages(db: Any, task_config: Dict[str, Any], user_id: int
             "un comando con tipo (`?reclamar diaria 1`…) o **`/aat-reclamar`**.\n\n"
             "**Qué podés cobrar**\n"
             "• **Iniciación** — hasta **3** premios distintos (Discord · perfil mínimo · perfil completo).\n"
-            "• **Diario** — **2** premios (actividad+oráculo · trampa).\n"
+            "• **Diario** — **5** premios (actividad · trampa · rolls · PPT · ahorcado).\n"
             "• **Semanal** — **3** vías (base · Impostor · minijuegos), cada una con su premio.\n\n"
             "**Botones de abajo**\n"
             "• **Reclamar todo lo listo** = igual que `/aat-reclamar` vacío: intenta **cada** ☑ sin mezclar requisitos.\n"
@@ -27,7 +27,7 @@ def build_reclamar_help_pages(db: Any, task_config: Dict[str, Any], user_id: int
         ),
         color=discord.Color.gold(),
     )
-    e1.set_footer(text="Tip: ?progreso · ?progresoayuda — Paginá con Anterior / Siguiente")
+    e1.set_footer(text="Tip: ?progreso · ?progresoayuda — Paginá con ◀ Atrás / ▶ Siguiente")
 
     e2 = discord.Embed(
         title="?reclamar — Comandos y códigos (2/4)",
@@ -50,17 +50,17 @@ def build_reclamar_help_pages(db: Any, task_config: Dict[str, Any], user_id: int
     e2.add_field(
         name="Diario (`2`)",
         value=(
-            "`?reclamar diaria` — ambas partes si podés\n"
+            "`?reclamar diaria` — todo lo listo del día\n"
             "`?reclamar diaria 1` — mensajes + rx + oráculo\n"
-            "`… diaria 2` — trampa"
+            "`… diaria 2` — trampa · `3` — rolls (casual+batalla) · `4` — PPT · `5` — ahorcado"
         ),
         inline=False,
     )
     e2.add_field(
         name="Semanal (`3` · `4` · `5`)",
         value=(
-            "`?reclamar semanal 1` — base · `2` — especial · `3` — minijuegos\n"
-            "Aliases: `especial 1`, `minijuegos 1`, `weekly`…"
+            "`?reclamar semanal 1` — base · `2` — especial · `3` — minijuegos · **`4`** — las tres si podés\n"
+            "`semanal todo` — alias · `especial 1`, `minijuegos 1`, `weekly`…"
         ),
         inline=False,
     )
@@ -89,6 +89,8 @@ def build_reclamar_help_pages(db: Any, task_config: Dict[str, Any], user_id: int
             "`?inicial` · `?diaria` / `?diario` · `?semanal` · `?progreso`\n\n"
             "**Slash (solo vos, ephemeral)**\n"
             "`/aat-progreso-iniciacion` · `…-diaria` · `…-semanal`\n\n"
+            "**Diaria 5 — Ahorcado**\n"
+            "`animealtoque.com/ahorcado` → jugar el del día (logueado con Discord) y luego `?reclamar diaria 5`.\n\n"
             "**Discord viejo sin marcar**\n"
             "`/aat-verificar-antiguas` — escanea canales para iniciación.\n\n"
             "_Los botones **Ver …** mandan progreso en un **mensaje nuevo** en este canal._"

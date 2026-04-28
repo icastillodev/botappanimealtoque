@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import os
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 import aiohttp
@@ -515,6 +516,72 @@ async def oracle_local_reply(user_question: str, *, style: str = "open") -> Opti
         return None
     if _response_echoes_instructions(out):
         log.info("Oracle LLM: respuesta parece eco del prompt; se usa fallback del oráculo.")
+        return None
+    return out
+
+
+async def oracle_local_reply_with_images(user_question: str, *, images_bytes: List[bytes], style: str = "open") -> Optional[str]:
+    """
+    Oráculo vía Ollama con imágenes (multimodal).
+    Requiere un modelo con visión. Configurá `ORACLE_MODEL_VISION` (y `ORACLE_LLM_URL`).
+    """
+    url = _normalize_generate_url(os.getenv("ORACLE_LLM_URL") or "")
+    if not url:
+        return None
+    if not images_bytes:
+        return await oracle_local_reply(user_question, style=style)
+
+    model = (os.getenv("ORACLE_MODEL_VISION") or os.getenv("ORACLE_MODEL") or "llava").strip()
+    try:
+        timeout_sec = float((os.getenv("ORACLE_TIMEOUT") or "12").strip())
+    except ValueError:
+        timeout_sec = 12.0
+
+    q = (user_question or "").strip()[:700]
+    if len(q) < 2:
+        return None
+
+    mw = oracle_max_words_primary()
+    mc = oracle_max_chars_primary()
+    try:
+        num_pred = int((os.getenv("ORACLE_NUM_PREDICT_VISION") or os.getenv("ORACLE_NUM_PREDICT") or "72").strip())
+    except ValueError:
+        num_pred = 72
+    num_pred = max(16, min(140, num_pred))
+    if style == "yesno":
+        num_pred = min(num_pred, 64)
+
+    st = style if style in ("open", "yesno") else "open"
+    system = _system_oracle_combined(max_words=mw, style=st)
+    kb_ctx = _bot_kb_block() if _should_include_bot_kb(q) else ""
+    parts = []
+    if kb_ctx:
+        parts.append(kb_ctx)
+    parts.append("Pregunta del usuario (mirá la imagen adjunta):\n" + q)
+    prompt = "\n\n".join(parts).strip()
+
+    payload: Dict[str, Any] = {
+        "model": model,
+        "system": system,
+        "prompt": prompt,
+        "stream": False,
+        "options": _ollama_options(num_predict=num_pred),
+        "images": [base64.b64encode(images_bytes[0]).decode("ascii")],
+    }
+    ka = _ollama_keep_alive()
+    if ka:
+        payload["keep_alive"] = ka
+
+    data = await _ollama_post_generate_guarded(url, payload, timeout_sec)
+    if not isinstance(data, dict):
+        return None
+    text = data.get("response")
+    if not text or not isinstance(text, str):
+        return None
+    out = _truncate_response(text, max_words=mw, max_chars=mc)
+    if not out:
+        return None
+    if _response_echoes_instructions(out):
         return None
     return out
 

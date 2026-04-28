@@ -289,6 +289,43 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
             return await ctx.send("Minijuegos no disponible.", delete_after=8)
         await cog.roll_aceptar_desde_prefijo(ctx)
 
+    @commands.command(name="ppsretar", aliases=["pps"])
+    async def ppsretar_cmd(self, ctx: commands.Context, oponente: discord.Member):
+        """Piedra/papel/tijera sin apuesta vs @rival (lo oculto va con `/aat-rps-elegir`)."""
+        cog = self.bot.get_cog("Economia Minijuegos")
+        if not cog:
+            return await ctx.send("Minijuegos no disponible.", delete_after=8)
+        await cog.rps_reto_desde_prefijo(ctx, oponente, 0)
+
+    @commands.command(name="ppsc")
+    async def ppsc_cmd(self, ctx: commands.Context, oponente: discord.Member, apuesta: int):
+        """Piedra/papel/tijera con apuesta: `?ppsc @rival 100`."""
+        if apuesta < 1:
+            return await ctx.send(
+                "Con `?ppsc` poné los puntos (1–5000). Sin apuesta usá `?pps @usuario`.",
+                delete_after=12,
+            )
+        cog = self.bot.get_cog("Economia Minijuegos")
+        if not cog:
+            return await ctx.send("Minijuegos no disponible.", delete_after=8)
+        await cog.rps_reto_desde_prefijo(ctx, oponente, int(apuesta))
+
+    @commands.command(name="ppsaceptar", aliases=["pps_aceptar"])
+    async def ppsaceptar_cmd(self, ctx: commands.Context):
+        """Aceptar piedra/papel/tijera pendiente hacia vos."""
+        cog = self.bot.get_cog("Economia Minijuegos")
+        if not cog:
+            return await ctx.send("Minijuegos no disponible.", delete_after=8)
+        await cog.rps_aceptar_desde_prefijo(ctx)
+
+    @commands.command(name="ppselegir")
+    async def ppselegir_cmd(self, ctx: commands.Context, *, eleccion: str):
+        """Tu jugada oculta (solo vos): `?ppselegir papel`."""
+        cog = self.bot.get_cog("Economia Minijuegos")
+        if not cog:
+            return await ctx.send("Minijuegos no disponible.", delete_after=8)
+        await cog.rps_elegir_desde_prefijo(ctx, eleccion=eleccion)
+
     @commands.command(name="pregunta", aliases=["consulta", "8ball", "bola", "oraculo"])
     async def pregunta_prefijo(self, ctx: commands.Context, *, texto: Optional[str] = None):
         """Oráculo sí/no/% — registrado acá para que exista aunque falle otra extensión; la lógica vive en el cog Oráculo."""

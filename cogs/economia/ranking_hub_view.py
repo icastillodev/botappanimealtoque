@@ -1,7 +1,7 @@
 # Vista interactiva: `?ranking` — tablas de economía paginadas + accesos a otros tops.
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Optional
 
 import discord
 from discord.ext import commands
@@ -57,10 +57,10 @@ class _RankingModeButton(discord.ui.Button):
 
 
 class _NavButton(discord.ui.Button):
-    def __init__(self, hub: "RankingHubView", *, delta: int, label: str):
+    def __init__(self, hub: "RankingHubView", *, delta: int, label: str, emoji: Optional[str] = None):
         self.hub = hub
         self.delta = delta
-        super().__init__(label=label, row=1, style=discord.ButtonStyle.secondary)
+        super().__init__(label=label, row=1, style=discord.ButtonStyle.secondary, emoji=emoji)
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.hub.owner_id:
@@ -93,8 +93,8 @@ class RankingHubView(discord.ui.View):
         }
         for b in self._mode_btns.values():
             self.add_item(b)
-        self._prev = _NavButton(self, delta=-1, label="◀️ Anterior")
-        self._next = _NavButton(self, delta=1, label="Siguiente ▶️")
+        self._prev = _NavButton(self, delta=-1, label="Atrás", emoji="◀")
+        self._next = _NavButton(self, delta=1, label="Siguiente", emoji="▶")
         self.add_item(self._prev)
         self.add_item(self._next)
         self.add_item(_HubExtraButton(self, "mi", "Mi resumen", row=2))

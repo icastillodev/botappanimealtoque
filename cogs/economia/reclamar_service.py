@@ -29,11 +29,15 @@ _CANONICAL_TIPOS = frozenset(
         "semanal",
         "semanal_especial",
         "semanal_minijuegos",
+        "semanal_all",
         "inicial_comunidad",
         "inicial_perfil_min",
         "inicial_perfil_max",
         "diaria_actividad",
         "diaria_trampa",
+        "diaria_rolls",
+        "diaria_rps",
+        "diaria_ahorcado",
     }
 )
 
@@ -57,15 +61,24 @@ _RECLAMO_ALIASES: Dict[str, str] = {
     "minijuegos": "semanal_minijuegos",
     "minigames": "semanal_minijuegos",
     "weekly_minigames": "semanal_minijuegos",
+    "semanal_all": "semanal_all",
+    "semanal_todo": "semanal_all",
+    "weekly_all": "semanal_all",
+    "diaria_rolls": "diaria_rolls",
+    "diaria_rps": "diaria_rps",
+    "rolls": "diaria_rolls",
+    "ppt": "diaria_rps",
+    "pps": "diaria_rps",
 }
 
 
 RECLAMO_TIPOS_AYUDA = (
     "Sin argumento = intenta **todo** lo listo. **Iniciación** (3 premios): `?reclamar inicial` (= todo lo listo de iniciación) · "
     "`?reclamar inicial 1` (Discord/comunidad) · `inicial 2` (wishlist+top+odiados al **mínimo**) · `inicial 3` (perfil **completo** al tope). "
-    "**Diario** (2 premios): `?reclamar diaria` (= ambos bloques listos) · `diaria 1` (mensajes+reacciones+oráculo) · `diaria 2` (trampa). "
-    "**Semanal:** `?reclamar semanal 1` (base) · `2` (especial) · `3` (minijuegos) · `especial 1` · `minijuegos 1`. "
-    "**Códigos:** `?reclamar 1` (iniciación, varios cobros) · `2` (diario) · `3`…`5` (semanales). `all` / `todo`."
+    "**Diario** (**5 premios**): `?reclamar diaria` (= todo lo listo del día) · `diaria 1` (actividad+oráculo) · `2` (trampa) · "
+    "`3` (rolls: casual + batalla con apuesta) · `4` (piedra/papel/tijera) · `5` (ahorcado del día). "
+    "**Semanal:** `?reclamar semanal 1` (base) · `2` (especial) · `3` (minijuegos) · **`4`** (las **tres** a la vez si podés) · `especial 1` · `minijuegos 1`. "
+    "**Códigos:** `?reclamar 1`…`5` · `all` / `todo`."
 )
 
 # Atajo numérico (mismo orden que en la guía de estado).
@@ -130,6 +143,9 @@ def parse_reclamo_prefijo_parts(parts: List[str]) -> Tuple[Optional[str], Option
     if m == "semanal":
         ref = 1
         if len(parts) >= 2:
+            low1 = parts[1].strip().lower()
+            if low1 in ("all", "todo", "todos", "todo_el_semanal"):
+                return ("semanal_all", None)
             r, err = _parse_ref(parts[1])
             if err:
                 return (None, err)
@@ -140,9 +156,11 @@ def parse_reclamo_prefijo_parts(parts: List[str]) -> Tuple[Optional[str], Option
             return ("semanal_especial", None)
         if ref == 3:
             return ("semanal_minijuegos", None)
+        if ref == 4:
+            return ("semanal_all", None)
         return (
             None,
-            "Para **`semanal`** el número es **1** (base), **2** (especial Impostor) o **3** (minijuegos). "
+            "Para **`semanal`** el número es **1** (base), **2** (especial Impostor), **3** (minijuegos) o **4** (tres a la vez). "
             "También podés `?reclamar especial 1` o `?reclamar minijuegos 1`.",
         )
 
@@ -170,7 +188,16 @@ def parse_reclamo_prefijo_parts(parts: List[str]) -> Tuple[Optional[str], Option
             return ("diaria_actividad", None)
         if r == 2:
             return ("diaria_trampa", None)
-        return (None, "Para **`diaria`** / **`daily`** la referencia es **1** (actividad+oráculo) o **2** (trampa).")
+        if r == 3:
+            return ("diaria_rolls", None)
+        if r == 4:
+            return ("diaria_rps", None)
+        if r == 5:
+            return ("diaria_ahorcado", None)
+        return (
+            None,
+            "Para **`diaria`** / **`daily`** la referencia es **1** (actividad+oráculo), **2** (trampa), **3** (rolls), **4** (PPT) o **5** (ahorcado).",
+        )
 
     if m in ("semanal_especial", "semanal_minijuegos"):
         ref = 1
@@ -237,6 +264,9 @@ def expand_reclaim_tipos(tipo: TipoReclamo) -> List[str]:
             "inicial_perfil_max",
             "diaria_actividad",
             "diaria_trampa",
+            "diaria_rolls",
+            "diaria_rps",
+            "diaria_ahorcado",
             "semanal",
             "semanal_especial",
             "semanal_minijuegos",
@@ -244,7 +274,9 @@ def expand_reclaim_tipos(tipo: TipoReclamo) -> List[str]:
     if tipo == "inicial":
         return ["inicial_comunidad", "inicial_perfil_min", "inicial_perfil_max"]
     if tipo == "diaria":
-        return ["diaria_actividad", "diaria_trampa"]
+        return ["diaria_actividad", "diaria_trampa", "diaria_rolls", "diaria_rps", "diaria_ahorcado"]
+    if tipo == "semanal_all":
+        return ["semanal", "semanal_especial", "semanal_minijuegos"]
     return [tipo]
 
 
@@ -259,9 +291,13 @@ def inicial_all_claimed(prog: Dict[str, Any]) -> bool:
 
 
 def diaria_all_claimed(prog: Dict[str, Any]) -> bool:
-    if _claimed(prog.get("completado")):
-        return True
-    return _claimed(prog.get("completado_diaria_actividad")) and _claimed(prog.get("completado_diaria_trampa"))
+    return (
+        _claimed(prog.get("completado_diaria_actividad"))
+        and _claimed(prog.get("completado_diaria_trampa"))
+        and _claimed(prog.get("completado_diaria_rolls"))
+        and _claimed(prog.get("completado_diaria_rps"))
+        and _claimed(prog.get("completado_diaria_ahorcado"))
+    )
 
 
 def _inicial_discord_done(prog: Dict[str, Any]) -> bool:
@@ -300,6 +336,18 @@ def _diaria_trampa_ready(prog: Dict[str, Any]) -> bool:
     return tr >= 1 or ts >= 1
 
 
+def _diaria_rolls_ready(prog: Dict[str, Any]) -> bool:
+    return _pv(prog.get("dia_roll_casual")) >= 1 and _pv(prog.get("dia_roll_bet")) >= 1
+
+
+def _diaria_rps_ready(prog: Dict[str, Any]) -> bool:
+    return _pv(prog.get("dia_rps")) >= 1
+
+
+def _diaria_ahorcado_ready(prog: Dict[str, Any]) -> bool:
+    return _pv(prog.get("dia_ahorcado")) >= 1
+
+
 def _diaria_prog_ready(prog: Dict[str, Any]) -> bool:
     return _diaria_actividad_ready(prog) and _diaria_trampa_ready(prog)
 
@@ -307,6 +355,9 @@ def _diaria_prog_ready(prog: Dict[str, Any]) -> bool:
 # Alias para imports desde vistas / otros cogs (misma lógica que `?diaria`).
 diaria_actividad_ready = _diaria_actividad_ready
 diaria_trampa_ready = _diaria_trampa_ready
+diaria_rolls_ready = _diaria_rolls_ready
+diaria_rps_ready = _diaria_rps_ready
+diaria_ahorcado_ready = _diaria_ahorcado_ready
 
 
 def format_diaria_actividad_reclaim_blocked(prog: Dict[str, Any]) -> str:
@@ -341,12 +392,37 @@ def format_diaria_trampa_reclaim_blocked(prog: Dict[str, Any]) -> str:
 
 
 def format_diaria_reclaim_blocked_explanation(prog: Dict[str, Any]) -> str:
-    """Resumen de ambos bloques (p. ej. `?reclamar diaria` cuando falta algo)."""
+    """Resumen de los cuatro bloques (p. ej. `?reclamar diaria` cuando falta algo)."""
+    rc = _pv(prog.get("dia_roll_casual"))
+    rb = _pv(prog.get("dia_roll_bet"))
+    rps_n = _pv(prog.get("dia_rps"))
+    rolls_txt = (
+        "**Diario — premio 3 (rolls):** necesitás **las dos** marcas en el día.\n"
+        f"· Roll casual (`/aat-roll`, reto **sin** apuesta): **{rc}/1**\n"
+        f"· Batalla roll con apuesta (`/aat-roll-retar` con pts y resolver): **{rb}/1**\n"
+        "_Cuando ambas líneas cumplan → **`?reclamar diaria 3`**._\n"
+    )
+    rps_txt = (
+        "**Diario — premio 4 (piedra / papel / tijera):** una partida cerrada en el día.\n"
+        f"· Partida de PPT: **{rps_n}/1** (`/aat-rps-retar` · `/aat-rps-aceptar` · `/aat-rps-elegir`)\n"
+        "_Luego **`?reclamar diaria 4`**._\n"
+    )
+    ah_txt = (
+        "**Diario — premio 5 (ahorcado del día):** completá el ahorcado en la web y enviá el resultado a Discord.\n"
+        f"· Ahorcado del día: **{_pv(prog.get('dia_ahorcado'))}/1** (`animealtoque.com/ahorcado`)\n"
+        "_Luego **`?reclamar diaria 5`**._\n"
+    )
     return (
-        "**Diario:** son **dos premios** por separado (`?reclamar diaria 1` y `diaria 2`).\n\n"
+        "**Diario:** son **cinco premios** separados (`?reclamar diaria 1` … **`5`**).\n\n"
         + format_diaria_actividad_reclaim_blocked(prog)
         + "\n\n"
         + format_diaria_trampa_reclaim_blocked(prog)
+        + "\n\n"
+        + rolls_txt
+        + "\n"
+        + rps_txt
+        + "\n"
+        + ah_txt
     )
 
 
@@ -357,8 +433,6 @@ def _inicial_sub_claimed(prog: Dict[str, Any], col: str) -> bool:
 
 
 def _diaria_sub_claimed(prog: Dict[str, Any], col: str) -> bool:
-    if _claimed(prog.get("completado")):
-        return True
     return _claimed(prog.get(col))
 
 
@@ -397,6 +471,24 @@ def build_reclaim_status_block(db: Any, _task_config: Dict[str, Any], user_id: i
         lines.append("☑ **Diario 2 — Trampa** — listo · `?reclamar diaria 2`")
     else:
         lines.append("☐ **Diario 2 — Trampa** — incompleto.")
+    if _diaria_sub_claimed(pd, "completado_diaria_rolls"):
+        lines.append("✅ **Diario 3 — Rolls** (casual + batalla) — ya cobrado hoy.")
+    elif _diaria_rolls_ready(pd):
+        lines.append("☑ **Diario 3 — Rolls** — listo · `?reclamar diaria 3`")
+    else:
+        lines.append("☐ **Diario 3 — Rolls** — incompleto (casual **y** batalla con apuesta).")
+    if _diaria_sub_claimed(pd, "completado_diaria_rps"):
+        lines.append("✅ **Diario 4 — PPT** — ya cobrado hoy.")
+    elif _diaria_rps_ready(pd):
+        lines.append("☑ **Diario 4 — PPT** — listo · `?reclamar diaria 4`")
+    else:
+        lines.append("☐ **Diario 4 — PPT** — incompleto.")
+    if _diaria_sub_claimed(pd, "completado_diaria_ahorcado"):
+        lines.append("✅ **Diario 5 — Ahorcado** — ya cobrado hoy.")
+    elif _diaria_ahorcado_ready(pd):
+        lines.append("☑ **Diario 5 — Ahorcado** — listo · `?reclamar diaria 5`")
+    else:
+        lines.append("☐ **Diario 5 — Ahorcado** — incompleto.")
     ps = db.get_progress_semanal(user_id)
     if int(ps.get("completado") or 0) == 1:
         lines.append("✅ **Semanal base (ref. 1)** (*weekly*) — ya reclamado.")
@@ -478,11 +570,19 @@ def reclaim_rewards(
     if tipo == "diaria":
         d0 = db.get_progress_diaria(user_id)
         if diaria_all_claimed(d0):
-            return False, [], ["Diaria: las dos partes de hoy ya están cobradas."]
+            return False, [], ["Diaria: las cuatro partes de hoy ya están cobradas."]
+    if tipo == "semanal_all":
+        s0 = db.get_progress_semanal(user_id)
+        if (
+            _claimed(s0.get("completado"))
+            and _claimed(s0.get("completado_especial"))
+            and _claimed(s0.get("completado_minijuegos"))
+        ):
+            return False, [], ["Semanal: las tres partes (base, especial, minijuegos) ya están cobradas esta semana."]
 
     tipos_a_revisar = expand_reclaim_tipos(tipo)
     rewards = (task_config or {}).get("rewards") or {}
-    mute_claimed = tipo is None or tipo in ("inicial", "diaria")
+    mute_claimed = tipo is None or tipo in ("inicial", "diaria", "semanal_all")
 
     reclamado_algo = False
     mensajes_exito: List[str] = []
@@ -594,6 +694,7 @@ def reclaim_rewards(
                     extra = f" + {bl} Blister(s) 🃏" if bl else ""
                     mensajes_exito.append(f"**Diario 1 — Actividad + oráculo:** {fmt_toque_sentence(pts)}{extra}")
                     reclamado_algo = True
+                    mensajes_exito.extend(db.finalize_daily_streak_reward(user_id, task_config))
                 elif tipo == "diaria_actividad":
                     mensajes_error.append(
                         "**Diario 1:** no se puede cobrar todavía.\n" + format_diaria_actividad_reclaim_blocked(prog)
@@ -621,10 +722,93 @@ def reclaim_rewards(
                     extra = f" + {bl} Blister(s) 🃏" if bl else ""
                     mensajes_exito.append(f"**Diario 2 — Trampa:** {fmt_toque_sentence(pts)}{extra}")
                     reclamado_algo = True
+                    mensajes_exito.extend(db.finalize_daily_streak_reward(user_id, task_config))
                 elif tipo == "diaria_trampa":
                     mensajes_error.append(
                         "**Diario 2:** no se puede cobrar todavía.\n" + format_diaria_trampa_reclaim_blocked(prog)
                     )
+
+            elif objetivo == "diaria_rolls":
+                prog = db.get_progress_diaria(user_id)
+                if _diaria_sub_claimed(prog, "completado_diaria_rolls"):
+                    if not mute_claimed:
+                        mensajes_error.append("Diario 3 (rolls): ya cobrado hoy.")
+                    continue
+                if _diaria_rolls_ready(prog):
+                    pts = int(rewards.get("diaria_rolls") or 0)
+                    bl = int(rewards.get("diaria_rolls_blisters") or 0)
+                    if pts <= 0 and bl <= 0:
+                        mensajes_error.append("Diario 3: falta configuración de recompensa (rewards.diaria_rolls).")
+                        continue
+                    if pts:
+                        db.modify_points(user_id, pts)
+                    if bl > 0:
+                        _, bcol = db.modify_blisters(user_id, "trampa", bl)
+                        mensajes_exito.extend(bcol)
+                    if not db.claim_reward(user_id, "diaria_rolls"):
+                        continue
+                    extra = f" + {bl} Blister(s) 🃏" if bl else ""
+                    mensajes_exito.append(f"**Diario 3 — Rolls (casual + batalla):** {fmt_toque_sentence(pts)}{extra}")
+                    reclamado_algo = True
+                elif tipo == "diaria_rolls":
+                    rc = _pv(prog.get("dia_roll_casual"))
+                    rb = _pv(prog.get("dia_roll_bet"))
+                    mensajes_error.append(
+                        "**Diario 3:** faltan marcas — roll casual "
+                        f"**{rc}/1** y batalla con apuesta **{rb}/1** (`/aat-roll`, `/aat-roll-retar`)."
+                    )
+
+            elif objetivo == "diaria_rps":
+                prog = db.get_progress_diaria(user_id)
+                if _diaria_sub_claimed(prog, "completado_diaria_rps"):
+                    if not mute_claimed:
+                        mensajes_error.append("Diario 4 (PPT): ya cobrado hoy.")
+                    continue
+                if _diaria_rps_ready(prog):
+                    pts = int(rewards.get("diaria_rps") or 0)
+                    bl = int(rewards.get("diaria_rps_blisters") or 0)
+                    if pts <= 0 and bl <= 0:
+                        mensajes_error.append("Diario 4: falta configuración de recompensa (rewards.diaria_rps).")
+                        continue
+                    if pts:
+                        db.modify_points(user_id, pts)
+                    if bl > 0:
+                        _, bcol = db.modify_blisters(user_id, "trampa", bl)
+                        mensajes_exito.extend(bcol)
+                    if not db.claim_reward(user_id, "diaria_rps"):
+                        continue
+                    extra = f" + {bl} Blister(s) 🃏" if bl else ""
+                    mensajes_exito.append(f"**Diario 4 — Piedra / papel / tijera:** {fmt_toque_sentence(pts)}{extra}")
+                    reclamado_algo = True
+                elif tipo == "diaria_rps":
+                    mensajes_error.append(
+                        "**Diario 4:** todavía no jugaste una partida de PPT hoy (`/aat-rps-retar` …)."
+                    )
+
+            elif objetivo == "diaria_ahorcado":
+                prog = db.get_progress_diaria(user_id)
+                if _diaria_sub_claimed(prog, "completado_diaria_ahorcado"):
+                    if not mute_claimed:
+                        mensajes_error.append("Diario 5 (ahorcado): ya cobrado hoy.")
+                    continue
+                if _diaria_ahorcado_ready(prog):
+                    pts = int(rewards.get("diaria_ahorcado") or 0)
+                    bl = int(rewards.get("diaria_ahorcado_blisters") or 0)
+                    if pts <= 0 and bl <= 0:
+                        mensajes_error.append("Diario 5: falta configuración de recompensa (rewards.diaria_ahorcado).")
+                        continue
+                    if pts:
+                        db.modify_points(user_id, pts)
+                    if bl > 0:
+                        _, bcol = db.modify_blisters(user_id, "trampa", bl)
+                        mensajes_exito.extend(bcol)
+                    if not db.claim_reward(user_id, "diaria_ahorcado"):
+                        continue
+                    extra = f" + {bl} Blister(s) 🃏" if bl else ""
+                    mensajes_exito.append(f"**Diario 5 — Ahorcado del día:** {fmt_toque_sentence(pts)}{extra}")
+                    reclamado_algo = True
+                elif tipo == "diaria_ahorcado":
+                    mensajes_error.append("**Diario 5:** completá el ahorcado del día en `animealtoque.com/ahorcado` y enviá tu resultado.")
 
             elif objetivo == "semanal":
                 prog = db.get_progress_semanal(user_id)

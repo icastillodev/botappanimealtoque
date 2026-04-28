@@ -335,7 +335,29 @@ class AnimeTriviaCog(commands.Cog, name="Trivia anime"):
         if not isinstance(channel, discord.TextChannel):
             return
 
-        pick = random.choice(self._questions)
+        pick: Optional[Dict[str, Any]] = None
+        ani_on = (os.getenv("TRIVIA_USE_ANILIST", "1") or "1").strip().lower() not in (
+            "0",
+            "false",
+            "no",
+            "off",
+        )
+        mix = float(os.getenv("TRIVIA_ANILIST_MIX", "0.65") or 0.65)
+        if ani_on:
+            try:
+                from .trivia_anilist import try_fetch_anilist_trivia_question
+
+                if mix >= 1 or random.random() < mix or not self._questions:
+                    pick = await try_fetch_anilist_trivia_question()
+            except Exception:
+                log.debug("trivia anilist opcional falló", exc_info=True)
+
+        if not pick:
+            if not self._questions:
+                log.warning("Trivia: sin preguntas; se marca ronda como hecha.")
+                self._inc_done(day)
+                return
+            pick = random.choice(self._questions)
         q = pick["q"]
         answers: List[str] = pick["answers"]
         norm_set = _expand_all_accepted_norms(answers)

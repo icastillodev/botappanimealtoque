@@ -48,6 +48,12 @@ class TestParseReclamoPrefijo(unittest.TestCase):
         self.assertEqual(parse_reclamo_prefijo_parts(["diaria"]), ("diaria", None))
         self.assertEqual(parse_reclamo_prefijo_parts(["diaria", "1"]), ("diaria_actividad", None))
         self.assertEqual(parse_reclamo_prefijo_parts(["daily", "2"]), ("diaria_trampa", None))
+        self.assertEqual(parse_reclamo_prefijo_parts(["diaria", "3"]), ("diaria_rolls", None))
+        self.assertEqual(parse_reclamo_prefijo_parts(["diaria", "4"]), ("diaria_rps", None))
+        self.assertEqual(parse_reclamo_prefijo_parts(["diaria", "5"]), ("diaria_ahorcado", None))
+
+    def test_semanal_all_ref(self):
+        self.assertEqual(parse_reclamo_prefijo_parts(["semanal", "4"]), ("semanal_all", None))
 
     def test_todo_keyword(self):
         self.assertEqual(parse_reclamo_prefijo_parts(["todo"]), (None, None))
@@ -123,11 +129,19 @@ class TestReclaimRewards(unittest.TestCase):
             "completado": 0,
             "completado_diaria_actividad": 0,
             "completado_diaria_trampa": 0,
+            "completado_diaria_rolls": 0,
+            "completado_diaria_rps": 0,
+            "completado_diaria_ahorcado": 0,
             "mensajes_servidor": 10,
             "reacciones_servidor": 3,
-            "trampa_enviada": 1,
+            "trampa_enviada": 0,
             "trampa_sin_objetivo": 0,
             "oraculo_preguntas": 1,
+            "dia_roll_casual": 0,
+            "dia_roll_bet": 0,
+            "dia_rps": 0,
+            "dia_ahorcado": 0,
+            "dia_ahorcado_id": 0,
         }
         db.get_progress_semanal.return_value = {
             "completado": 0,

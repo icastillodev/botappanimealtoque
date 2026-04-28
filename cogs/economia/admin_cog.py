@@ -68,7 +68,7 @@ class CardStockView(discord.ui.View):
         return embed
 
     def _update_buttons(self):
-        # children[0] es 'Anterior', children[1] es 'Siguiente'
+        # children[0] es 'Atrás', children[1] es 'Siguiente'
         previous_button = self.children[0]
         next_button = self.children[1]
 
@@ -77,14 +77,14 @@ class CardStockView(discord.ui.View):
         if isinstance(next_button, discord.ui.Button):
             next_button.disabled = (self.current_page >= self.max_pages - 1)
 
-    @discord.ui.button(label="Anterior", style=discord.ButtonStyle.secondary, emoji="⬅️")
+    @discord.ui.button(label="Atrás", style=discord.ButtonStyle.secondary, emoji="◀")
     async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.current_page -= 1
         self._update_buttons()
         embed = self._create_card_embed()
         await interaction.response.edit_message(embed=embed, view=self)
 
-    @discord.ui.button(label="Siguiente", style=discord.ButtonStyle.primary, emoji="➡️")
+    @discord.ui.button(label="Siguiente", style=discord.ButtonStyle.primary, emoji="▶")
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.current_page += 1
         self._update_buttons()

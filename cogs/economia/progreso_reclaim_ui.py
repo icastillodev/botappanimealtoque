@@ -36,7 +36,7 @@ class _ReclaimBtn(discord.ui.Button):
 
 
 class ProgressEmbedsWithReclaimView(GuiaEmbedsPaginator):
-    """Igual que la guía (Anterior/Siguiente) + botones para reclamar según el comando."""
+    """Igual que la guía (◀ Atrás / ▶ Siguiente) + botones para reclamar según el comando."""
 
     def __init__(
         self,
@@ -51,13 +51,22 @@ class ProgressEmbedsWithReclaimView(GuiaEmbedsPaginator):
         self.bot = bot
         self.reclaim_layout: _Layout = layout
         if layout == "inicial":
-            self.add_item(_ReclaimBtn(label="Reclamar iniciación", tipo="inicial"))
+            self.add_item(_ReclaimBtn(label="Ini 1 · Discord", tipo="inicial_comunidad", row=0))
+            self.add_item(_ReclaimBtn(label="Ini 2 · Perfil min.", tipo="inicial_perfil_min", row=0))
+            self.add_item(_ReclaimBtn(label="Ini 3 · Perfil top", tipo="inicial_perfil_max", row=0))
+            self.add_item(_ReclaimBtn(label="Todo iniciación", tipo="inicial", row=1))
         elif layout == "diaria":
-            self.add_item(_ReclaimBtn(label="Reclamar diario", tipo="diaria"))
+            self.add_item(_ReclaimBtn(label="Diaria 1 · Actividad", tipo="diaria_actividad", row=0))
+            self.add_item(_ReclaimBtn(label="Diaria 2 · Trampa", tipo="diaria_trampa", row=0))
+            self.add_item(_ReclaimBtn(label="Diaria 3 · Rolls", tipo="diaria_rolls", row=0))
+            self.add_item(_ReclaimBtn(label="Diaria 4 · PPT", tipo="diaria_rps", row=1))
+            self.add_item(_ReclaimBtn(label="Diaria 5 · Ahorcado", tipo="diaria_ahorcado", row=1))
+            self.add_item(_ReclaimBtn(label="Todo el diario", tipo="diaria", row=2))
         elif layout == "semanal":
-            self.add_item(_ReclaimBtn(label="Reclamar base", tipo="semanal", row=1))
-            self.add_item(_ReclaimBtn(label="Reclamar especial", tipo="semanal_especial", row=1))
-            self.add_item(_ReclaimBtn(label="Reclamar minijuegos", tipo="semanal_minijuegos", row=1))
+            self.add_item(_ReclaimBtn(label="Semanal base", tipo="semanal", row=0))
+            self.add_item(_ReclaimBtn(label="Especial", tipo="semanal_especial", row=0))
+            self.add_item(_ReclaimBtn(label="Minijuegos", tipo="semanal_minijuegos", row=0))
+            self.add_item(_ReclaimBtn(label="Todo semanal", tipo="semanal_all", row=1))
         elif layout == "progreso":
             self.add_item(_ReclaimBtn(label="Reclamar todo lo listo", tipo=None))
 
@@ -66,7 +75,10 @@ class ProgressEmbedsWithReclaimView(GuiaEmbedsPaginator):
         if self.reclaim_layout == "progreso":
             tip = "Tras cobrar, el mensaje se **actualiza**. · Leyenda / tips: **`?progresoayuda`**"
         else:
-            tip = "Tras cobrar, este mensaje se **actualiza**. · `?reclamar inicial 1|2|3` · `diaria 1|2` · `semanal 1|2|3`…"
+            tip = (
+                "Tras cobrar, este mensaje se **actualiza**. · `diaria 1–5` · `semanal 1–4` "
+                "(**4** = todas las semanales listas) · ver también `?reclamar`."
+            )
         if base:
             return f"{base} — {tip}"
         return f"{self.label} — {tip}"

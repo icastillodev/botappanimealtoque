@@ -49,7 +49,7 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
 
     @app_commands.command(
         name="aat-progreso-diaria",
-        description="Progreso Diario (daily): actividad + oráculo y trampa.",
+        description="Progreso Diario (daily): cuatro bloques — actividad, trampa, rolls, PPT.",
     )
     async def progreso_diaria(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -82,7 +82,12 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
     )
     @app_commands.describe(
         tipo="Vacío = todo. O elegí un tipo (mismos nombres que `?reclamar diaria`, `weekly`, `especial`…).",
-        referencia="**semanal:** 1=base, 2=especial, 3=minijuegos. **inicial:** 1=Discord, 2=perfil mín., 3=perfil completo. **diaria:** 1=actividad+oráculo, 2=trampa. Vacío en inicial/diaria = cobrar todo lo listo de ese tipo.",
+        referencia=(
+            "**semanal:** 1=base, 2=especial, 3=minijuegos, **4**=las tres partes si podés. "
+            "**inicial:** 1=Discord, 2=perfil mín., 3=perfil completo. "
+            "**diaria:** 1=actividad+oráculo, 2=trampa, **3**=rolls, **4**=PPT, **5**=ahorcado. "
+            "Vacío en inicial/diaria = cobrar todo lo listo de ese tipo."
+        ),
     )
     async def reclamar(
         self,
@@ -113,9 +118,11 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
                     resolved = "semanal_especial"
                 elif ref == 3:
                     resolved = "semanal_minijuegos"
+                elif ref == 4:
+                    resolved = "semanal_all"
                 else:
                     await interaction.followup.send(
-                        "Para **semanal**, la referencia tiene que ser **1** (base), **2** (especial) o **3** (minijuegos).",
+                        "Para **semanal**, la referencia tiene que ser **1** (base), **2** (especial), **3** (minijuegos) o **4** (todas las listas).",
                         ephemeral=True,
                     )
                     return
@@ -141,9 +148,15 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
                     resolved = "diaria_actividad"
                 elif ref == 2:
                     resolved = "diaria_trampa"
+                elif ref == 3:
+                    resolved = "diaria_rolls"
+                elif ref == 4:
+                    resolved = "diaria_rps"
+                elif ref == 5:
+                    resolved = "diaria_ahorcado"
                 else:
                     await interaction.followup.send(
-                        "Para **diaria**, la referencia es **1** (actividad+oráculo) o **2** (trampa).",
+                        "Para **diaria**, la referencia es **1**–**5** (actividad · trampa · rolls · PPT · ahorcado).",
                         ephemeral=True,
                     )
                     return

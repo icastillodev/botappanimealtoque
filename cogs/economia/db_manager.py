@@ -1,4 +1,5 @@
 # cogs/economia/db_manager.py
+import os
 import sqlite3
 import time
 from pathlib import Path
@@ -120,6 +121,15 @@ class EconomiaDBManagerV2:
                         "blister_collector_version_claimed",
                         "ALTER TABLE economia_usuarios ADD COLUMN blister_collector_version_claimed INTEGER DEFAULT 0",
                     ),
+                    ("daily_streak", "ALTER TABLE economia_usuarios ADD COLUMN daily_streak INTEGER DEFAULT 0"),
+                    (
+                        "daily_last_full_claim_date",
+                        "ALTER TABLE economia_usuarios ADD COLUMN daily_last_full_claim_date TEXT DEFAULT ''",
+                    ),
+                    (
+                        "oracle_media_last_ts",
+                        "ALTER TABLE economia_usuarios ADD COLUMN oracle_media_last_ts INTEGER DEFAULT 0",
+                    ),
                 ]:
                     if col not in columns:
                         cursor.execute(sql)
@@ -133,6 +143,7 @@ class EconomiaDBManagerV2:
                     ("trampa_enviada", "ALTER TABLE tareas_diarias ADD COLUMN trampa_enviada INTEGER DEFAULT 0"),
                     ("trampa_sin_objetivo", "ALTER TABLE tareas_diarias ADD COLUMN trampa_sin_objetivo INTEGER DEFAULT 0"),
                     ("oraculo_preguntas", "ALTER TABLE tareas_diarias ADD COLUMN oraculo_preguntas INTEGER DEFAULT 0"),
+                    ("oracle_media_uses", "ALTER TABLE tareas_diarias ADD COLUMN oracle_media_uses INTEGER DEFAULT 0"),
                 ]:
                     if col not in dcols:
                         cursor.execute(sql)
@@ -148,6 +159,7 @@ class EconomiaDBManagerV2:
                     ("mg_roll_casual", "ALTER TABLE tareas_semanales ADD COLUMN mg_roll_casual INTEGER DEFAULT 0"),
                     ("mg_duelo", "ALTER TABLE tareas_semanales ADD COLUMN mg_duelo INTEGER DEFAULT 0"),
                     ("mg_voto_dom", "ALTER TABLE tareas_semanales ADD COLUMN mg_voto_dom INTEGER DEFAULT 0"),
+                    ("mg_rps", "ALTER TABLE tareas_semanales ADD COLUMN mg_rps INTEGER DEFAULT 0"),
                     ("completado_minijuegos", "ALTER TABLE tareas_semanales ADD COLUMN completado_minijuegos INTEGER DEFAULT 0"),
                 ]:
                     if col not in scols:
@@ -215,6 +227,31 @@ class EconomiaDBManagerV2:
                       )
                     """
                 )
+
+                cursor.execute("PRAGMA table_info(tareas_diarias)")
+                dcols_mg = [c[1] for c in cursor.fetchall()]
+                for col, sql in [
+                    ("dia_roll_casual", "ALTER TABLE tareas_diarias ADD COLUMN dia_roll_casual INTEGER DEFAULT 0"),
+                    ("dia_roll_bet", "ALTER TABLE tareas_diarias ADD COLUMN dia_roll_bet INTEGER DEFAULT 0"),
+                    ("dia_rps", "ALTER TABLE tareas_diarias ADD COLUMN dia_rps INTEGER DEFAULT 0"),
+                    ("dia_ahorcado", "ALTER TABLE tareas_diarias ADD COLUMN dia_ahorcado INTEGER DEFAULT 0"),
+                    ("dia_ahorcado_id", "ALTER TABLE tareas_diarias ADD COLUMN dia_ahorcado_id INTEGER DEFAULT 0"),
+                    (
+                        "completado_diaria_rolls",
+                        "ALTER TABLE tareas_diarias ADD COLUMN completado_diaria_rolls INTEGER DEFAULT 0",
+                    ),
+                    (
+                        "completado_diaria_rps",
+                        "ALTER TABLE tareas_diarias ADD COLUMN completado_diaria_rps INTEGER DEFAULT 0",
+                    ),
+                    (
+                        "completado_diaria_ahorcado",
+                        "ALTER TABLE tareas_diarias ADD COLUMN completado_diaria_ahorcado INTEGER DEFAULT 0",
+                    ),
+                ]:
+                    if col not in dcols_mg:
+                        cursor.execute(sql)
+                        print(f"DATABASE MIGRATED: Added '{col}' to tareas_diarias (minijuegos diarios).")
 
                 cursor.execute(
                     """
@@ -354,6 +391,37 @@ class EconomiaDBManagerV2:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM economia_usuarios WHERE user_id = ?", (user_id,))
             return dict(cursor.fetchone())
+
+    def get_oracle_media_limits(self, user_id: int) -> Dict[str, int]:
+        """Estado para rate-limit del oráculo con media (cooldown y usos diarios)."""
+        self.ensure_user_exists(user_id)
+        fecha, _ = self.get_current_date_keys()
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute("SELECT oracle_media_last_ts FROM economia_usuarios WHERE user_id = ?", (user_id,))
+            row = cur.fetchone()
+            last_ts = int(row["oracle_media_last_ts"] or 0) if row else 0
+            cur.execute("INSERT OR IGNORE INTO tareas_diarias (user_id, fecha) VALUES (?, ?)", (user_id, fecha))
+            cur.execute("SELECT oracle_media_uses FROM tareas_diarias WHERE user_id = ? AND fecha = ?", (user_id, fecha))
+            drow = cur.fetchone()
+            uses_today = int(drow["oracle_media_uses"] or 0) if drow else 0
+            return {"last_ts": last_ts, "uses_today": uses_today}
+
+    def bump_oracle_media_use(self, user_id: int) -> None:
+        """Suma 1 uso diario + setea last_ts para cooldown."""
+        self.ensure_user_exists(user_id)
+        fecha, _ = self.get_current_date_keys()
+        now = int(time.time())
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE economia_usuarios SET oracle_media_last_ts = ? WHERE user_id = ?", (now, user_id))
+            cur.execute("INSERT OR IGNORE INTO tareas_diarias (user_id, fecha) VALUES (?, ?)", (user_id, fecha))
+            cur.execute(
+                "UPDATE tareas_diarias SET oracle_media_uses = oracle_media_uses + 1 WHERE user_id = ? AND fecha = ?",
+                (user_id, fecha),
+            )
+            conn.commit()
 
     def modify_points(self, user_id: int, cantidad: int, gastar: bool = False) -> int:
         self.ensure_user_exists(user_id)
@@ -537,16 +605,29 @@ class EconomiaDBManagerV2:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("INSERT OR IGNORE INTO tareas_diarias (user_id, fecha) VALUES (?, ?)", (user_id, fecha))
-            cursor.execute(
-                f"""
-                UPDATE tareas_diarias SET {task_name} = {task_name} + ?
-                WHERE user_id = ? AND fecha = ? AND NOT (
-                    IFNULL(completado_diaria_actividad, 0) = 1
-                    AND IFNULL(completado_diaria_trampa, 0) = 1
+            # Oráculo: el contador y el tope de puntos siguen aunque el diario esté ya cobrado (evita desync con puntos).
+            if task_name == "oraculo_preguntas":
+                cursor.execute(
+                    f"""
+                    UPDATE tareas_diarias SET {task_name} = {task_name} + ?
+                    WHERE user_id = ? AND fecha = ?
+                    """,
+                    (amount, user_id, fecha),
                 )
-                """,
-                (amount, user_id, fecha),
-            )
+            else:
+                cursor.execute(
+                    f"""
+                    UPDATE tareas_diarias SET {task_name} = {task_name} + ?
+                    WHERE user_id = ? AND fecha = ? AND NOT (
+                        IFNULL(completado_diaria_actividad, 0) = 1
+                        AND IFNULL(completado_diaria_trampa, 0) = 1
+                        AND IFNULL(completado_diaria_rolls, 0) = 1
+                        AND IFNULL(completado_diaria_rps, 0) = 1
+                        AND IFNULL(completado_diaria_ahorcado, 0) = 1
+                    )
+                    """,
+                    (amount, user_id, fecha),
+                )
             conn.commit()
             
     def update_task_semanal(self, user_id: int, task_name: str, semana: str, amount: int = 1):
@@ -614,6 +695,33 @@ class EconomiaDBManagerV2:
                     (user_id, fecha),
                 )
                 affected = cursor.rowcount
+            elif task_type == "diaria_rolls":
+                cursor.execute(
+                    """
+                    UPDATE tareas_diarias SET completado_diaria_rolls = 1
+                    WHERE user_id = ? AND fecha = ? AND IFNULL(completado_diaria_rolls, 0) = 0
+                    """,
+                    (user_id, fecha),
+                )
+                affected = cursor.rowcount
+            elif task_type == "diaria_rps":
+                cursor.execute(
+                    """
+                    UPDATE tareas_diarias SET completado_diaria_rps = 1
+                    WHERE user_id = ? AND fecha = ? AND IFNULL(completado_diaria_rps, 0) = 0
+                    """,
+                    (user_id, fecha),
+                )
+                affected = cursor.rowcount
+            elif task_type == "diaria_ahorcado":
+                cursor.execute(
+                    """
+                    UPDATE tareas_diarias SET completado_diaria_ahorcado = 1
+                    WHERE user_id = ? AND fecha = ? AND IFNULL(completado_diaria_ahorcado, 0) = 0
+                    """,
+                    (user_id, fecha),
+                )
+                affected = cursor.rowcount
             elif task_type == "semanal":
                 cursor.execute("UPDATE tareas_semanales SET completado = 1 WHERE user_id = ? AND semana = ?", (user_id, semana))
                 affected = cursor.rowcount
@@ -643,12 +751,15 @@ class EconomiaDBManagerV2:
                     """,
                     (user_id,),
                 )
-            if task_type in ("diaria_actividad", "diaria_trampa"):
+            if task_type in ("diaria_actividad", "diaria_trampa", "diaria_rolls", "diaria_rps", "diaria_ahorcado"):
                 cursor.execute(
                     """
                     UPDATE tareas_diarias SET completado = 1
                     WHERE user_id = ? AND fecha = ? AND IFNULL(completado_diaria_actividad, 0) = 1
                       AND IFNULL(completado_diaria_trampa, 0) = 1
+                      AND IFNULL(completado_diaria_rolls, 0) = 1
+                      AND IFNULL(completado_diaria_rps, 0) = 1
+                      AND IFNULL(completado_diaria_ahorcado, 0) = 1
                     """,
                     (user_id, fecha),
                 )
@@ -686,6 +797,9 @@ class EconomiaDBManagerV2:
                 WHERE user_id = ? AND fecha = ? AND NOT (
                     IFNULL(completado_diaria_actividad, 0) = 1
                     AND IFNULL(completado_diaria_trampa, 0) = 1
+                    AND IFNULL(completado_diaria_rolls, 0) = 1
+                    AND IFNULL(completado_diaria_rps, 0) = 1
+                    AND IFNULL(completado_diaria_ahorcado, 0) = 1
                 )
                 """,
                 (user_id, fecha),
@@ -696,6 +810,39 @@ class EconomiaDBManagerV2:
         """Trampa sin objetivo: suma 1 por uso; 1 en el día alcanza la parte Trampa de la diaria (alternativa a trampa con mención)."""
         fecha, _ = self.get_current_date_keys()
         self.update_task_diaria(user_id, "trampa_sin_objetivo", fecha, 1)
+
+    def mark_diaria_minijuego_hecho(self, user_id: int, column: str) -> None:
+        """Marca progreso del día para rolls / PPT (dia_roll_casual, dia_roll_bet, dia_rps)."""
+        allowed = ("dia_roll_casual", "dia_roll_bet", "dia_rps")
+        if column not in allowed:
+            raise ValueError(f"column must be one of {allowed}")
+        fecha, _ = self.get_current_date_keys()
+        self.ensure_user_exists(user_id)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT OR IGNORE INTO tareas_diarias (user_id, fecha) VALUES (?, ?)", (user_id, fecha))
+            cursor.execute(
+                f"UPDATE tareas_diarias SET {column} = 1 WHERE user_id = ? AND fecha = ?",
+                (user_id, fecha),
+            )
+            conn.commit()
+
+    def mark_diaria_ahorcado_result(self, user_id: int, id_dia: int) -> None:
+        """Marca que el usuario completó el ahorcado del día (guarda el id del puzzle para antifraude)."""
+        fecha, _ = self.get_current_date_keys()
+        self.ensure_user_exists(user_id)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT OR IGNORE INTO tareas_diarias (user_id, fecha) VALUES (?, ?)", (user_id, fecha))
+            cursor.execute(
+                """
+                UPDATE tareas_diarias
+                SET dia_ahorcado = 1, dia_ahorcado_id = ?
+                WHERE user_id = ? AND fecha = ?
+                """,
+                (int(id_dia or 0), user_id, fecha),
+            )
+            conn.commit()
 
     def log_trampa_uso(
         self,
@@ -719,7 +866,7 @@ class EconomiaDBManagerV2:
 
     def mark_minijuego_semanal(self, user_id: int, campo: str) -> None:
         """Marca un flag de minijuegos semanal (valor 1). campo whitelist."""
-        allowed = {"mg_ret_roll_apuesta", "mg_roll_casual", "mg_duelo", "mg_voto_dom"}
+        allowed = {"mg_ret_roll_apuesta", "mg_roll_casual", "mg_duelo", "mg_voto_dom", "mg_rps"}
         if campo not in allowed:
             raise ValueError("campo inválido")
         _, semana = self.get_current_date_keys()
@@ -766,6 +913,29 @@ class EconomiaDBManagerV2:
             row = cur.fetchone()
             return dict(row) if row else None
 
+    def minijuego_invite_pending_for_target_kinds(
+        self, opponent_user_id: int, kinds: Tuple[str, ...]
+    ) -> Optional[Dict[str, Any]]:
+        """Como `pending_for_target`, pero solo invitaciones cuyo `kind` está en la lista."""
+        if not kinds:
+            return None
+        placeholders = ",".join("?" * len(kinds))
+        vals: List[Any] = [time.time(), opponent_user_id, *kinds]
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                f"""
+                SELECT * FROM minijuego_invite
+                WHERE status = 'pending' AND expires_ts > ? AND p2_id = ?
+                  AND kind IN ({placeholders})
+                ORDER BY id DESC LIMIT 1
+                """,
+                vals,
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+
     def minijuego_invite_resolve(self, invite_id: int, new_status: str = "done") -> None:
         with self._get_connection() as conn:
             conn.cursor().execute("UPDATE minijuego_invite SET status = ? WHERE id = ?", (new_status, invite_id))
@@ -780,6 +950,122 @@ class EconomiaDBManagerV2:
                 (time.time(),),
             )
             return [dict(r) for r in cur.fetchall()]
+
+    def minijuego_invite_update_row(
+        self, invite_id: int, payload: Optional[str] = None, expires_ts: Optional[float] = None
+    ) -> None:
+        sets: List[str] = []
+        vals: List[Any] = []
+        if payload is not None:
+            sets.append("payload = ?")
+            vals.append(payload)
+        if expires_ts is not None:
+            sets.append("expires_ts = ?")
+            vals.append(expires_ts)
+        if not sets:
+            return
+        vals.append(invite_id)
+        with self._get_connection() as conn:
+            conn.execute(f"UPDATE minijuego_invite SET {', '.join(sets)} WHERE id = ?", vals)
+            conn.commit()
+
+    def minijuego_invite_pending_rps_for_user(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """Invitación piedra/papel/tijera pendiente donde el usuario es p1 o p2."""
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT * FROM minijuego_invite
+                WHERE status = 'pending' AND expires_ts > ? AND kind IN ('rps_bet', 'rps_casual')
+                  AND (p1_id = ? OR p2_id = ?)
+                ORDER BY id DESC LIMIT 1
+                """,
+                (time.time(), user_id, user_id),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+    def finalize_daily_streak_reward(self, user_id: int, task_config: Dict[str, Any]) -> List[str]:
+        """
+        Si hoy completaste **ambas** partes del diario (actividad + trampa), actualiza la racha y otorga bonus.
+        Idempotente el mismo día calendario (según `get_current_date_keys`).
+        """
+        msgs: List[str] = []
+        fecha_hoy, _ = self.get_current_date_keys()
+        prog = self.get_progress_diaria(user_id)
+        if int(prog.get("completado_diaria_actividad") or 0) != 1:
+            return msgs
+        if int(prog.get("completado_diaria_trampa") or 0) != 1:
+            return msgs
+
+        self.ensure_user_exists(user_id)
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT daily_streak, daily_last_full_claim_date FROM economia_usuarios WHERE user_id = ?",
+                (user_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return msgs
+            last_full = str(row["daily_last_full_claim_date"] or "").strip()
+            if last_full == fecha_hoy:
+                return msgs
+
+            prev_streak = int(row["daily_streak"] or 0)
+            try:
+                d_last = (
+                    datetime.datetime.strptime(last_full, "%Y-%m-%d").date()
+                    if last_full
+                    else None
+                )
+            except ValueError:
+                d_last = None
+            d_today = datetime.datetime.strptime(fecha_hoy, "%Y-%m-%d").date()
+            d_yesterday = d_today - datetime.timedelta(days=1)
+
+            if d_last == d_yesterday:
+                new_streak = prev_streak + 1
+            else:
+                new_streak = 1
+
+            cur.execute(
+                "UPDATE economia_usuarios SET daily_streak = ?, daily_last_full_claim_date = ? WHERE user_id = ?",
+                (new_streak, fecha_hoy, user_id),
+            )
+            conn.commit()
+
+        rewards = (task_config or {}).get("rewards") or {}
+        step = int(
+            rewards.get("daily_streak_extra_points_per_level")
+            or os.getenv("DAILY_STREAK_EXTRA_POINTS_PER_LEVEL")
+            or 5
+        )
+        extra_pts = max(0, new_streak - 1) * max(0, step)
+        every = int(
+            rewards.get("daily_streak_blister_every")
+            or os.getenv("DAILY_STREAK_BLISTER_EVERY_DAYS")
+            or 7
+        )
+
+        if extra_pts > 0:
+            self.modify_points(user_id, extra_pts, gastar=False)
+            msgs.append(
+                f"🔥 **Racha diaria ×{new_streak}:** bonus **{extra_pts}** Toque points (ambas partes del diario)."
+            )
+        elif new_streak == 1:
+            msgs.append("🔥 **Racha diaria:** empezó tu cadena — **mañana** sumás bonus si completás otra vez.")
+
+        if every > 0 and new_streak > 0 and new_streak % every == 0:
+            _, bcol = self.modify_blisters(user_id, "trampa", 1)
+            msgs.append(
+                f"📦 **Racha ×{new_streak}:** +1 blister **Trampa** (cada **{every}** días de racha)."
+            )
+            msgs.extend(bcol)
+
+        return msgs
 
     def get_blisters_for_user(self, user_id: int) -> List[Dict[str, Any]]:
         self.ensure_user_exists(user_id)

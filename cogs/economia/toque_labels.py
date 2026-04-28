@@ -28,7 +28,6 @@ def fmt_toque_sentence(n: int) -> str:
 def guia_toque_explicacion() -> str:
     """Párrafo corto para guía / ayuda: qué son."""
     return (
-        f"{TOQUE_EMOJI} **Toque points**: moneda del canal para canjes, tienda y minijuegos "
-        f"(antes decíamos «puntos» del bot). "
-        f"Tu saldo: `?puntos` o `/aat-puntos`."
+        f"{TOQUE_EMOJI} **Toque points** — moneda del servidor para tienda, canjes y minijuegos "
+        f"(antes «puntos del bot»). Consultá tu saldo con **`?puntos`** o **`/aat-puntos`**."
     )

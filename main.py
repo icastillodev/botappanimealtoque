@@ -85,6 +85,7 @@ INITIAL_EXTENSIONS = [
     "cogs.pala_cog",
     "cogs.channel_enforcer",
     "cogs.semanal_versus",
+    "cogs.ahorcado_daily_webhook",
 ]
 
 class MiBot(commands.Bot):
@@ -256,6 +257,9 @@ class MiBot(commands.Bot):
                 "aat-anime-top-guia",
                 "aat-anime-top-mover",
                 "aat-consulta",
+                "aat-rps-retar",
+                "aat-rps-aceptar",
+                "aat-rps-elegir",
             }
             return str(name) in public
 

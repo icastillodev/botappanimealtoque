@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import ast
+import base64
 import logging
 import math
 import os
@@ -14,13 +15,15 @@ import re
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
-from typing import Any, Deque, Dict, Literal, Optional, Tuple
+from typing import Any, Deque, Dict, Literal, Optional, Tuple, List
 
 _OracleResponseKind = Literal["yesno", "open", "llm", "math"]
 
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+import aiohttp
 
 log = logging.getLogger(__name__)
 
@@ -185,6 +188,12 @@ except Exception:
         return None
 
     async def oracle_local_reply_followup(*_a: Any, **_k: Any) -> None:  # type: ignore[misc]
+        return None
+
+try:
+    from cogs.oracle_llm import oracle_local_reply_with_images
+except Exception:
+    async def oracle_local_reply_with_images(*_a: Any, **_k: Any) -> None:  # type: ignore[misc]
         return None
 
 try:
@@ -1439,6 +1448,131 @@ class OraculoCog(commands.Cog, name="Oraculo"):
     def _oracle_mark_use(self, user_id: int) -> None:
         self._oracle_times[user_id].append(time.monotonic())
 
+    # --- Media / visión (adjuntos, stickers, emotes) ---
+    def _oracle_media_cooldown_sec(self) -> int:
+        try:
+            return max(5, min(300, int((os.getenv("ORACLE_MEDIA_COOLDOWN_SEC") or "20").strip())))
+        except ValueError:
+            return 20
+
+    def _oracle_media_max_per_day(self) -> int:
+        try:
+            return max(0, min(50, int((os.getenv("ORACLE_MEDIA_MAX_PER_DAY") or "8").strip())))
+        except ValueError:
+            return 8
+
+    def _oracle_media_max_bytes(self) -> int:
+        try:
+            return max(50_000, min(8_000_000, int((os.getenv("ORACLE_MEDIA_MAX_BYTES") or str(2_000_000)).strip())))
+        except ValueError:
+            return 2_000_000
+
+    def _oracle_media_enabled(self) -> bool:
+        return (os.getenv("ORACLE_MEDIA_ENABLED") or "1").strip().lower() not in ("0", "false", "no", "off")
+
+    def _oracle_media_is_image_attachment(self, att: discord.Attachment) -> bool:
+        ctype = (getattr(att, "content_type", None) or "").lower()
+        fn = (att.filename or "").lower()
+        if ctype.startswith("image/"):
+            return True
+        return any(fn.endswith(x) for x in (".png", ".jpg", ".jpeg", ".webp", ".gif"))
+
+    def _extract_custom_emoji_urls(self, text: str) -> List[str]:
+        # <a:name:id> o <:name:id>
+        out: List[str] = []
+        for m in re.finditer(r"<(a?):\w+:(\d+)>", text or ""):
+            anim = m.group(1) == "a"
+            eid = m.group(2)
+            ext = "gif" if anim else "png"
+            out.append(f"https://cdn.discordapp.com/emojis/{eid}.{ext}?quality=lossless")
+        return out
+
+    async def _fetch_reference_message_safe(self, msg: discord.Message) -> Optional[discord.Message]:
+        try:
+            return await self._fetch_reference_message(msg)
+        except Exception:
+            return None
+
+    async def _pick_first_image_source(
+        self,
+        *,
+        message: Optional[discord.Message] = None,
+        attachment: Optional[discord.Attachment] = None,
+    ) -> Tuple[Optional[bytes], str]:
+        """
+        Devuelve (bytes_imagen, resumen_humano). Si no se pudo: (None, explicación corta).
+        """
+        if not self._oracle_media_enabled():
+            return None, "media deshabilitada"
+        if attachment and self._oracle_media_is_image_attachment(attachment):
+            try:
+                if int(getattr(attachment, "size", 0) or 0) > self._oracle_media_max_bytes():
+                    return None, "la imagen es muy pesada"
+                b = await attachment.read()
+                if len(b) > self._oracle_media_max_bytes():
+                    return None, "la imagen es muy pesada"
+                return b, f"adjunto: {attachment.filename}"
+            except Exception:
+                return None, "no pude leer el adjunto"
+
+        if not message:
+            return None, "sin mensaje"
+
+        # 1) Adjuntos del mensaje
+        for att in list(getattr(message, "attachments", []) or []):
+            if isinstance(att, discord.Attachment) and self._oracle_media_is_image_attachment(att):
+                if int(getattr(att, "size", 0) or 0) > self._oracle_media_max_bytes():
+                    continue
+                try:
+                    b = await att.read()
+                    if len(b) > self._oracle_media_max_bytes():
+                        continue
+                    return b, f"adjunto: {att.filename}"
+                except Exception:
+                    continue
+
+        # 2) Stickers del mensaje (si hay url)
+        for st in list(getattr(message, "stickers", []) or []):
+            url = str(getattr(st, "url", "") or "").strip()
+            if url:
+                b, info = await self._download_image_url(url, label="sticker")
+                if b:
+                    return b, info
+
+        # 3) Emotes custom en el texto
+        for url in self._extract_custom_emoji_urls(message.content or ""):
+            b, info = await self._download_image_url(url, label="emoji")
+            if b:
+                return b, info
+
+        # 4) Si es reply, repetir para el mensaje citado
+        refm = await self._fetch_reference_message_safe(message)
+        if refm:
+            return await self._pick_first_image_source(message=refm, attachment=None)
+
+        return None, "no encontré imagen/sticker/emote descargable"
+
+    async def _download_image_url(self, url: str, *, label: str) -> Tuple[Optional[bytes], str]:
+        u = (url or "").strip()
+        if not u.startswith("http"):
+            return None, "url inválida"
+        maxb = self._oracle_media_max_bytes()
+        try:
+            timeout = aiohttp.ClientTimeout(total=8.0, connect=4.0, sock_read=6.0)
+            async with aiohttp.ClientSession(timeout=timeout, headers={"User-Agent": "AnimeAlToque-Oracle/1.0"}) as s:
+                async with s.get(u) as resp:
+                    if resp.status != 200:
+                        return None, f"{label} HTTP {resp.status}"
+                    ctype = (resp.headers.get("Content-Type") or "").lower()
+                    if not ctype.startswith("image/"):
+                        return None, f"{label} no es imagen"
+                    data = await resp.content.read(maxb + 1)
+                    if len(data) > maxb:
+                        return None, f"{label} muy grande"
+                    return data, f"{label}: {u.split('?')[0][-64:]}"
+        except Exception:
+            return None, f"{label} no descargable"
+
     def _conversation_ttl_seconds(self) -> int:
         try:
             return max(60, min(3600, int(os.getenv("ORACLE_CONVERSATION_TTL_SECONDS", "300") or 300)))
@@ -1459,6 +1593,64 @@ class OraculoCog(commands.Cog, name="Oraculo"):
 
     def _followup_mark(self, user_id: int) -> None:
         self._followup_times[user_id].append(time.monotonic())
+
+    def _quip_llm_enabled(self) -> bool:
+        return (os.getenv("ORACLE_QUIP_USE_LLM") or "1").strip().lower() not in ("0", "false", "no", "off")
+
+    def _quip_llm_max_chars(self) -> int:
+        try:
+            return max(120, min(650, int((os.getenv("ORACLE_QUIP_MAX_CHARS") or "260").strip())))
+        except ValueError:
+            return 260
+
+    def _describe_message_for_quip(self, msg: discord.Message) -> str:
+        bits: List[str] = []
+        if (msg.content or "").strip():
+            bits.append("Contenido:\n" + msg.content.strip()[:500])
+        if msg.embeds:
+            e = msg.embeds[0]
+            t = (getattr(e, "title", None) or "").strip()
+            d = (getattr(e, "description", None) or "").strip()
+            if t:
+                bits.append("Embed título:\n" + t[:220])
+            if d:
+                bits.append("Embed descripción:\n" + d[:500])
+        if msg.attachments:
+            bits.append(f"Adjuntos: {len(msg.attachments)}")
+        if msg.stickers:
+            bits.append(f"Stickers: {len(msg.stickers)}")
+        return "\n\n".join(bits).strip()[:1200] or "(sin contenido visible)"
+
+    async def _quip_for_reply_to_non_oracle_bot_message(self, *, replied: discord.Message, user_msg: discord.Message) -> str:
+        """
+        Mensaje corto para cuando responden a algo del bot que NO es oráculo.
+        Usa IA si está disponible; si falla, fallback a quips fijos.
+        """
+        # Si no hay IA o está apagada la opción, fallback.
+        if not _oracle_use_llm() or not self._quip_llm_enabled():
+            return random.choice(_ORACLE_QUIP_NOT_ORACLE)
+        user_line = (user_msg.content or "").strip()
+        ref_desc = self._describe_message_for_quip(replied)
+        who = user_msg.author.display_name if isinstance(user_msg.author, discord.Member) else str(user_msg.author)
+        prompt = (
+            "Modo joda suave (sin insultos fuertes, sin doxx, sin hate). "
+            "Respondé en 1 sola frase corta en español rioplatense. "
+            "Hacé un comentario gracioso sobre que el usuario le respondió al bot en un mensaje que no era del oráculo, "
+            "y meté una referencia al contenido citado.\n\n"
+            f"Usuario: {who}\n"
+            f"El usuario respondió: {user_line[:240] if user_line else '(sin texto)'}\n\n"
+            f"Mensaje del bot citado:\n{ref_desc}\n\n"
+            "Tu respuesta (1 frase):"
+        )
+        try:
+            out = await oracle_local_reply(prompt, style="open")
+            out_s = " ".join((out or "").split()).strip()
+            if out_s:
+                # límite extra (no queremos párrafos)
+                return out_s[: self._quip_llm_max_chars()].rstrip()
+        except Exception:
+            log.debug("quip llm: falló; fallback", exc_info=True)
+        return random.choice(_ORACLE_QUIP_NOT_ORACLE)
 
     @staticmethod
     def _pending_key(message: discord.Message) -> Tuple[int, int, int]:
@@ -1587,14 +1779,20 @@ class OraculoCog(commands.Cog, name="Oraculo"):
         mencion: str,
         pregunta: str,
         author_id: int,
+        pregunta_para_modelo: Optional[str] = None,
+        media_image_bytes: Optional[bytes] = None,
+        media_note: Optional[str] = None,
     ) -> Tuple[discord.Embed, str, _OracleResponseKind]:
         assert self.db is not None
         self.db.ensure_user_exists(author_id)
-        pq = pregunta.strip()
+        pq_plain = pregunta.strip()
+        pq = (pregunta_para_modelo or pregunta).strip()
+        if media_note:
+            pq = (pq + "\n\n[Contexto visual]\n" + media_note).strip()
         use_llm = _oracle_use_llm()
 
         # Saludos / mensajes ultra cortos: responder directo, sin IA ni plantillas raras.
-        if _is_oracle_greeting(pq):
+        if _is_oracle_greeting(pq_plain):
             body = _oracle_greeting_answer(nombre_visible)
             emb = self._embed_respuesta(
                 nombre_visible=nombre_visible,
@@ -1606,7 +1804,7 @@ class OraculoCog(commands.Cog, name="Oraculo"):
             return emb, body, "open"
 
         # Derivadas simples: responder local (rápido y correcto) en vez de IA/dado.
-        d_expr = _parse_derivative_expression(pq)
+        d_expr = _parse_derivative_expression(pq_plain)
         if d_expr:
             d = _derive_simple(d_expr)
             if d is not None:
@@ -1620,8 +1818,8 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                 )
                 return emb, body, "math"
         # Ruleta (negro/rojo/verde): siempre pick local; el LLM en modo sí/no no entiende el contexto.
-        if _is_roulette_color_question(pq):
-            rb = _oracle_roulette_pick(pq)
+        if _is_roulette_color_question(pq_plain):
+            rb = _oracle_roulette_pick(pq_plain)
             emb = self._embed_respuesta(
                 nombre_visible=nombre_visible,
                 mencion=mencion,
@@ -1630,7 +1828,7 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                 response_kind="yesno",
             )
             return emb, rb, "yesno"
-        if _is_poker_push_decision_question(pq):
+        if _is_poker_push_decision_question(pq_plain):
             pb = _oracle_poker_push_answer()
             emb = self._embed_respuesta(
                 nombre_visible=nombre_visible,
@@ -1640,8 +1838,8 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                 response_kind="yesno",
             )
             return emb, pb, "yesno"
-        if _is_multi_option_or_recommendation(pq):
-            mb = _oracle_multi_option_pick(pq)
+        if _is_multi_option_or_recommendation(pq_plain):
+            mb = _oracle_multi_option_pick(pq_plain)
             emb = self._embed_respuesta(
                 nombre_visible=nombre_visible,
                 mencion=mencion,
@@ -1651,8 +1849,8 @@ class OraculoCog(commands.Cog, name="Oraculo"):
             )
             return emb, mb, "yesno"
         # Cuenta resuelta en el bot primero (rápido): evita que una regex “abierta” fuerce IA antes que `2+2`.
-        if _is_simple_arithmetic_question(pq):
-            expr = _extract_arithmetic_expression_for_eval(pq)
+        if _is_simple_arithmetic_question(pq_plain):
+            expr = _extract_arithmetic_expression_for_eval(pq_plain)
             val = _safe_eval_arithmetic(expr) if expr else None
             if val is not None:
                 body, response_kind = _format_math_answer_body(expr, val), "math"
@@ -1661,7 +1859,10 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                 if media_first:
                     body, response_kind = media_first, "open"
                 else:
-                    llm = await oracle_local_reply(pq, style="open") if use_llm else None
+                    if use_llm and media_image_bytes:
+                        llm = await oracle_local_reply_with_images(pq, images_bytes=[media_image_bytes], style="open")
+                    else:
+                        llm = await oracle_local_reply(pq, style="open") if use_llm else None
                     if llm:
                         body, response_kind = llm, "llm"
                     elif _is_open_ended_question(pq):
@@ -1678,11 +1879,14 @@ class OraculoCog(commands.Cog, name="Oraculo"):
             if media_first:
                 body, response_kind = media_first, "open"
             else:
-                llm = await oracle_local_reply(pq, style="open") if use_llm else None
+                if use_llm and media_image_bytes:
+                    llm = await oracle_local_reply_with_images(pq, images_bytes=[media_image_bytes], style="open")
+                else:
+                    llm = await oracle_local_reply(pq, style="open") if use_llm else None
                 if llm:
                     body, response_kind = llm, "llm"
                 else:
-                    expr = _extract_arithmetic_expression_for_eval(pq)
+                    expr = _extract_arithmetic_expression_for_eval(pq_plain)
                     if expr:
                         val = _safe_eval_arithmetic(expr)
                         if val is not None:
@@ -1721,6 +1925,8 @@ class OraculoCog(commands.Cog, name="Oraculo"):
         nombre_visible: str,
         pregunta: str,
         reference: Optional[discord.Message] = None,
+        pregunta_para_modelo: Optional[str] = None,
+        media_attachment: Optional[discord.Attachment] = None,
     ) -> Optional[discord.Message]:
         if not self.db:
             await channel.send("Economía no disponible.", reference=reference, mention_author=False)
@@ -1730,11 +1936,38 @@ class OraculoCog(commands.Cog, name="Oraculo"):
         typing_fn = getattr(channel, "typing", None)
 
         async def _build() -> Tuple[discord.Embed, str, _OracleResponseKind]:
+            media_b: Optional[bytes] = None
+            media_note: Optional[str] = None
+            # Solo intentamos visión si hay IA y hay algo “visual” en el mensaje/adjunto.
+            if self._oracle_media_enabled() and _oracle_use_llm():
+                # Rate limits (solo para media)
+                if self.db:
+                    lim = self.db.get_oracle_media_limits(author.id)
+                    now = int(time.time())
+                    cd = self._oracle_media_cooldown_sec()
+                    maxd = self._oracle_media_max_per_day()
+                    if maxd > 0 and int(lim.get("uses_today") or 0) >= maxd:
+                        media_note = "(Media) Límite diario alcanzado: hoy ya no puedo analizar más imágenes."
+                    elif cd > 0 and now - int(lim.get("last_ts") or 0) < cd:
+                        media_note = "(Media) Estás en cooldown de imágenes; probá en unos segundos."
+                    else:
+                        media_b, info = await self._pick_first_image_source(message=reference, attachment=media_attachment)
+                        if media_b:
+                            media_note = f"El usuario adjuntó una imagen ({info}). Describí lo que ves y respondé a la pregunta."
+                            self.db.bump_oracle_media_use(author.id)
+                        else:
+                            # Si había intención de media pero no se pudo bajar, dejamos una nota corta.
+                            if info and "no encontré" not in info:
+                                media_note = f"(Media) {info}."
+
             return await self._build_oracle_embed(
                 nombre_visible=nombre_visible,
                 mencion=author.mention,
                 pregunta=pregunta.strip(),
                 author_id=author.id,
+                pregunta_para_modelo=pregunta_para_modelo,
+                media_image_bytes=media_b,
+                media_note=media_note,
             )
 
         try:
@@ -2042,12 +2275,39 @@ class OraculoCog(commands.Cog, name="Oraculo"):
             await ctx.send(f"Esperá **{wait:.1f}s** entre consultas al oráculo.", delete_after=6)
             return
         nombre = ctx.author.display_name if isinstance(ctx.author, discord.Member) else str(ctx.author)
+        extra_ctx: Optional[str] = None
+        refm: Optional[discord.Message] = None
+        try:
+            if ctx.message.reference:
+                refm = ctx.message.reference.resolved  # type: ignore[assignment]
+                if refm is None and ctx.message.reference.message_id and ctx.channel:
+                    refm = await ctx.channel.fetch_message(int(ctx.message.reference.message_id))
+                if isinstance(refm, discord.Message) and (refm.content or "").strip():
+                    extra_ctx = refm.content.strip()[:650]
+        except Exception:
+            extra_ctx = None
+        modelo: Optional[str] = None
+        if extra_ctx:
+            modelo = f"(Mensaje del chat al que respondés)\n{extra_ctx}\n\n(Pregunta)\n{texto.strip()}"
+
+        # Si el usuario adjunta imagen en el mismo mensaje, usamos esa como fuente (prioritaria).
+        first_att: Optional[discord.Attachment] = None
+        try:
+            for a in list(getattr(ctx.message, "attachments", []) or []):
+                if isinstance(a, discord.Attachment):
+                    first_att = a
+                    break
+        except Exception:
+            first_att = None
+
         sent = await self._send_oracle_embed(
             ctx.channel,
             author=ctx.author,
             nombre_visible=nombre,
             pregunta=texto.strip(),
             reference=None,
+            pregunta_para_modelo=modelo,
+            media_attachment=first_att,
         )
         if sent:
             self._oracle_mark_use(ctx.author.id)
@@ -2060,9 +2320,10 @@ class OraculoCog(commands.Cog, name="Oraculo"):
         ),
     )
     @app_commands.describe(
-        pregunta="Sí/no o abierta. Con IA: Ollama; sin IA: dado o plantillas. Opcional ORACLE_LLM_YESNO=1 para sí/no vía modelo."
+        pregunta="Sí/no o abierta. Con IA: Ollama; sin IA: dado o plantillas. Opcional ORACLE_LLM_YESNO=1 para sí/no vía modelo.",
+        imagen="Opcional: adjuntá una imagen para que el oráculo la interprete (requiere modelo con visión).",
     )
-    async def consulta_slash(self, interaction: discord.Interaction, pregunta: str):
+    async def consulta_slash(self, interaction: discord.Interaction, pregunta: str, imagen: Optional[discord.Attachment] = None):
         if not pregunta or not pregunta.strip():
             await interaction.response.send_message("Escribí una pregunta.", ephemeral=True)
             return
@@ -2079,13 +2340,26 @@ class OraculoCog(commands.Cog, name="Oraculo"):
         nombre = interaction.user.display_name
         mencion = interaction.user.mention
         try:
+            # Reusar la misma ruta que prefijo/mención para soportar media + rate limits.
+            await interaction.response.defer(thinking=True)
+            sent = await self._send_oracle_embed(
+                interaction.channel,  # type: ignore[arg-type]
+                author=interaction.user,
+                nombre_visible=nombre,
+                pregunta=pregunta.strip(),
+                reference=None,
+                pregunta_para_modelo=None,
+                media_attachment=imagen,
+            )
+            if not sent:
+                raise RuntimeError("No se pudo enviar el embed del oráculo.")
+            # Para el hilo de seguimiento, usamos el embed ya enviado.
             embed, body, response_kind = await self._build_oracle_embed(
                 nombre_visible=nombre,
                 mencion=mencion,
                 pregunta=pregunta.strip(),
                 author_id=interaction.user.id,
             )
-            await interaction.response.send_message(embed=embed)
             self._record_oracle_use(interaction.user.id)
             log.info(
                 "Oráculo: slash /aat-consulta publicada user=%s kind=%s",
@@ -2392,7 +2666,9 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                     self._oracle_mark_use(message.author.id)
                 return True
 
-            await message.reply(random.choice(_ORACLE_QUIP_NOT_ORACLE), mention_author=False)
+            # “Joda” cuando responden a algo mío que no era del oráculo: usar IA si está activa.
+            q = await self._quip_for_reply_to_non_oracle_bot_message(replied=ref_msg, user_msg=message)
+            await message.reply(q, mention_author=False)
             return True
         except discord.HTTPException as e:
             log.warning("Oráculo hilo/reply: Discord HTTP (%s): %s", type(e).__name__, e)

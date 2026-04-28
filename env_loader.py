@@ -44,6 +44,16 @@ def load_task_and_shop_config(log: logging.Logger) -> Tuple[Optional[Dict[str, A
         half_d = max(1, price_diaria // 2)
         dia_act_pts = _int("REWARD_DIARIA_ACTIVIDAD_POINTS", half_d)
         dia_tr_pts = _int("REWARD_DIARIA_TRAMPA_POINTS", max(1, price_diaria - dia_act_pts))
+        rest_diaria = max(0, price_diaria - dia_act_pts - dia_tr_pts)
+        if rest_diaria > 0:
+            _def_rolls = max(1, rest_diaria // 2)
+            dia_rolls_pts = _int("REWARD_DIARIA_ROLLS_POINTS", _def_rolls)
+            dia_rps_pts = _int("REWARD_DIARIA_RPS_POINTS", max(1, rest_diaria - dia_rolls_pts))
+        else:
+            _q = max(1, price_diaria // 4)
+            dia_rolls_pts = _int("REWARD_DIARIA_ROLLS_POINTS", _q)
+            dia_rps_pts = _int("REWARD_DIARIA_RPS_POINTS", _q)
+        dia_ah_pts = _int("REWARD_DIARIA_AHORCADO_POINTS", max(1, price_diaria // 5))
 
         task_config: Dict[str, Any] = {
             "channels": {
@@ -79,6 +89,12 @@ def load_task_and_shop_config(log: logging.Logger) -> Tuple[Optional[Dict[str, A
                 "diaria_trampa": dia_tr_pts,
                 "diaria_actividad_blisters": _int("REWARD_DIARIA_ACTIVIDAD_BLISTERS", 1),
                 "diaria_trampa_blisters": _int("REWARD_DIARIA_TRAMPA_BLISTERS", 0),
+                "diaria_rolls": dia_rolls_pts,
+                "diaria_rps": dia_rps_pts,
+                "diaria_ahorcado": dia_ah_pts,
+                "diaria_rolls_blisters": _int("REWARD_DIARIA_ROLLS_BLISTERS", 0),
+                "diaria_rps_blisters": _int("REWARD_DIARIA_RPS_BLISTERS", 0),
+                "diaria_ahorcado_blisters": _int("REWARD_DIARIA_AHORCADO_BLISTERS", 0),
                 "semanal": price_semanal,
                 "especial_semanal": _int("REWARD_ESPECIAL_SEMANAL_POINTS", 400),
                 "especial_semanal_blisters": _int("REWARD_ESPECIAL_SEMANAL_BLISTERS", 2),
