@@ -551,13 +551,29 @@ async def oracle_local_reply_with_images(user_question: str, *, images_bytes: Li
     if style == "yesno":
         num_pred = min(num_pred, 64)
 
-    st = style if style in ("open", "yesno") else "open"
-    system = _system_oracle_combined(max_words=mw, style=st)
-    kb_ctx = _bot_kb_block() if _should_include_bot_kb(q) else ""
+    st = style if style in ("open", "yesno", "caption") else "open"
+    if st == "caption":
+        # Más rápido y “descripción”, no opinión / invento.
+        mw = max(6, min(16, mw))
+        mc = max(140, min(260, mc))
+        num_pred = max(18, min(56, num_pred))
+        system = (
+            _system_oracle_combined(max_words=mw, style="open")
+            + "\n\nModo VISIÓN-CORTO: describí lo que ves en 1 frase. "
+            "Si no se distingue, decí qué se ve (colores/forma/gesto) sin inventar historia."
+        )
+    else:
+        system = _system_oracle_combined(max_words=mw, style=("yesno" if st == "yesno" else "open"))
+
+    # En visión evitamos meter KB salvo que sea claramente pregunta de bot/comandos.
+    kb_ctx = _bot_kb_block() if _should_include_bot_kb(q) and st != "caption" else ""
     parts = []
     if kb_ctx:
         parts.append(kb_ctx)
-    parts.append("Pregunta del usuario (mirá la imagen adjunta):\n" + q)
+    if st == "caption":
+        parts.append("Describí la imagen/emote:\n" + q)
+    else:
+        parts.append("Pregunta del usuario (mirá la imagen adjunta):\n" + q)
     prompt = "\n\n".join(parts).strip()
 
     payload: Dict[str, Any] = {

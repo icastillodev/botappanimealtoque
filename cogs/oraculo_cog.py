@@ -13,6 +13,7 @@ import os
 import random
 import re
 import time
+import string
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import Any, Deque, Dict, Literal, Optional, Tuple, List
@@ -116,6 +117,22 @@ _ORACLE_FAST_SMALLTALK_RE = re.compile(
     r")\b.*$"
 )
 
+# Preguntas “opinión sí/no” muy comunes que no ameritan IA ni búsqueda (latencia gratis).
+# Ej: "lotm es el mejor?", "es bueno?", "es malísimo?"
+_ORACLE_FAST_OPINION_YN_RE = re.compile(
+    r"(?is)^\s*.+\b(es|esta|est[aá])\s+(el\s+mejor|la\s+mejor|mejor|bueno|buena|mal[íi]simo|malisimo|malo|mala)\s*[!?¿]*\s*$"
+)
+
+
+def _oracle_is_fast_opinion_yesno(pq: str) -> bool:
+    q = " ".join((pq or "").strip().split())
+    if len(q) < 6 or len(q) > 72:
+        return False
+    # Si trae varios signos o un párrafo, ya no es “rápida”.
+    if q.count("?") + q.count("¿") > 1:
+        return False
+    return bool(_ORACLE_FAST_OPINION_YN_RE.match(q))
+
 
 def _oracle_pick_fun_emoji() -> str:
     """Emote/emoji para quips (usa el mismo pool que saludos si está seteado)."""
@@ -174,6 +191,26 @@ def _oracle_smalltalk_quip(user_line: str) -> str:
             ]
         )
     return f"{e} ok"
+
+
+def _oracle_media_only_query(text: str) -> bool:
+    """
+    True cuando el mensaje del usuario prácticamente no tiene “pregunta” (solo emoji/emote/sticker).
+    Sirve para que visión responda “qué es lo que ve” en vez de inventar opinión.
+    """
+    t = (text or "").strip()
+    if not t:
+        return True
+    # Quitar menciones y wrappers comunes.
+    t = re.sub(r"<@!?(\d+)>", " ", t)
+    t = re.sub(r"<a?:\w+:\d+>", " ", t)  # custom emoji
+    # Quitar :nombre: (clientes que pegan el alias)
+    t = re.sub(r":[a-zA-Z0-9_~]+:", " ", t)
+    # Quitar puntuación y espacios
+    t = "".join(ch if ch.isalnum() else " " for ch in t)
+    t = " ".join(t.split()).strip()
+    # Si no queda contenido alfanumérico, lo tratamos como “solo media”.
+    return len(t) == 0
 
 try:
     from cogs.oracle_llm import oracle_local_reply, oracle_local_reply_followup
@@ -1786,9 +1823,7 @@ class OraculoCog(commands.Cog, name="Oraculo"):
         assert self.db is not None
         self.db.ensure_user_exists(author_id)
         pq_plain = pregunta.strip()
-        pq = (pregunta_para_modelo or pregunta).strip()
-        if media_note:
-            pq = (pq + "\n\n[Contexto visual]\n" + media_note).strip()
+        pq_user = (pregunta_para_modelo or pregunta).strip()
         use_llm = _oracle_use_llm()
 
         # Saludos / mensajes ultra cortos: responder directo, sin IA ni plantillas raras.
@@ -1848,6 +1883,18 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                 response_kind="yesno",
             )
             return emb, mb, "yesno"
+
+        # Opinión sí/no ultra común: responder rápido, sin IA ni web.
+        if _oracle_is_fast_opinion_yesno(pq_plain):
+            _, body, _ = _roll_oracle()
+            emb = self._embed_respuesta(
+                nombre_visible=nombre_visible,
+                mencion=mencion,
+                pregunta=pregunta.strip(),
+                body=body,
+                response_kind="yesno",
+            )
+            return emb, body, "yesno"
         # Cuenta resuelta en el bot primero (rápido): evita que una regex “abierta” fuerce IA antes que `2+2`.
         if _is_simple_arithmetic_question(pq_plain):
             expr = _extract_arithmetic_expression_for_eval(pq_plain)
@@ -1855,18 +1902,32 @@ class OraculoCog(commands.Cog, name="Oraculo"):
             if val is not None:
                 body, response_kind = _format_math_answer_body(expr, val), "math"
             else:
-                media_first = await oracle_media_open_reply_async(pq)
+                media_first = await oracle_media_open_reply_async(pq_user)
                 if media_first:
                     body, response_kind = media_first, "open"
                 else:
                     if use_llm and media_image_bytes:
-                        llm = await oracle_local_reply_with_images(pq, images_bytes=[media_image_bytes], style="open")
+                        if _oracle_media_only_query(pq_plain):
+                            llm = await oracle_local_reply_with_images(
+                                "Decime qué es / qué se ve. Si es un personaje o cara, describilo breve.",
+                                images_bytes=[media_image_bytes],
+                                style="caption",
+                            )
+                        else:
+                            pq_llm = pq_user
+                            if media_note:
+                                pq_llm = (pq_llm + "\n\n[Contexto visual]\n" + media_note).strip()
+                            llm = await oracle_local_reply_with_images(pq_llm, images_bytes=[media_image_bytes], style="open")
                     else:
-                        llm = await oracle_local_reply(pq, style="open") if use_llm else None
+                        llm = await oracle_local_reply(pq_user, style="open") if use_llm else None
                     if llm:
                         body, response_kind = llm, "llm"
-                    elif _is_open_ended_question(pq):
-                        kind, body, _ = await _roll_oracle_for_question_async(pq)
+                    elif _is_open_ended_question(pq_user):
+                        if media_image_bytes and _oracle_media_only_query(pq_plain):
+                            body = "No pude interpretar bien ese emote/imagen. Probá reenviarlo o agregá una pregunta corta."
+                            response_kind = "open"
+                        else:
+                            kind, body, _ = await _roll_oracle_for_question_async(pq_user)
                         response_kind = "open" if kind == "open" else "yesno"
                     else:
                         body = (
@@ -1874,15 +1935,25 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                             "probá con `+ - * / % ^ ( )` y números simples."
                         )
                         response_kind = "open"
-        elif _is_open_ended_question(pq):
-            media_first = await oracle_media_open_reply_async(pq)
+        elif _is_open_ended_question(pq_user):
+            media_first = await oracle_media_open_reply_async(pq_user)
             if media_first:
                 body, response_kind = media_first, "open"
             else:
                 if use_llm and media_image_bytes:
-                    llm = await oracle_local_reply_with_images(pq, images_bytes=[media_image_bytes], style="open")
+                    if _oracle_media_only_query(pq_plain):
+                        llm = await oracle_local_reply_with_images(
+                            "Decime qué es / qué se ve. Si es un personaje o cara, describilo breve.",
+                            images_bytes=[media_image_bytes],
+                            style="caption",
+                        )
+                    else:
+                        pq_llm = pq_user
+                        if media_note:
+                            pq_llm = (pq_llm + "\n\n[Contexto visual]\n" + media_note).strip()
+                        llm = await oracle_local_reply_with_images(pq_llm, images_bytes=[media_image_bytes], style="open")
                 else:
-                    llm = await oracle_local_reply(pq, style="open") if use_llm else None
+                    llm = await oracle_local_reply(pq_user, style="open") if use_llm else None
                 if llm:
                     body, response_kind = llm, "llm"
                 else:
@@ -1892,21 +1963,26 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                         if val is not None:
                             body, response_kind = _format_math_answer_body(expr, val), "math"
                         else:
-                            kind, body, _ = await _roll_oracle_for_question_async(pq)
+                            kind, body, _ = await _roll_oracle_for_question_async(pq_user)
                             response_kind = "open" if kind == "open" else "yesno"
                     else:
-                        kind, body, _ = await _roll_oracle_for_question_async(pq)
+                        # Si era “solo media” y falló visión, no inventamos historia.
+                        if media_image_bytes and _oracle_media_only_query(pq_plain):
+                            body = "No pude interpretar bien ese emote/imagen. Probá reenviarlo o agregá una pregunta corta."
+                            response_kind = "open"
+                        else:
+                            kind, body, _ = await _roll_oracle_for_question_async(pq_user)
                         response_kind = "open" if kind == "open" else "yesno"
         else:
             if use_llm and _oracle_llm_yesno_via_model():
-                llm = await oracle_local_reply(pq, style="yesno")
+                llm = await oracle_local_reply(pq_user, style="yesno")
                 if llm:
                     body, response_kind = llm, "llm"
                 else:
-                    kind, body, _ = await _roll_oracle_for_question_async(pq)
+                    kind, body, _ = await _roll_oracle_for_question_async(pq_user)
                     response_kind = "open" if kind == "open" else "yesno"
             else:
-                kind, body, _ = await _roll_oracle_for_question_async(pq)
+                kind, body, _ = await _roll_oracle_for_question_async(pq_user)
                 response_kind = "open" if kind == "open" else "yesno"
         emb = self._embed_respuesta(
             nombre_visible=nombre_visible,
@@ -1953,7 +2029,8 @@ class OraculoCog(commands.Cog, name="Oraculo"):
                     else:
                         media_b, info = await self._pick_first_image_source(message=reference, attachment=media_attachment)
                         if media_b:
-                            media_note = f"El usuario adjuntó una imagen ({info}). Describí lo que ves y respondé a la pregunta."
+                            # Nota SOLO para el modelo; no queremos meter URLs en el “tema” del fallback.
+                            media_note = f"Media: {info}. Si ayuda, describí lo que ves."
                             self.db.bump_oracle_media_use(author.id)
                         else:
                             # Si había intención de media pero no se pudo bajar, dejamos una nota corta.

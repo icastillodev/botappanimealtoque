@@ -543,7 +543,8 @@ def build_pages_diaria(db: Any, task_config: Dict[str, Any], user_id: int) -> Li
         e5.set_footer(
             text=f"Diario · {fecha} · ~{fmt_toque_sentence(total_dia)} Toque · `.env` REWARD_DIARIA_* + AHORCADO"
         )
-        return [[e1, e2, e3, e4, e5]]
+        # Una tarjeta por página (◀/▶), para que no spamee todo junto.
+        return [[e1], [e2], [e3], [e4], [e5]]
 
     title1 = _title_es_en("Diario 1/5 — Actividad + oráculo", "daily 1/5", fecha)
     if c1:
@@ -602,7 +603,8 @@ def build_pages_diaria(db: Any, task_config: Dict[str, Any], user_id: int) -> Li
     e5.set_footer(
         text=f"Diario · {fecha} · ~{fmt_toque_sentence(total_dia)} Toque total (5 cobros) · `.env` REWARD_DIARIA_* / ROLLS / RPS / AHORCADO"
     )
-    return [[e1, e2, e3, e4, e5]]
+    # Una tarjeta por página (◀/▶), para que no spamee todo junto.
+    return [[e1], [e2], [e3], [e4], [e5]]
 
 
 def build_pages_semanal(db: Any, task_config: Dict[str, Any], user_id: int) -> List[List[discord.Embed]]:

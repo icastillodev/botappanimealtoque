@@ -564,7 +564,26 @@ class MinijuegosCog(commands.Cog, name="Economia Minijuegos"):
             return
         row = self.db.minijuego_invite_pending_for_target_kinds(ctx.author.id, ("rps_bet", "rps_casual"))
         if not row:
-            await ctx.send("No tenés piedra/papel/tijera pendiente.", delete_after=12)
+            # Ayuda: muchas veces el usuario tiene otro reto pendiente o el reto no era hacia él.
+            any_row = self.db.minijuego_invite_pending_for_target(ctx.author.id)
+            if any_row:
+                kind = str(any_row.get("kind") or "")
+                p1 = int(any_row.get("p1_id") or 0)
+                mins = RETO_ACCEPT_MINUTES
+                await ctx.send(
+                    (
+                        "No tenés un **PPT** pendiente para aceptar.\n"
+                        f"📌 Pero sí tenés un reto pendiente de tipo **{kind}** de <@{p1}> "
+                        f"(tenés **{mins} min** desde que te retaron)."
+                    ),
+                    delete_after=16,
+                    allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
+                )
+            else:
+                await ctx.send(
+                    "No tenés piedra/papel/tijera pendiente. Asegurate de que **te hayan retado a vos** (te tiene que mencionar).",
+                    delete_after=14,
+                )
             return
         ok, err = await self._rps_aceptar_begin_pick(row, ctx.author)
         if not ok:
@@ -635,6 +654,15 @@ class MinijuegosCog(commands.Cog, name="Economia Minijuegos"):
             return await interaction.response.send_message("Solo en servidor.", ephemeral=True)
         row = self.db.minijuego_invite_pending_for_target_kinds(interaction.user.id, ("rps_bet", "rps_casual"))
         if not row:
+            any_row = self.db.minijuego_invite_pending_for_target(interaction.user.id)
+            if any_row:
+                kind = str(any_row.get("kind") or "")
+                p1 = int(any_row.get("p1_id") or 0)
+                return await interaction.response.send_message(
+                    f"No tenés un **PPT** pendiente. Pero sí tenés un reto pendiente **{kind}** de <@{p1}>.",
+                    ephemeral=True,
+                    allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
+                )
             return await interaction.response.send_message(
                 "No tenés piedra/papel/tijera pendiente.",
                 ephemeral=True,

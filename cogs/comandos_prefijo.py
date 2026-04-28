@@ -9,6 +9,7 @@ from typing import List, Optional
 
 import discord
 from discord.ext import commands
+import aiohttp
 
 from cogs.economia.db_manager import EconomiaDBManagerV2
 from cogs.economia.card_db_manager import CardDBManager
@@ -339,6 +340,56 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
             )
             return
         await oc.oracle_pregunta_desde_prefijo(ctx, texto=texto)
+
+    def _ahorcado_api_base(self) -> str:
+        return (os.getenv("AHORCADO_API_BASE") or "https://animealtoque.com/ahorcado/api").strip().rstrip("/")
+
+    async def _ahorcado_fetch_ranking(self) -> Optional[dict]:
+        url = self._ahorcado_api_base() + "/ranking/global"
+        timeout = aiohttp.ClientTimeout(total=8)
+        async with aiohttp.ClientSession(timeout=timeout) as sess:
+            async with sess.get(url) as r:
+                if r.status != 200:
+                    return None
+                return await r.json()
+
+    def _fmt_rank_block(self, rows: object) -> str:
+        if not isinstance(rows, list) or not rows:
+            return "—"
+        out: List[str] = []
+        for i, it in enumerate(rows[:10], start=1):
+            if not isinstance(it, dict):
+                continue
+            u = str(it.get("username") or "—").strip()[:40]
+            try:
+                pts = int(float(it.get("puntos") or 0))
+            except Exception:
+                pts = 0
+            out.append(f"**{i}.** {discord.utils.escape_markdown(u)} — **{pts}**")
+        return "\n".join(out) if out else "—"
+
+    @commands.command(name="ahorcadotop", aliases=["topahorcado", "ahorcadorank", "rankahorcado"])
+    async def ahorcadotop_cmd(self, ctx: commands.Context):
+        """Ranking del ahorcado (semanal/mensual/global) desde la web."""
+        try:
+            data = await self._ahorcado_fetch_ranking()
+        except Exception:
+            data = None
+        if not isinstance(data, dict) or str(data.get("status") or "") != "success":
+            return await ctx.send(
+                "No pude traer el ranking del ahorcado ahora. Probá en un rato.",
+                delete_after=10,
+            )
+        e = discord.Embed(
+            title="🪢 Ranking — Ahorcado",
+            description="Top 10 por puntos en la web.",
+            color=discord.Color.dark_gold(),
+        )
+        e.add_field(name="📅 Semanal", value=self._fmt_rank_block(data.get("semanal")), inline=False)
+        e.add_field(name="🗓️ Mensual", value=self._fmt_rank_block(data.get("mensual")), inline=False)
+        e.add_field(name="🌍 Global", value=self._fmt_rank_block(data.get("global")), inline=False)
+        e.set_footer(text="Web: www.animealtoque.com/ahorcado")
+        await ctx.send(embed=e)
 
     @commands.command(name="animetop", aliases=["topanime", "topanimes", "topdeanime"])
     async def animetop(self, ctx: commands.Context, quien: Optional[discord.Member] = None):

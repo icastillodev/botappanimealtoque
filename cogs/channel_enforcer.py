@@ -72,6 +72,8 @@ class ChannelEnforcerCog(commands.Cog, name="Limpieza de Chat"):
             self.bot_channel_id = 0
 
     def _tokens_for_bot(self) -> FrozenSet[str]:
+        # Nota: los comandos pueden cargarse después de este cog (extensiones).
+        # Si cacheamos para siempre, terminamos borrando comandos válidos en #general.
         if self._allowed_tokens_cache is None:
             self._allowed_tokens_cache = _allowed_prefix_tokens(self.bot)
         return self._allowed_tokens_cache
@@ -96,7 +98,12 @@ class ChannelEnforcerCog(commands.Cog, name="Limpieza de Chat"):
         if not first:
             return
 
-        if first in self._tokens_for_bot():
+        toks = self._tokens_for_bot()
+        if first in toks:
+            return
+        # Recalcular una vez por si el cache quedó viejo (cogs cargados luego).
+        self._allowed_tokens_cache = _allowed_prefix_tokens(self.bot)
+        if first in self._allowed_tokens_cache:
             return
 
         try:

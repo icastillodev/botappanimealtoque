@@ -34,13 +34,13 @@ def _calc_ahorcado_id_dia_now_uy() -> int:
 
 class AhorcadoDailyWebhookCog(commands.Cog):
     """
-    Recibe el resultado del ahorcado diario desde la web y lo registra como diaria del bot.
+    Recibe el resultado del ahorcado diario desde la web y lo publica en Discord.
 
     Config (.env del bot):
     - AHORCADO_WEBHOOK_SECRET: secreto compartido (Bearer).
     - AHORCADO_WEBHOOK_HOST: por defecto 0.0.0.0
     - AHORCADO_WEBHOOK_PORT: puerto (ej 8099)
-    - AHORCADO_DAILY_CHANNEL_ID: canal donde publicar el resultado (opcional)
+    - AHORCADO_DAILY_CHANNEL_ID: canal donde publicar el resultado (si falta, usa GENERAL_CHANNEL_ID)
     """
 
     def __init__(self, bot: commands.Bot):
@@ -93,6 +93,7 @@ class AhorcadoDailyWebhookCog(commands.Cog):
             pistas = int(data.get("pistas") or 0)
             ganado = bool(data.get("ganado"))
             username = str(data.get("username") or "").strip()
+            categoria = str(data.get("categoria") or "").strip()
 
             if uid <= 0 or id_dia <= 0:
                 return web.json_response({"ok": False, "error": "bad_request"}, status=400)
@@ -105,32 +106,33 @@ class AhorcadoDailyWebhookCog(commands.Cog):
                     status=400,
                 )
 
+            # Marcar diaria 5 en el bot (siempre): habilita `?reclamar diaria 5`.
             db = getattr(self.bot, "economia_db", None)
             if not db:
                 return web.json_response({"ok": False, "error": "db_unavailable"}, status=503)
-
             prog = db.get_progress_diaria(uid)
             if int(prog.get("dia_ahorcado") or 0) >= 1 and int(prog.get("dia_ahorcado_id") or 0) == id_dia:
                 return web.json_response({"ok": False, "error": "already_submitted"}, status=409)
-
             db.mark_diaria_ahorcado_result(uid, id_dia)
 
-            # Publicar en Discord (opcional)
-            ch_id = _env_int("AHORCADO_DAILY_CHANNEL_ID", 0)
+            # Publicar en Discord (por defecto, #general)
+            ch_id = _env_int("AHORCADO_DAILY_CHANNEL_ID", 0) or _env_int("GENERAL_CHANNEL_ID", 0)
             if ch_id > 0:
                 ch = self.bot.get_channel(ch_id)
                 if isinstance(ch, (discord.TextChannel, discord.Thread)):
                     title = "🪢 Ahorcado del día"
                     who = f"<@{uid}>" if uid else (username or "Jugador")
                     status = "✅ Ganó" if ganado else "❌ Perdió"
+                    cat_line = f"**Categoría:** {categoria}\n" if categoria else ""
                     desc = (
                         f"**Jugador:** {who}\n"
+                        f"{cat_line}"
                         f"**Resultado:** {status}\n"
                         f"**Pistas:** {pistas}\n"
                         f"**Errores:** {errores}\n"
                         f"**Puntos (web):** {puntos}\n"
                         f"**ID día:** {id_dia}\n"
-                        "Web: `animealtoque.com/ahorcado`"
+                        "Web: `www.animealtoque.com/ahorcado`"
                     )
                     emb = discord.Embed(title=title, description=desc[:4096], color=discord.Color.dark_gold())
                     try:
