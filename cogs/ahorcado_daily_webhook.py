@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import os
+import re
 from typing import Any, Dict, Optional
 
 import discord
@@ -11,6 +12,74 @@ from discord.ext import commands
 from aiohttp import web
 
 log = logging.getLogger(__name__)
+
+def _extract_share_stats(text: str) -> Optional[dict]:
+    """
+    Parse tolerante del share (multilínea) sin depender de que los emojis/códigos sean idénticos.
+    """
+    t = (text or "").strip()
+    if not t:
+        return None
+    if "Ahorcado #AnimeAlToque" not in t:
+        return None
+    day_m = re.search(r"(?is)\bD[ií]a\s*#\s*(\d+)\b", t)
+    if not day_m:
+        return None
+    out: dict = {"day": int(day_m.group(1) or 0)}
+    m_err = re.search(r"(?is)Errores:\s*(\d+)\s*/\s*(\d+)", t)
+    if m_err:
+        out["err"] = int(m_err.group(1) or 0)
+        out["errmax"] = int(m_err.group(2) or 0)
+    m_h = re.search(r"(?is)Pistas:\s*(\d+)", t)
+    if m_h:
+        out["hints"] = int(m_h.group(1) or 0)
+    m_p = re.search(r"(?is)Puntos:\s*(\d+)", t)
+    if m_p:
+        out["pts"] = int(m_p.group(1) or 0)
+    # Extraer cuadrito (líneas con 🟩/⬜)
+    grid_lines = []
+    for ln in t.splitlines():
+        s = ln.strip()
+        if not s:
+            continue
+        # Mantener solo líneas que sean “cuadraditos” (con espacios opcionales).
+        compact = s.replace(" ", "")
+        if compact and all(ch in ("🟩", "⬜") for ch in compact):
+            grid_lines.append(s)
+    if grid_lines:
+        # Evitar spam: máximo 6 líneas (suele ser 1–3).
+        out["grid"] = grid_lines[:6]
+    return out
+
+
+class _AhorcadoShareView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=240)
+        self.add_item(
+            discord.ui.Button(
+                label="Jugar ahorcado",
+                style=discord.ButtonStyle.link,
+                url="https://www.animealtoque.com/ahorcado",
+                row=0,
+            )
+        )
+        self.add_item(
+            discord.ui.Button(
+                label="Ver ranking",
+                style=discord.ButtonStyle.link,
+                url="https://www.animealtoque.com/ahorcado",
+                row=0,
+            )
+        )
+
+    @discord.ui.button(label="¿Cómo cobra la diaria?", style=discord.ButtonStyle.secondary, row=1)
+    async def how_claim(self, interaction: discord.Interaction, _btn: discord.ui.Button):
+        await interaction.response.send_message(
+            "Para que cuente la **diaria 5 (ahorcado)** tenés que jugar en la web con Discord y terminar la partida.\n"
+            "Cuando llega el webhook, el bot lo marca y después podés cobrar con **`?reclamar diaria 5`** "
+            "(o botón en `?diaria`).",
+            ephemeral=True,
+        )
 
 
 def _env_int(key: str, default: int = 0) -> int:
@@ -47,6 +116,7 @@ class AhorcadoDailyWebhookCog(commands.Cog):
         self.bot = bot
         self._runner: Optional[web.AppRunner] = None
         self._site: Optional[web.TCPSite] = None
+        self._share_seen: set[int] = set()
 
     async def cog_load(self) -> None:
         secret = (os.getenv("AHORCADO_WEBHOOK_SECRET") or "").strip()
@@ -146,6 +216,70 @@ class AhorcadoDailyWebhookCog(commands.Cog):
         except Exception:
             log.exception("Ahorcado webhook: error inesperado")
             return web.json_response({"ok": False, "error": "internal_error"}, status=500)
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        # Cuando alguien pega el cuadrito del share del ahorcado, respondemos con embed + botones.
+        if message.author.bot or not message.guild:
+            return
+        txt = (message.content or "").strip()
+        if len(txt) < 30:
+            return
+        stats = _extract_share_stats(txt)
+        if not stats:
+            return
+        if message.id in self._share_seen:
+            return
+        self._share_seen.add(message.id)
+        if len(self._share_seen) > 600:
+            # Bound simple (memoria).
+            self._share_seen = set(list(self._share_seen)[-300:])
+
+        day = int(stats.get("day") or 0)
+        err = stats.get("err")
+        hints = stats.get("hints")
+        pts = stats.get("pts")
+        grid = stats.get("grid") if isinstance(stats.get("grid"), list) else None
+        # Heurística: si llegó a 5 errores en el share, asumimos derrota; si no, victoria.
+        status = None
+        try:
+            if err is not None and int(err) >= 5:
+                status = "❌ Perdió"
+            elif err is not None:
+                status = "✅ Ganó"
+        except Exception:
+            status = None
+
+        parts = [f"**Jugador:** {message.author.mention}"]
+        if day > 0:
+            parts.append(f"**Día:** **{day}**")
+        if status:
+            parts.append(f"**Resultado:** {status}")
+        if grid:
+            # Bloque visual principal (como el share original).
+            parts.append("```" + "\n".join(str(x) for x in grid) + "```")
+        if pts is not None:
+            parts.append(f"**Puntos:** **{pts}**")
+        if err is not None:
+            parts.append(f"**Errores:** **{err}**/5")
+        if hints is not None:
+            parts.append(f"**Pistas:** **{hints}**")
+        parts.append("Web: `www.animealtoque.com/ahorcado`")
+        parts.append("Tip: ranking del bot → **`?ahorcadotop`**")
+        emb = discord.Embed(
+            title="🪢 Ahorcado compartido",
+            description="\n".join(parts)[:4096],
+            color=discord.Color.dark_gold(),
+        )
+        try:
+            await message.reply(
+                embed=emb,
+                view=_AhorcadoShareView(),
+                mention_author=False,
+                allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
+            )
+        except Exception:
+            return
 
 
 async def setup(bot: commands.Bot) -> None:
