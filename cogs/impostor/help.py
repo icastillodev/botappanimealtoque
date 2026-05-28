@@ -5,94 +5,116 @@ from discord.ext import commands
 from discord import app_commands
 import logging
 
+from .config import get_min_impo_players
+
 log = logging.getLogger(__name__)
+
+
+def build_main_embed() -> discord.Embed:
+    min_p = get_min_impo_players()
+    return discord.Embed(
+        title="Bienvenido a Impostor",
+        description=(
+            f"Juego de deducción social (**mínimo {min_p} jugadores**).\n\n"
+            "Hay uno o más **Impostores** que no conocen el **secreto** (personaje, anime u objeto). "
+            "Los **Sociales** sí lo conocen y deben descubrir quién miente.\n\n"
+            "El host puede elegir **cuántos impostores** hay (+1 cada ~3 jugadores). "
+            "Usá los botones para ver reglas y comandos."
+        ),
+        color=discord.Color.blurple(),
+    )
+
 
 # --- Contenido de los Embeds de Ayuda ---
 
-EMBED_MAIN = discord.Embed(
-    title="Bienvenido a Impostor",
-    description="Impostor es un juego de deducción social (mínimo **2** jugadores; el **cupo** es solo un tope).\n\n"
-                "Un **Impostor** intenta sobrevivir sin conocer el **secreto** que comparten los **Sociales** "
-                "(personaje, anime u objeto, según la **temática** de la partida).\n\n"
-                "Al crear partida podés fijar el cupo máximo u omitirlo y usar el valor por defecto del servidor.\n\n"
-                "Usa los botones de abajo para aprender más.",
-    color=discord.Color.blurple()
-)
-
 EMBED_COMO_JUGAR = discord.Embed(
-    title="¿Cómo Jugar?",
-    description="El flujo del juego es simple y se divide en rondas.",
-    color=discord.Color.green()
+    title="¿Cómo jugar?",
+    description="Flujo de una partida:",
+    color=discord.Color.green(),
 )
 EMBED_COMO_JUGAR.add_field(
-    name="1. Fase de Roles",
-    value="Al empezar se anuncia la **temática** del secreto (personaje, anime u objeto). "
-          "Los Sociales ven el **mismo** secreto; si es **personaje**, también **de qué anime es** "
-          "(el Impostor no lo sabe). El Impostor solo ve la temática. Todos pulsan 'Listo'.",
-    inline=False
+    name="1. Lobby",
+    value="**Ready** → el host pulsa **Comenzar** (o **Forzar inicio**). "
+          "Cuenta regresiva corta y reparto de roles.",
+    inline=False,
 )
 EMBED_COMO_JUGAR.add_field(
-    name="2. Fase de Pistas (Rondas)",
-    value="Por turnos, cada jugador da **una pista** sobre el secreto (acorde a la temática). "
-          "El Impostor finge sin conocer el secreto exacto.",
-    inline=False
+    name="2. Roles",
+    value="**Ver mi rol** (secreto) → **Listo**. Los Sociales ven el secreto; "
+          "los Impostores solo la **temática** y un **detalle** de cómo dar pistas.",
+    inline=False,
 )
 EMBED_COMO_JUGAR.add_field(
-    name="3. Fase de Votación",
-    value="Después de las pistas, todos votan para expulsar a quien creen que es el impostor. Los bots se votan a sí mismos.",
-    inline=False
+    name="3. Pistas",
+    value="Por turnos: **1–5 palabras** en el chat o `/palabra`. "
+          "Solo quien tiene el turno puede escribir en el canal.",
+    inline=False,
 )
 EMBED_COMO_JUGAR.add_field(
-    name="4. Fin de la Partida",
-    value="**Ganan los Sociales** si expulsan al Impostor.\n"
-          "**Gana el Impostor** si sobrevive 4 rondas o si quedan solo 2 jugadores vivos.",
-    inline=False
+    name="4. Votación",
+    value="Botones en el mensaje del bot o `/votar` / `/vote @jugador`.",
+    inline=False,
+)
+EMBED_COMO_JUGAR.add_field(
+    name="5. Victoria",
+    value="**Sociales:** eliminan a **todos** los impostores.\n"
+          "**Impostores:** quedan con **2 sociales o menos** vivos, o sobreviven hasta el límite de rondas.",
+    inline=False,
+)
+EMBED_COMO_JUGAR.add_field(
+    name="6. Revancha",
+    value="Al terminar: **host** → **Revancha** / `/revancha` / `?revancha` · **jugadores** → "
+          "**Quiero revancha**, `/quiero-revancha` o `?quierorevancha` (mayoría reinicia).",
+    inline=False,
 )
 
 EMBED_COMANDOS = discord.Embed(
-    title="Comandos del Lobby",
-    description="Estos son los comandos que usarás para jugar.",
-    color=discord.Color.orange()
+    title="Comandos",
+    description="Slash principales (también hay botones en el lobby):",
+    color=discord.Color.orange(),
 )
 EMBED_COMANDOS.add_field(
-    name="Generales",
-    value="`/helpimpostor` o `/ayudaimpostor` - Muestra esta ayuda.\n"
-          "`/crearsimpostor nombre: …` — `jugadores` es **opcional** (cupo máx. del lobby).\n"
-          "`/entrar nombre: [nombre]` - Te une a un lobby abierto.\n"
-          "En la **cartelera** hay un botón para darte o quitarte el rol de avisos de partidas.",
-    inline=False
+    name="Crear / unirse (fuera del lobby)",
+    value="`/crearsimpostor` o **`?crearsimpostor <nombre>`** [abierto|cerrado] [cupo].\n"
+          "`/entrar` o **`?entrar <nombre>`** — lobby abierto.\n"
+          "**`?impostor`** / cartelera — ver salas.",
+    inline=False,
 )
 EMBED_COMANDOS.add_field(
-    name="Dentro del Lobby",
-    value="`/leave` o `/salir` - Abandona el lobby (solo antes de empezar).\n"
-          "`/ready` o `/listo` - Te marca como listo para empezar.\n"
-          "`/addbot` - (Host) Añade un bot.\n"
-          "`/removebot` - (Host) Quita un bot.",
-    inline=False
+    name="Lobby (en el canal de la sala)",
+    value="`/leave` · `/salir` o **`?salir`** · `/ready` · `/listo`\n"
+          "Panel: **+ Imp** / **− Imp** · **Cerrar sala** (host) · **Forzar inicio**",
+    inline=False,
 )
 EMBED_COMANDOS.add_field(
-    name="En Partida",
-    value="`/palabra pista: [tu pista]` - Envía tu pista secreta en tu turno.\n"
-          "`/votar @usuario` - Vota por un jugador.",
-    inline=False
+    name="En partida",
+    value="`/palabra` — pista en tu turno (o escribí 1–5 palabras).\n"
+          "`/votar` · `/vote` — votar.",
+    inline=False,
+)
+EMBED_COMANDOS.add_field(
+    name="Estadísticas (cualquier canal)",
+    value="`/impostor-stats` · **`?impostorstats`**\n"
+          "`/impostor-ranking` · **`?impostorrang`**\n"
+          "`?impostoractivos` · `?impostorhistorial` · `?helpimpostor`",
+    inline=False,
 )
 
-# --- Vistas (Botones) ---
 
 class HelpView(discord.ui.View):
-    """Vista principal con los botones de navegación."""
     def __init__(self, author: discord.Member):
-        super().__init__(timeout=180) # 3 minutos de timeout
+        super().__init__(timeout=180)
         self.author = author
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        """Asegura que solo el autor del comando pueda usar los botones."""
         if interaction.user.id != self.author.id:
-            await interaction.response.send_message("❌ Solo la persona que escribió el comando puede usar estos botones.", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ Solo quien abrió la ayuda puede usar estos botones.", ephemeral=True
+            )
             return False
         return True
 
-    @discord.ui.button(label="¿Cómo Jugar?", style=discord.ButtonStyle.success, emoji="📖")
+    @discord.ui.button(label="¿Cómo jugar?", style=discord.ButtonStyle.success, emoji="📖")
     async def como_jugar(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(embed=EMBED_COMO_JUGAR, view=HelpBackView(self.author))
 
@@ -102,47 +124,44 @@ class HelpView(discord.ui.View):
 
 
 class HelpBackView(discord.ui.View):
-    """Vista con solo el botón de 'Volver'."""
     def __init__(self, author: discord.Member):
         super().__init__(timeout=180)
         self.author = author
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        """Asegura que solo el autor del comando pueda usar los botones."""
         if interaction.user.id != self.author.id:
-            await interaction.response.send_message("❌ Solo la persona que escribió el comando puede usar estos botones.", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ Solo quien abrió la ayuda puede usar estos botones.", ephemeral=True
+            )
             return False
         return True
 
     @discord.ui.button(label="Volver", style=discord.ButtonStyle.secondary, emoji="⬅️")
     async def volver(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(embed=EMBED_MAIN, view=HelpView(self.author))
+        await interaction.response.edit_message(embed=build_main_embed(), view=HelpView(self.author))
 
-
-# --- Cog y Comando ---
 
 class ImpostorHelpCog(commands.Cog, name="ImpostorHelp"):
-    """
-    Comando de ayuda para el modo Impostor.
-    """
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @app_commands.command(name="helpimpostor", description="Muestra la ayuda del modo de juego Impostor.")
+    @app_commands.command(name="helpimpostor", description="Ayuda del modo Impostor.")
     async def helpimpostor(self, interaction: discord.Interaction):
-        
-        # FIX: Añadir 'defer' para evitar el error "La aplicación no ha respondido"
         await interaction.response.defer(ephemeral=True)
-        
         await interaction.followup.send(
-            embed=EMBED_MAIN,
+            embed=build_main_embed(),
             view=HelpView(interaction.user),
-            ephemeral=True # Se envía oculto
+            ephemeral=True,
         )
 
-    @app_commands.command(name="ayudaimpostor", description="(Alias) Muestra la ayuda del modo Impostor.")
+    @app_commands.command(name="ayudaimpostor", description="(Alias) Ayuda Impostor.")
     async def ayudaimpostor(self, interaction: discord.Interaction):
         await self.helpimpostor.callback(self, interaction)
+
+    @commands.command(name="helpimpostor", aliases=["ayudaimpostor", "impostorhelp"])
+    async def helpimpostor_prefix(self, ctx: commands.Context):
+        await ctx.send(embed=build_main_embed(), view=HelpView(ctx.author))
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(ImpostorHelpCog(bot))

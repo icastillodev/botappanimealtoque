@@ -317,6 +317,35 @@ class EconomiaDBManagerV2:
                     )
                     """
                 )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS impostor_stats (
+                        user_id INTEGER PRIMARY KEY,
+                        games_played INTEGER NOT NULL DEFAULT 0,
+                        games_social INTEGER NOT NULL DEFAULT 0,
+                        games_impostor INTEGER NOT NULL DEFAULT 0,
+                        wins_social INTEGER NOT NULL DEFAULT 0,
+                        wins_impostor INTEGER NOT NULL DEFAULT 0
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS impostor_game_log (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        ended_ts REAL NOT NULL,
+                        guild_id INTEGER,
+                        channel_id INTEGER,
+                        lobby_name TEXT,
+                        winner_role TEXT,
+                        secret_name TEXT,
+                        secret_theme TEXT,
+                        human_count INTEGER NOT NULL DEFAULT 0,
+                        impostor_count INTEGER NOT NULL DEFAULT 0,
+                        reason TEXT
+                    )
+                    """
+                )
 
                 cursor.execute(
                     """
@@ -771,7 +800,9 @@ class EconomiaDBManagerV2:
         from cogs.impostor.engine import ROLE_IMPOSTOR
 
         _, semana = self.get_current_date_keys()
-        imp_id = getattr(lobby, "impostor_id", None)
+        imp_ids = set(getattr(lobby, "impostor_ids", None) or [])
+        if not imp_ids and getattr(lobby, "impostor_id", None):
+            imp_ids = {int(lobby.impostor_id)}
         for p in lobby.players.values():
             if getattr(p, "is_bot", False):
                 continue
@@ -780,9 +811,162 @@ class EconomiaDBManagerV2:
                 continue
             self.ensure_user_exists(uid)
             self.update_task_semanal(uid, "impostor_partidas", semana, 1)
-        if winner_role == ROLE_IMPOSTOR and imp_id:
-            self.ensure_user_exists(int(imp_id))
-            self.update_task_semanal(int(imp_id), "impostor_victorias", semana, 1)
+        if winner_role == ROLE_IMPOSTOR:
+            for imp_id in imp_ids:
+                self.ensure_user_exists(int(imp_id))
+                self.update_task_semanal(int(imp_id), "impostor_victorias", semana, 1)
+
+    def record_impostor_ranked_stats(self, lobby: Any, winner_role: str) -> None:
+        """Ranking global/personal: partidas y victorias por rol."""
+        from cogs.impostor.engine import ROLE_IMPOSTOR, ROLE_SOCIAL
+
+        imp_ids = set(getattr(lobby, "impostor_ids", None) or [])
+        if not imp_ids and getattr(lobby, "impostor_id", None):
+            imp_ids = {int(lobby.impostor_id)}
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            for p in lobby.players.values():
+                if getattr(p, "is_bot", False):
+                    continue
+                uid = int(getattr(p, "user_id", 0))
+                if not uid:
+                    continue
+                is_imp = uid in imp_ids
+                won_imp = winner_role == ROLE_IMPOSTOR and is_imp
+                won_soc = winner_role == ROLE_SOCIAL and not is_imp
+                cur.execute(
+                    "INSERT OR IGNORE INTO impostor_stats (user_id) VALUES (?)",
+                    (uid,),
+                )
+                cur.execute(
+                    """
+                    UPDATE impostor_stats SET
+                        games_played = games_played + 1,
+                        games_social = games_social + ?,
+                        games_impostor = games_impostor + ?,
+                        wins_social = wins_social + ?,
+                        wins_impostor = wins_impostor + ?
+                    WHERE user_id = ?
+                    """,
+                    (
+                        0 if is_imp else 1,
+                        1 if is_imp else 0,
+                        1 if won_soc else 0,
+                        1 if won_imp else 0,
+                        uid,
+                    ),
+                )
+            conn.commit()
+
+    def get_impostor_stats(self, user_id: int) -> Dict[str, int]:
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT games_played, games_social, games_impostor, wins_social, wins_impostor
+                FROM impostor_stats WHERE user_id = ?
+                """,
+                (int(user_id),),
+            )
+            row = cur.fetchone()
+        if not row:
+            return {
+                "games_played": 0,
+                "games_social": 0,
+                "games_impostor": 0,
+                "wins_social": 0,
+                "wins_impostor": 0,
+            }
+        return {
+            "games_played": int(row[0] or 0),
+            "games_social": int(row[1] or 0),
+            "games_impostor": int(row[2] or 0),
+            "wins_social": int(row[3] or 0),
+            "wins_impostor": int(row[4] or 0),
+        }
+
+    def get_impostor_leaderboard(self, column: str, limit: int = 15) -> List[Tuple[int, int]]:
+        allowed = {
+            "wins_impostor": "wins_impostor",
+            "wins_social": "wins_social",
+            "games_played": "games_played",
+            "games_impostor": "games_impostor",
+            "games_social": "games_social",
+        }
+        col = allowed.get(column, "wins_impostor")
+        lim = max(1, min(50, int(limit)))
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                f"SELECT user_id, {col} AS v FROM impostor_stats WHERE {col} > 0 "
+                f"ORDER BY v DESC LIMIT ?",
+                (lim,),
+            )
+            return [(int(r[0]), int(r[1])) for r in cur.fetchall()]
+
+    def record_impostor_game_log(self, lobby: Any, winner_role: str, reason: str) -> None:
+        """Historial ligero de partidas (staff / consulta)."""
+        import time
+        from cogs.impostor.engine import ROLE_IMPOSTOR
+
+        imp_ids = set(getattr(lobby, "impostor_ids", None) or [])
+        humans = [
+            p for p in lobby.players.values() if not getattr(p, "is_bot", False)
+        ]
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO impostor_game_log (
+                    ended_ts, guild_id, channel_id, lobby_name, winner_role,
+                    secret_name, secret_theme, human_count, impostor_count, reason
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    time.time(),
+                    int(getattr(lobby, "guild_id", 0) or 0),
+                    int(getattr(lobby, "channel_id", 0) or 0),
+                    str(getattr(lobby, "lobby_name", ""))[:120],
+                    str(winner_role or ""),
+                    (str(getattr(lobby, "character_name", "")) or "")[:200],
+                    (str(getattr(lobby, "secret_theme", "")) or "")[:32],
+                    len(humans),
+                    len(imp_ids),
+                    (str(reason or ""))[:500],
+                ),
+            )
+            conn.commit()
+
+    def get_impostor_game_log_recent(self, limit: int = 10) -> List[Dict[str, Any]]:
+        lim = max(1, min(30, int(limit)))
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT ended_ts, lobby_name, winner_role, secret_name, secret_theme,
+                       human_count, impostor_count, channel_id
+                FROM impostor_game_log
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (lim,),
+            )
+            rows = cur.fetchall()
+        out = []
+        for r in rows:
+            out.append(
+                {
+                    "ended_ts": float(r[0]),
+                    "lobby_name": r[1],
+                    "winner_role": r[2],
+                    "secret_name": r[3],
+                    "secret_theme": r[4],
+                    "human_count": int(r[5] or 0),
+                    "impostor_count": int(r[6] or 0),
+                    "channel_id": int(r[7] or 0),
+                }
+            )
+        return out
 
     def mark_trampa_enviada(self, user_id: int) -> None:
         """Trampa dirigida a otro usuario (cuenta para diaria 'completa' en un solo uso)."""
@@ -1074,6 +1258,30 @@ class EconomiaDBManagerV2:
             cursor = conn.cursor()
             cursor.execute("SELECT blister_tipo, cantidad FROM inventario_blisters WHERE user_id = ? AND cantidad > 0", (user_id,))
             return [dict(row) for row in cursor.fetchall()]
+
+    def clear_blisters_for_user(self, user_id: int) -> Dict[str, int]:
+        """
+        Borra TODOS los blisters del usuario (deja inventario_blisters vacío para ese user).
+        Devuelve {"types": n_tipos, "total": n_total_borrado}.
+        """
+        self.ensure_user_exists(user_id)
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT blister_tipo, cantidad FROM inventario_blisters WHERE user_id = ? AND cantidad > 0",
+                (user_id,),
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+            total = 0
+            for r in rows:
+                try:
+                    total += int(r.get("cantidad") or 0)
+                except Exception:
+                    pass
+            cur.execute("DELETE FROM inventario_blisters WHERE user_id = ?", (user_id,))
+            conn.commit()
+            return {"types": int(len(rows)), "total": int(total)}
 
     def add_card_to_inventory(self, user_id: int, carta_id: int, cantidad: int = 1) -> int:
         self.ensure_user_exists(user_id)

@@ -13,7 +13,8 @@ from discord import app_commands
 from discord.ext import commands
 
 from . import core
-from .engine import GameState, PHASE_END # <-- 1. MODIFICADO
+from .engine import GameState, PHASE_END
+from .slots import format_slots_label
 from .notify import ImpostorNotifyView
 
 log = logging.getLogger(__name__)
@@ -23,10 +24,6 @@ log = logging.getLogger(__name__)
 def get_feed_channel_id() -> Optional[int]:
     val = os.getenv("IMPOSTOR_FEED_CHANNEL_ID")
     return int(val) if val else None
-
-def get_max_players() -> int:
-    val = os.getenv("IMPOSTOR_MAX_PLAYERS", "5")
-    return int(val)
 
 def get_admin_role_ids() -> Set[int]:
     """Función de utilidad para obtener roles admin (evita importación circular)."""
@@ -138,7 +135,8 @@ async def _generate_feed_embed(bot: commands.Bot) -> discord.Embed:
             host_mention = f"<@{lobby.host_id}>"
             player_count = lobby.all_players_count
             
-            line = f"• **{lobby.lobby_name}** — {player_count}/{lobby.max_slots} — Host: {host_mention}\n"
+            slots = format_slots_label(player_count, lobby.max_slots)
+            line = f"• **{lobby.lobby_name}** — {slots} — Host: {host_mention}\n"
             line += f"  └ `/entrar nombre:{lobby.lobby_name}`\n"
             open_field_value += line
 
@@ -153,7 +151,8 @@ async def _generate_feed_embed(bot: commands.Bot) -> discord.Embed:
             host_mention = f"<@{lobby.host_id}>"
             player_count = lobby.all_players_count
             
-            line = f"• **{lobby.lobby_name}** — {player_count}/{lobby.max_slots} — Host: {host_mention}\n"
+            slots = format_slots_label(player_count, lobby.max_slots)
+            line = f"• **{lobby.lobby_name}** — {slots} — Host: {host_mention}\n"
             closed_field_value += line
             
     embed.add_field(name="🔒 Lobbys Cerrados", value=closed_field_value, inline=False)
@@ -167,7 +166,8 @@ async def _generate_feed_embed(bot: commands.Bot) -> discord.Embed:
             host_mention = f"<@{lobby.host_id}>"
             player_count = lobby.all_players_count
             
-            line = f"• **{lobby.lobby_name}** — {player_count}/{lobby.max_slots} — Host: {host_mention}\n"
+            slots = format_slots_label(player_count, lobby.max_slots)
+            line = f"• **{lobby.lobby_name}** — {slots} — Host: {host_mention}\n"
             playing_field_value += line
             
     embed.add_field(name="🔴 En Partida", value=playing_field_value, inline=False)

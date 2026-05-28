@@ -46,6 +46,7 @@ from cogs.impostor import core as impostor_core
 from cogs.impostor import feed as impostor_feed
 from cogs.impostor import notify as impostor_notify
 from cogs.impostor.engine import PHASE_END
+from cogs.economia.progress_zone_guard import reject_progress_in_impostor_zone
 
 log = logging.getLogger(__name__)
 
@@ -152,13 +153,15 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
                 "**Con `/`** — **solo staff**. Usuarios: usen comandos con **`?`**.\n\n"
                 "**Economía (`?` y `/`):** `?puntos` · `?inventario` · `?mi` · `?top` · `?tophist` · `?ranking` (tablas paginadas + botones) · `?reclamar` · `?progreso` · `?progresoayuda` · "
                 "`?diario` / `?diaria` (*daily*) · `?semanal` (*weekly*) · `?inicial` · `?cartas` · `?abrir` · `?miscartas` / `?vercartas` · `?catalogo` · `?vercarta` / `?carta` · `?usar`\n"
-                "**Impostor:** `?impostor` — avisá que buscás gente / ver lobbies abiertos.\n"
+                "**Impostor:** `?impostor` — cartelera · `?crearsimpostor` · `?entrar` · `?salir` · "
+                "`?impostoractivos` · `?impostorstats` · `?impostorrang` · `?helpimpostor` · "
+                "`?quierorevancha` (fin de partida). Daily/misiones: **canal del bot** (no #general ni Impostor).\n"
                 "**Oráculo:** arrobá al bot + tu pregunta en el mismo mensaje · `?pregunta` + texto · `/aat-consulta` — sí / no / a veces %. Cuenta para el **diario** (*daily*) y puede dar **Toque points** extra.\n"
                 "**Top anime:** `?animetop` / `?topanime` · `?animetop @usuario` / `?topanime @usuario` — editar: `?topset <1-33> <título>` · `?topquitar <n>` — slash: `/aat-anime-top_*`\n"
                 "**Perfil (con `?`):** `?wishlist` / `?wishlistset` / `?wishlistquitar` · `?odiados` / `?odiadosset` / `?odiadosquitar`.\n"
                 "**Trivia anime:** el bot publica en **#general** (varias al día, tiempo límite configurable); "
                 "`?r` / `?respuestapregunta` + respuesta (a veces también sin `?` en #general, según bot) · `?triviatop` / `?triviami` ranking.\n"
-                "**Slash útiles:** `/aat-ayuda` · `/crearsimpostor` · `/entrar` · `/aat-tienda-ver`"
+                "**Slash útiles:** `/aat-ayuda` · `/crearsimpostor` · `/entrar` · `/helpimpostor` · `/aat-tienda-ver`"
             ),
             color=discord.Color.blurple(),
         )
@@ -250,6 +253,48 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
             color=discord.Color.gold(),
         )
         await ctx.send(embed=embed)
+
+    @commands.command(name="blistersde", aliases=["blisterde", "sobresde"])
+    async def blisters_de_cmd(self, ctx: commands.Context, quien: discord.Member):
+        """Ver blisters/sobres de otra persona."""
+        self.db.ensure_user_exists(quien.id)
+        blisters = self.db.get_blisters_for_user(quien.id)
+        if not blisters:
+            return await ctx.send(f"**{quien.display_name}** no tiene blisters.", delete_after=10)
+        lines = "\n".join(
+            f"• **{b['blister_tipo']}**: x**{b['cantidad']}**" for b in blisters if int(b.get("cantidad") or 0) > 0
+        ) or "Ninguno"
+        embed = discord.Embed(
+            title=f"🎁 Blisters de {quien.display_name}",
+            description=lines,
+            color=discord.Color.gold(),
+        )
+        await ctx.send(embed=embed)
+
+    def _is_staff(self, member: discord.Member) -> bool:
+        try:
+            hok = int(os.getenv("HOKAGE_ROLE_ID") or 0)
+        except ValueError:
+            hok = 0
+        if member.guild_permissions.administrator or member.guild_permissions.manage_guild:
+            return True
+        if hok and any(r.id == hok for r in member.roles):
+            return True
+        return False
+
+    @commands.command(name="quitarblister", aliases=["blisterquitar", "sacablister"])
+    async def quitar_blister_cmd(self, ctx: commands.Context, quien: discord.Member, tipo: str, cantidad: int):
+        """[STAFF] Quitar blisters a un usuario: `?quitarblister @user trampa 2`."""
+        if not isinstance(ctx.author, discord.Member) or not self._is_staff(ctx.author):
+            return await ctx.send("Solo staff.", delete_after=8)
+        if cantidad <= 0 or cantidad > 9999:
+            return await ctx.send("Cantidad inválida.", delete_after=8)
+        t = (tipo or "").strip().lower()
+        nuevo, _ = self.db.modify_blisters(quien.id, t, -abs(int(cantidad)))
+        await ctx.send(
+            f"✅ A {quien.mention} le dejé **{nuevo}** blister(s) de **{t}**.",
+            allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
+        )
 
     @commands.command(name="roll")
     async def roll_cmd(self, ctx: commands.Context, minimo: int = 1, maximo: int = 100):
@@ -627,28 +672,38 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
 
     @commands.command(aliases=["daily", "diario"])
     async def diaria(self, ctx: commands.Context):
+        if await reject_progress_in_impostor_zone(ctx):
+            return
         await _reply_paginated_embeds(
             ctx, self._pages_diaria(ctx), label="?diario / ?diaria / ?daily", reclaim_layout="diaria"
         )
 
     @commands.command(aliases=["weekly", "semanal"])
     async def semanal_cmd(self, ctx: commands.Context):
+        if await reject_progress_in_impostor_zone(ctx):
+            return
         await _reply_paginated_embeds(
             ctx, self._pages_semanal(ctx), label="?semanal / ?weekly", reclaim_layout="semanal"
         )
 
     @commands.command(aliases=["starter", "iniciacion"])
     async def inicial(self, ctx: commands.Context):
+        if await reject_progress_in_impostor_zone(ctx):
+            return
         await _reply_paginated_embeds(
             ctx, self._pages_inicial(ctx), label="?inicial / ?starter", reclaim_layout="inicial"
         )
 
     @commands.command(name="progresoayuda", aliases=["ayudaprogreso", "leyendaprogreso", "comoprogreso"])
     async def progresoayuda(self, ctx: commands.Context):
+        if await reject_progress_in_impostor_zone(ctx):
+            return
         await _reply_paginated_embeds(ctx, build_progreso_ayuda_pages(), label="?progresoayuda")
 
     @commands.command()
     async def progreso(self, ctx: commands.Context):
+        if await reject_progress_in_impostor_zone(ctx):
+            return
         pages: List[List[discord.Embed]] = []
         pages.extend(build_progreso_resumen_pages(self.db, self.task_config or {}, ctx.author.id))
         pages.extend(self._pages_inicial(ctx))
@@ -663,6 +718,8 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
 
     @commands.command()
     async def reclamar(self, ctx: commands.Context, *, args: str = ""):
+        if await reject_progress_in_impostor_zone(ctx):
+            return
         parts = args.strip().split()
         if not parts:
             pages = build_reclamar_help_pages(self.db, self.task_config or {}, ctx.author.id)
@@ -934,7 +991,7 @@ class ComandosPrefijoCog(commands.Cog, name="Comandos Prefijo"):
 
         body = (
             f"¿Quién se suma a **Impostor**? Mirá la cartelera en {feed_mention}\n"
-            f"Para crear lobby: `/crearsimpostor`"
+            f"Para crear lobby: `?crearsimpostor <nombre>` o `/crearsimpostor` · unirse: `?entrar <nombre>`"
         )
         if open_lines:
             body += "\n\n**Lobbies abiertos ahora:**\n" + "\n".join(open_lines[:10])

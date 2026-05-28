@@ -231,6 +231,26 @@ class AdminCog(commands.Cog, name="Economia Admin"):
         except discord.Forbidden:
             pass
 
+    @app_commands.command(name="aat-admin-limpiarblisters", description="[ADMIN] Quita TODOS los blisters (sobres) a un usuario.")
+    @app_commands.describe(usuario="El usuario", razon="Opcional: razón")
+    async def limpiar_blisters(self, interaction: discord.Interaction, usuario: discord.Member, razon: Optional[str] = None):
+        await interaction.response.defer(ephemeral=True)
+        res = self.economia_db.clear_blisters_for_user(usuario.id)
+        types = int(res.get("types") or 0)
+        total = int(res.get("total") or 0)
+        extra = f"\n**Razón:** {razon}" if razon else ""
+        await interaction.followup.send(
+            f"🧹 Blisters limpiados a {usuario.mention}: **{types}** tipo(s), **{total}** total.{extra}",
+            ephemeral=True,
+        )
+        try:
+            msg = f"Un admin limpió tus blisters: -{total} (en {types} tipo(s))."
+            if razon:
+                msg += f"\n**Razón:** {razon}"
+            await usuario.send(msg)
+        except discord.Forbidden:
+            pass
+
     @app_commands.command(
         name="aat-admin-vereconomia",
         description="[ADMIN] Ver puntos (actual/hist/gastado) y blisters de un usuario.",

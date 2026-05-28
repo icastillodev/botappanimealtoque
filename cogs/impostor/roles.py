@@ -11,6 +11,7 @@ from typing import Optional
 from . import core
 from .engine import GameState, ROLE_IMPOSTOR, ROLE_SOCIAL, PHASE_TURNS
 from . import chars
+from .sounds import fetch_role_sound_file, get_impostor_sound_url, get_social_sound_url
 
 log = logging.getLogger(__name__)
 
@@ -21,8 +22,14 @@ def _tematica_publica(lobby: GameState) -> str:
 # --- Configuración ---
 
 def get_role_review_seconds() -> int:
-    val = os.getenv("IMPOSTOR_ROLE_REVIEW_SECONDS", "20")
-    return int(val)
+    val = os.getenv("IMPOSTOR_ROLE_REVIEW_SECONDS", "5")
+    return max(1, int(val))
+
+
+def get_prestart_seconds() -> int:
+    """Cuenta regresiva tras pulsar Comenzar (antes de ver roles)."""
+    val = os.getenv("IMPOSTOR_PRESTART_SECONDS", "10")
+    return max(1, int(val))
 
 # --- Funciones de Ayuda ---
 
@@ -44,6 +51,8 @@ def _build_role_embed(player: GameState.Player, lobby: GameState) -> discord.Emb
             value=_tematica_publica(lobby),
             inline=False,
         )
+        if lobby.secret_detalle:
+            embed.add_field(name="Detalle (cómo dar pistas)", value=lobby.secret_detalle, inline=False)
     elif player.role == ROLE_SOCIAL:
         embed = discord.Embed(
             title="🧑‍🤝‍🧑 ROL: SOCIAL",
@@ -73,6 +82,8 @@ def _build_role_embed(player: GameState.Player, lobby: GameState) -> discord.Emb
             value=_tematica_publica(lobby),
             inline=False,
         )
+        if lobby.secret_detalle:
+            embed.add_field(name="Detalle (cómo dar pistas)", value=lobby.secret_detalle, inline=False)
     else:
         # Esto no debería ocurrir
         embed = discord.Embed(title="Error", description="No se te asignó un rol.", color=discord.Color.orange())
@@ -109,7 +120,21 @@ class RoleAssignmentView(discord.ui.View):
             return await interaction.response.send_message("❌ Tus roles aún no han sido asignados. Espera...", ephemeral=True)
             
         embed = _build_role_embed(player, lobby)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        sound_url = (
+            get_impostor_sound_url()
+            if player.role == ROLE_IMPOSTOR
+            else get_social_sound_url()
+            if player.role == ROLE_SOCIAL
+            else None
+        )
+        audio = await fetch_role_sound_file(sound_url)
+        if audio:
+            await interaction.response.send_message(embed=embed, file=audio, ephemeral=True)
+        elif sound_url:
+            embed.add_field(name="🔊 Sonido", value=f"[Reproducir]({sound_url})", inline=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @discord.ui.button(label="Listo", style=discord.ButtonStyle.success, emoji="✅", custom_id="imp:ready_after_roles")
     async def listo_callback(self, interaction: discord.Interaction, button: discord.ui.Button):

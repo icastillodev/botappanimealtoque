@@ -617,6 +617,28 @@ class SecretPick(TypedDict):
     theme: str
     # Solo cuando theme == "personaje": obra de origen (los Sociales lo ven; el Impostor no).
     anime: NotRequired[str]
+    # Pista extra de qué tipo de cosa es (sin spoilear el nombre al impostor en el canal).
+    detalle: NotRequired[str]
+
+
+def _detalle_for_secret(theme: str, name: str) -> str:
+    if theme == "personaje":
+        return (
+            f"Es un **personaje** llamado así en el anime/obra. "
+            f"Podés aludir a su personalidad, poderes, rol en la historia o rasgos visibles "
+            f"(sin decir el nombre ni el título del anime en voz alta)."
+        )
+    if theme == "anime":
+        return (
+            f"Es el **título de una serie/obras**. "
+            f"Podés mencionar género, época, estudio, opening icónico o tipo de trama "
+            f"(sin deletrear el nombre exacto en el chat)."
+        )
+    return (
+        f"Es un **objeto icónico** del mundo anime. "
+        f"Describí para qué sirve, quién lo usa o en qué escena se volvió famoso "
+        f"(sin nombrarlo directamente)."
+    )
 
 
 async def get_random_secret() -> SecretPick:
@@ -629,7 +651,12 @@ async def get_random_secret() -> SecretPick:
     else:
         pool = _SECRET_OBJETOS
     pick = random.choice(pool)
-    out: SecretPick = {"name": pick["name"], "slug": pick["slug"], "theme": theme}
+    out: SecretPick = {
+        "name": pick["name"],
+        "slug": pick["slug"],
+        "theme": theme,
+        "detalle": _detalle_for_secret(theme, pick["name"]),
+    }
     if theme == "personaje":
         slug = pick["slug"]
         out["anime"] = _ORIGEN_ANIME_POR_PERSONAJE_SLUG.get(

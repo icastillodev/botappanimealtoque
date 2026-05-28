@@ -367,7 +367,10 @@ def build_comandos_ref_embeds(bot: Any) -> List[discord.Embed]:
     r3 = discord.Embed(
         title="⚡ Slash · Impostor, VERSUS y votaciones",
         description=(
-            "**Impostor:** `/crearsimpostor` · `/entrar` · `/leave` · `/salir` · `/invitar` · `/ready` · `/listo` · `/abrirlobby` · `/cerrarlobby` · `/helpimpostor` · `/ayudaimpostor`\n"
+            "**Impostor:** `/crearsimpostor` · `/entrar` · `/leave` · `/salir` · `/ready` · `/listo` · "
+            "`/helpimpostor` · `?helpimpostor` · `/revancha` · `?revancha` · `?quierorevancha` · "
+            "`/impostor-activos` · `?impostoractivos` · `/impostor-stats` · `/impostor-ranking` · "
+            "`?impostorstats` · `?impostorrang`\n"
             "**VERSUS semanal:** `/aat-versus-votos` — quién votó en la encuesta actual\n\n"
             "**Votaciones del servidor**\n"
             "• `/crear-votacion` — encuesta simple (usuario)\n"

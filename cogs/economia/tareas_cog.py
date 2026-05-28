@@ -21,6 +21,7 @@ from .reclamar_service import (
     inicial_all_claimed,
     reclaim_rewards,
 )
+from .progress_zone_guard import reject_progress_interaction
 
 class TareasCog(commands.Cog, name="Economia Tareas"):
     def __init__(self, bot: commands.Bot):
@@ -42,6 +43,8 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
         description="Progreso Iniciación (initial / onboarding): Discord + perfil.",
     )
     async def progreso_iniciacion(self, interaction: discord.Interaction):
+        if await reject_progress_interaction(interaction):
+            return
         await interaction.response.defer(ephemeral=True)
         cfg = self.task_config or {}
         pages = build_pages_inicial(self.db, cfg, interaction.user.id)
@@ -52,6 +55,8 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
         description="Progreso Diario (daily): cuatro bloques — actividad, trampa, rolls, PPT.",
     )
     async def progreso_diaria(self, interaction: discord.Interaction):
+        if await reject_progress_interaction(interaction):
+            return
         await interaction.response.defer(ephemeral=True)
         cfg = self.task_config or {}
         pages = build_pages_diaria(self.db, cfg, interaction.user.id)
@@ -62,6 +67,8 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
         description="Progreso Semanal (weekly): base, especial Impostor (special) y minijuegos.",
     )
     async def progreso_semanal(self, interaction: discord.Interaction):
+        if await reject_progress_interaction(interaction):
+            return
         await interaction.response.defer(ephemeral=True)
         cfg = self.task_config or {}
         pages = build_pages_semanal(self.db, cfg, interaction.user.id)
@@ -72,6 +79,8 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
         description="Leyenda de ?progreso (colores), marcas en detalle y comandos para reclamar.",
     )
     async def progreso_ayuda(self, interaction: discord.Interaction):
+        if await reject_progress_interaction(interaction):
+            return
         await interaction.response.defer(ephemeral=True)
         await self._send_progress_pages(interaction, build_progreso_ayuda_pages())
 
@@ -95,6 +104,8 @@ class TareasCog(commands.Cog, name="Economia Tareas"):
         tipo: Optional[Literal["inicial", "diaria", "semanal", "semanal_especial", "semanal_minijuegos"]] = None,
         referencia: Optional[int] = None,
     ):
+        if await reject_progress_interaction(interaction):
+            return
         await interaction.response.defer(ephemeral=True)
         user_id = interaction.user.id
         cfg = self.task_config or {}

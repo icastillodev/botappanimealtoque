@@ -1,6 +1,7 @@
 # cogs/impostor/game_core.py
 
 import os
+import time
 import discord
 from discord.ext import commands
 import logging
@@ -11,8 +12,9 @@ from typing import Optional
 from . import core
 from . import feed
 from . import lobby as lobby_cog
-from .engine import GameState, ROLE_IMPOSTOR, ROLE_SOCIAL, PHASE_ROLES, PHASE_TURNS, PHASE_VOTE, PHASE_END # Añadido PHASE_VOTE
+from .engine import GameState, ROLE_IMPOSTOR, ROLE_SOCIAL, PHASE_ROLES, PHASE_TURNS, PHASE_VOTE, PHASE_END
 from . import chars
+from . import rules
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +56,7 @@ class ImpostorGameCore(commands.Cog, name="ImpostorGameCore"):
                 return
 
             log.info(f"[StartGame C:{lobby.channel_id}] Iniciando partida. Lobby: {lobby.lobby_name}")
+            lobby.match_started_at_ts = time.time()
 
             # 1. Secreto + temática (personaje / anime / objeto)
             log.debug(f"[StartGame C:{lobby.channel_id}] Obteniendo secreto...")
@@ -63,6 +66,7 @@ class ImpostorGameCore(commands.Cog, name="ImpostorGameCore"):
                 lobby.character_slug = sec['slug']
                 lobby.secret_theme = sec['theme']
                 lobby.character_anime = sec.get("anime")
+                lobby.secret_detalle = sec.get("detalle")
                 log.debug(f"[StartGame C:{lobby.channel_id}] Secreto: {lobby.character_name} ({lobby.secret_theme})")
             except Exception as e:
                 log.exception(f"[StartGame C:{lobby.channel_id}] ERROR al obtener secreto: {e}")
@@ -71,31 +75,35 @@ class ImpostorGameCore(commands.Cog, name="ImpostorGameCore"):
                 lobby.secret_theme = "personaje"
                 lobby.character_anime = None
             
-            # 2. Asignar Impostor
-            log.debug(f"[StartGame C:{lobby.channel_id}] Asignando impostor...")
+            # 2. Asignar impostor(es)
+            log.debug(f"[StartGame C:{lobby.channel_id}] Asignando impostores...")
             human_players = lobby.human_players
             if not human_players:
                 log.error(f"[StartGame C:{lobby.channel_id}] ¡No hay humanos!")
                 await channel.send("❌ No hay jugadores humanos. No se puede empezar.")
-                # Resetear lobby (marcar como no en progreso y fase idle)
                 lobby.in_progress = False
                 lobby.phase = PHASE_IDLE
                 await feed.update_feed(self.bot)
                 await lobby_cog.queue_hud_update(lobby.channel_id)
                 return
-                
-            impostor_player = random.choice(human_players)
-            lobby.impostor_id = impostor_player.user_id
-            log.info(f"[StartGame C:{lobby.channel_id}] Impostor elegido: {lobby.impostor_id}")
-            
+
+            imp_n = rules.clamp_impostor_count(lobby)
+            human_ids = [p.user_id for p in human_players]
+            if imp_n > len(human_ids):
+                imp_n = len(human_ids)
+            lobby.impostor_ids = set(random.sample(human_ids, k=imp_n))
+            log.info(f"[StartGame C:{lobby.channel_id}] Impostores: {lobby.impostor_ids}")
+
             # 3. Asignar roles y resetear estado
             log.debug(f"[StartGame C:{lobby.channel_id}] Asignando roles a jugadores...")
             for player in lobby.players.values():
                 player.alive = True
                 player.word = None
                 player.voted_for = None
-                player.role = ROLE_IMPOSTOR if player.user_id == lobby.impostor_id else ROLE_SOCIAL
-                player.ready_after_roles = player.is_bot # Bots siempre listos
+                player.role = (
+                    ROLE_IMPOSTOR if player.user_id in lobby.impostor_ids else ROLE_SOCIAL
+                )
+                player.ready_after_roles = player.is_bot
             log.debug(f"[StartGame C:{lobby.channel_id}] Roles asignados.")
 
         # --- Lock liberado ---
@@ -122,6 +130,15 @@ class ImpostorGameCore(commands.Cog, name="ImpostorGameCore"):
             await feed.update_feed(self.bot)
             return
         
+        imp_n = len(lobby.impostor_ids)
+        total = lobby.all_players_count
+        soc_n = max(0, total - imp_n)
+        await channel.send(
+            f"📋 **Reparto:** **{imp_n}** impostor(es) · **{soc_n}** social(es) · **{total}** jugadores.\n"
+            f"**Ganan los sociales** si expulsan a **todos** los impostores.\n"
+            f"**Ganan los impostores** si quedan en pie y solo hay **2 sociales o menos** vivos, "
+            f"o si llegan al límite de rondas sin ser descubiertos."
+        )
         await roles_cog.send_role_assignment_ui(lobby)
         log.debug(f"[StartGame C:{lobby.channel_id}] start_game finalizado.")
 
@@ -164,40 +181,28 @@ class ImpostorGameCore(commands.Cog, name="ImpostorGameCore"):
             log.info(f"[StartRound C:{lobby.channel_id}] Verificando condiciones para Ronda {lobby.round_num}")
             
             # --- 1. Chequear condiciones de victoria ANTES de empezar ---
-            alive_players = lobby.alive_players
-            impostor = lobby.get_player(lobby.impostor_id) if lobby.impostor_id else None # Asegurar que impostor_id existe
-
-            # Condición 1: Impostor único vivo (Improbable si los bots se votan a sí mismos)
-            if impostor and impostor.alive and len(alive_players) == 1:
-                log.info(f"[StartRound C:{lobby.channel_id}] Condición: Impostor único vivo.")
+            victory = rules.check_round_start_victory(lobby)
+            if victory:
                 should_end_game = True
-                winner_role_for_endgame = ROLE_IMPOSTOR
-                reason_for_endgame = "El Impostor es el único superviviente."
-
-            # Condición 2: Quedan 2 jugadores vivos Y el impostor está vivo
-            elif impostor and impostor.alive and len(alive_players) <= 2:
-                log.info(f"[StartRound C:{lobby.channel_id}] Condición: 2 vivos (Impostor gana).")
-                should_end_game = True
-                winner_role_for_endgame = ROLE_IMPOSTOR
-                reason_for_endgame = "Quedan solo 2 jugadores. El Impostor gana."
-            
-            # Condición 3: Se alcanzó el límite de rondas Y el impostor sigue vivo
-            max_rounds = get_max_rounds()
-            # Usar >= para que la ronda MAX_ROUNDS se juegue y GANE al final de ella si no lo pillan
-            if not should_end_game and lobby.round_num > max_rounds: 
-                 # Solo si el impostor sigue vivo
-                 if impostor and impostor.alive:
-                      log.info(f"[StartRound C:{lobby.channel_id}] Condición: Límite de rondas alcanzado.")
-                      should_end_game = True
-                      winner_role_for_endgame = ROLE_IMPOSTOR
-                      reason_for_endgame = f"Se alcanzó el límite de {max_rounds} rondas. El Impostor gana."
-                 else:
-                      # Si se alcanzó el límite pero el impostor MURIÓ antes, ganan sociales
-                      # (Esto debería haber sido detectado por votes.py, pero por seguridad)
-                      log.info(f"[StartRound C:{lobby.channel_id}] Condición: Límite rondas, pero impostor muerto.")
-                      should_end_game = True
-                      winner_role_for_endgame = ROLE_SOCIAL
-                      reason_for_endgame = f"Se alcanzó el límite de {max_rounds} rondas y el Impostor fue eliminado."
+                winner_role_for_endgame, reason_for_endgame = victory
+            else:
+                max_rounds = get_max_rounds()
+                alive_imps = rules.alive_impostor_players(lobby)
+                if lobby.round_num > max_rounds:
+                    if alive_imps:
+                        should_end_game = True
+                        winner_role_for_endgame = ROLE_IMPOSTOR
+                        reason_for_endgame = (
+                            f"Se alcanzó el límite de {max_rounds} rondas. "
+                            f"Los impostores sobreviven."
+                        )
+                    else:
+                        should_end_game = True
+                        winner_role_for_endgame = ROLE_SOCIAL
+                        reason_for_endgame = (
+                            f"Se alcanzó el límite de {max_rounds} rondas y "
+                            f"no quedan impostores."
+                        )
 
 
             # --- 2. Si no hay victoria, preparar e indicar inicio de ronda ---

@@ -12,7 +12,9 @@ from typing import Dict, Optional
 
 # Importaciones locales
 from . import core
-from .engine import GameState, PHASE_TURNS, PHASE_VOTE
+from . import chat_guard
+from .engine import GameState, PHASE_END, PHASE_TURNS, PHASE_VOTE
+from .bot_hints import pick_bot_hint
 
 log = logging.getLogger(__name__)
 
@@ -96,16 +98,22 @@ class ImpostorTurnsCog(commands.Cog, name="ImpostorTurns"):
 
                 if player.is_bot:
                     await asyncio.sleep(0.8)
-                    player.word = "kunai"
-                    await channel.send(f"🤖 `AAT-Bot #{abs(user_id)}` dice: **kunai**")
+                    hint = pick_bot_hint(lobby, player)
+                    player.word = hint
+                    await channel.send(
+                        f"🤖 `AAT-Bot #{abs(user_id)}` dice: **{hint}**"
+                    )
                     continue
 
                 # --- Turno Humano ---
                 event = asyncio.Event()
                 self._turn_events[lobby.channel_id] = event
                 
-                await channel.send(f"▶️ Turno de <@{user_id}>. Tienes **{turn_seconds} segundos**.\n"
-                                   f"Usa `/palabra <tu pista>` (1-5 palabras).")
+                await channel.send(
+                    f"▶️ Turno de <@{user_id}>. Tienes **{turn_seconds} segundos**.\n"
+                    f"Escribí **1 a 5 palabras** acá (sin comando) **o** usá `/palabra <tu pista>`.\n"
+                    f"*(El resto del canal queda en silencio hasta tu pista.)*"
+                )
                 
                 try:
                     # Esperar al evento (de /palabra) o al timeout
@@ -215,6 +223,53 @@ class ImpostorTurnsCog(commands.Cog, name="ImpostorTurns"):
             
         # 3. Confirmar al usuario (efímero, como pediste)
         await interaction.response.send_message("✅ Pista registrada.", ephemeral=True)
+
+    def _try_accept_plain_word(self, lobby: GameState, player: GameState.Player, text: str) -> bool:
+        pista_limpia = text.strip()
+        if not WORD_REGEX.fullmatch(pista_limpia):
+            return False
+        if player.word is not None:
+            return False
+        player.word = pista_limpia
+        event = self._turn_events.get(lobby.channel_id)
+        if event:
+            event.set()
+        return True
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message) -> None:
+        if message.author.bot or not message.guild:
+            return
+        lobby = core.get_lobby_by_channel(message.channel.id)
+        if not lobby or lobby.phase == PHASE_END:
+            return
+        content = (message.content or "").strip()
+        if not content or content.startswith("/"):
+            return
+
+        author_id = message.author.id
+        if author_id in lobby.eliminated_user_ids:
+            try:
+                await message.delete()
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+            return
+
+        if lobby.phase == PHASE_TURNS:
+            player = lobby.get_player(author_id)
+            if not player or player.is_bot:
+                return
+            if chat_guard.is_message_allowed_during_turns(lobby, author_id):
+                if self._try_accept_plain_word(lobby, player, content):
+                    return
+            try:
+                await message.delete()
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+            return
+
+        if lobby.phase == PHASE_VOTE and lobby.votes_open:
+            return
 
 
 async def setup(bot: commands.Bot):

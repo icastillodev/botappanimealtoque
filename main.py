@@ -83,6 +83,7 @@ INITIAL_EXTENSIONS = [
     "cogs.comandos_prefijo",
     "cogs.oraculo_cog",
     "cogs.pala_cog",
+    "cogs.jueves_cog",
     "cogs.channel_enforcer",
     "cogs.semanal_versus",
     "cogs.ahorcado_daily_webhook",

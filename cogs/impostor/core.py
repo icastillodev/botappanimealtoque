@@ -1,6 +1,7 @@
 # cogs/impostor/core.py
 
 import logging
+import time
 from typing import Dict, Optional, List, Set
 from .engine import GameState
 
@@ -52,6 +53,9 @@ def create_lobby(
     # Agregar al host a la lista de jugadores del lobby
     lobby.add_player(host_id, is_bot=False)
     
+    now = time.time()
+    lobby.created_at_ts = now
+    lobby.last_activity_ts = now
     log.info(f"Lobby creado: {lobby_name} (Canal: {channel_id}) por Host: {host_id}")
     return lobby
 

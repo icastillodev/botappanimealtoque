@@ -146,7 +146,8 @@ IMPOSTOR_FEED_CHANNEL_ID=1429345649672982661
 IMPOSTOR_ADMIN_ROLE_IDS=1426968325841489980,1426977638639206400
 
 # DB y fuente de personajes
-IMPOSTOR_DB_PATH=./data/impostor.db
+# IMPOSTOR_DB_PATH: legacy (no usado). Ranking/stats → tabla impostor_stats en la BD de economía (economia_db).
+# IMPOSTOR_DB_PATH=./data/impostor.db
 IMPOSTOR_CHAR_SOURCE=[https://animealtoque.com/personajes/bdpersonajes.php](https://animealtoque.com/personajes/bdpersonajes.php)
 IMPOSTOR_CHAR_BASE=[https://animealtoque.com/personajes/](https://animealtoque.com/personajes/)
 

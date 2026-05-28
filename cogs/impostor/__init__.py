@@ -17,6 +17,7 @@ SUB_COGS = [
     "turns",
     "votes",
     "endgame",
+    "stats",
     "clean",
     "help", 
 ]

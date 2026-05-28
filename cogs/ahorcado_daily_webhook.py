@@ -250,6 +250,18 @@ class AhorcadoDailyWebhookCog(commands.Cog):
         except Exception:
             status = None
 
+        # Marcar diaria 5 también cuando comparten el resultado por texto (solo si es el día de hoy).
+        try:
+            today_id = _calc_ahorcado_id_dia_now_uy()
+            if day == today_id:
+                db = getattr(self.bot, "economia_db", None)
+                if db:
+                    prog = db.get_progress_diaria(message.author.id)
+                    if not (int(prog.get("dia_ahorcado") or 0) >= 1 and int(prog.get("dia_ahorcado_id") or 0) == day):
+                        db.mark_diaria_ahorcado_result(message.author.id, day)
+        except Exception:
+            pass
+
         parts = [f"**Jugador:** {message.author.mention}"]
         if day > 0:
             parts.append(f"**Día:** **{day}**")

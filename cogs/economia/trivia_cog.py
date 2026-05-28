@@ -1,4 +1,4 @@
-# Trivia anime: N sorteos al día entre 12:00 y 22:00 (America/Montevideo), tiempo configurable (por defecto 5 min).
+# Trivia anime: N sorteos al día entre 07:00 y 21:00 (America/Montevideo), tiempo configurable (por defecto 5 min).
 # Primera respuesta correcta (?r, ?respuestapregunta o línea corta / responder …) gana puntos y suma al ranking.
 from __future__ import annotations
 
@@ -250,8 +250,8 @@ class AnimeTriviaCog(commands.Cog, name="Trivia anime"):
                 pass
         if not UY:
             return []
-        noon = datetime.combine(day, time(12, 0), tzinfo=UY)
-        end = datetime.combine(day, time(22, 0), tzinfo=UY)
+        noon = datetime.combine(day, time(7, 0), tzinfo=UY)
+        end = datetime.combine(day, time(21, 0), tzinfo=UY)
         span = int((end - noon).total_seconds())
         gap = self._min_gap_seconds()
         if span < gap * (r - 1) + 60:

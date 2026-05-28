@@ -1,35 +1,122 @@
 # cogs/impostor/endgame.py
 
-import os
 import discord
 from discord.ext import commands
+from discord import app_commands
 import logging
 import asyncio
 from typing import Optional
 
 # Importaciones locales
 from . import core
+from . import chat_guard
 from .engine import GameState, PHASE_END, ROLE_IMPOSTOR, ROLE_SOCIAL
 from . import feed
 from . import chars
+from .lobby import close_lobby_channel, queue_hud_update, _lobby_howto_text
+from .activity import post_staff_log, touch_lobby_activity
+from .config import get_rematch_window_seconds, get_rematch_vote_percent
+from .engine import PHASE_IDLE
+from .rematch_utils import rematch_votes_needed, rematch_vote_status
 
 log = logging.getLogger(__name__)
-
-# --- Configuración ---
-
-def get_rematch_window_seconds() -> int:
-    val = os.getenv("IMPOSTOR_REMATCH_WINDOW_SECONDS", "60")
-    return int(val)
 
 # --- View de Fin de Partida ---
 
 class EndgameView(discord.ui.View):
-    """Vista persistente con el botón 'Salir del lobby'."""
+    """Vista persistente: salir o cerrar sala (host)."""
     def __init__(self, bot: commands.Bot):
         super().__init__(timeout=None) 
         self.bot = bot
 
-    @discord.ui.button(label="Salir del lobby", style=discord.ButtonStyle.danger, emoji="🚪", custom_id="imp:leave_now")
+    @discord.ui.button(
+        label="Revancha (host)",
+        style=discord.ButtonStyle.success,
+        emoji="🔁",
+        custom_id="imp:rematch",
+        row=0,
+    )
+    async def rematch_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        lobby = core.get_lobby_by_channel(interaction.channel_id)
+        if not lobby:
+            return await interaction.followup.send("El lobby ya no existe.", ephemeral=True)
+        endgame_cog = self.bot.get_cog("ImpostorEndgame")
+        if not endgame_cog:
+            return await interaction.followup.send("❌ Módulo de fin de partida no cargado.", ephemeral=True)
+        ok, msg = await endgame_cog.trigger_rematch(lobby, interaction.user.id)
+        if not ok:
+            return await interaction.followup.send(msg or "No se pudo iniciar la revancha.", ephemeral=True)
+        await interaction.followup.send("🔁 Lobby listo para otra partida.", ephemeral=True)
+
+    @discord.ui.button(
+        label="Quiero revancha",
+        style=discord.ButtonStyle.primary,
+        emoji="👍",
+        custom_id="imp:rematch_vote",
+        row=1,
+    )
+    async def rematch_vote_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        lobby = core.get_lobby_by_channel(interaction.channel_id)
+        if not lobby or lobby.phase != PHASE_END:
+            return await interaction.followup.send(
+                "❌ Solo podés votar revancha al terminar la partida.", ephemeral=True
+            )
+        player = lobby.get_player(interaction.user.id)
+        if not player or player.is_bot:
+            return await interaction.followup.send("❌ Solo jugadores humanos del lobby.", ephemeral=True)
+
+        endgame_cog = self.bot.get_cog("ImpostorEndgame")
+        if not endgame_cog:
+            return await interaction.followup.send("❌ Módulo de fin de partida no cargado.", ephemeral=True)
+
+        added, msg = await endgame_cog.register_rematch_vote(lobby, interaction.user.id)
+        if added:
+            ok, _ = await endgame_cog.try_rematch_if_majority(lobby)
+            if ok:
+                msg += "\n\n🔁 **¡Mayoría alcanzada!** Lobby reiniciado."
+        await interaction.followup.send(msg, ephemeral=True)
+
+    @discord.ui.button(
+        label="Cerrar sala (host)",
+        style=discord.ButtonStyle.danger,
+        emoji="🗑️",
+        custom_id="imp:close_lobby_host",
+        row=0,
+    )
+    async def close_lobby_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        lobby = core.get_lobby_by_channel(interaction.channel_id)
+        if not lobby:
+            return await interaction.followup.send("El lobby ya no existe.", ephemeral=True)
+        if lobby.host_id != interaction.user.id:
+            return await interaction.followup.send("❌ Solo el **host** puede cerrar la sala.", ephemeral=True)
+        lobby_name = lobby.lobby_name
+        lobby_cid = lobby.channel_id
+        ok = await close_lobby_channel(
+            self.bot, lobby, reason="Host cerró lobby Impostor (fin de partida)"
+        )
+        if ok:
+            try:
+                close_embed = discord.Embed(
+                    title="Impostor — sala cerrada (host)",
+                    description=f"Host <@{interaction.user.id}> cerró el lobby.",
+                    color=discord.Color.dark_grey(),
+                )
+                close_embed.add_field(name="Sala", value=lobby_name, inline=True)
+                close_embed.add_field(name="Canal", value=f"<#{lobby_cid}>", inline=True)
+                await post_staff_log(self.bot, close_embed)
+            except Exception as e:
+                log.warning("staff log cierre host: %s", e)
+        if not ok:
+            return await interaction.followup.send(
+                "No pude borrar el canal (permisos). Sacá a los jugadores con **Salir**.",
+                ephemeral=True,
+            )
+        await interaction.followup.send("Sala cerrada.", ephemeral=True)
+
+    @discord.ui.button(label="Salir del lobby", style=discord.ButtonStyle.secondary, emoji="🚪", custom_id="imp:leave_now", row=2)
     async def leave_now_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Saca al jugador del lobby y gestiona la limpieza del canal."""
         await interaction.response.defer(ephemeral=True) 
@@ -43,7 +130,11 @@ class EndgameView(discord.ui.View):
         if not lobby:
             return await interaction.followup.send("Has salido (el lobby ya no existía).", ephemeral=True)
 
-        await lobby_cog.handle_leave_logic(interaction.user, lobby)
+        ok = await lobby_cog.handle_leave_logic(interaction.user, lobby)
+        if not ok:
+            return await interaction.followup.send(
+                "No pudiste salir (restricción de tiempo o error).", ephemeral=True
+            )
         await interaction.followup.send("Has salido del lobby.", ephemeral=True)
 
 
@@ -105,7 +196,7 @@ class ImpostorEndgameCog(commands.Cog, name="ImpostorEndgame"):
              user = self.bot.get_user(user_id) 
              if user:
                  log.debug(f"[Cleanup C:{channel_id}] Llamando handle_leave_logic para {user_id}...")
-                 await lobby_cog.handle_leave_logic(user, current_lobby_state)
+                 await lobby_cog.handle_leave_logic(user, current_lobby_state, force=True)
              else:
                  log.warning(f"[Cleanup C:{channel_id}] Usuario {user_id} no encontrado, usando core.remove.")
                  core.remove_user_from_lobby(user_id)
@@ -156,6 +247,7 @@ class ImpostorEndgameCog(commands.Cog, name="ImpostorEndgame"):
             
             lobby.phase = PHASE_END
             lobby.in_progress = False
+            lobby.rematch_votes = set()
             log.debug(f"[Endgame C:{lobby.channel_id}] Estado actualizado a PHASE_END. Actualizando feed...")
             try:
                 await feed.update_feed(self.bot) 
@@ -186,20 +278,35 @@ class ImpostorEndgameCog(commands.Cog, name="ImpostorEndgame"):
         log.debug(f"[Endgame C:{lobby.channel_id}] Lock liberado.")
         # --- FIN DEL BLOQUE LOCK ---
 
+        await chat_guard.restore_channel_chat(self.bot, lobby)
+
         # --- LLAMADA A _lock_channel FUE ELIMINADA ---
         
         log.debug(f"[Endgame C:{lobby.channel_id}] Preparando embed final...")
         embed = None # Inicializar embed como None
         try:
             if winner_role == ROLE_SOCIAL:
-                embed = discord.Embed(title="🏁 ¡Partida Finalizada! 🏁", description=f"**¡Ganan los SOCIALES!**\n{reason}", color=discord.Color.green())
-            else: # ROLE_IMPOSTOR
-                embed = discord.Embed(title="🏁 ¡Partida Finalizada! 🏁", description=f"**¡Gana el IMPOSTOR!**\n{reason}", color=discord.Color.red())
-                
-            impostor_mention = f"<@{lobby.impostor_id}>" if lobby.impostor_id else "*Error: Impostor no asignado*"
-            social_mentions = [f"<@{p.user_id}>" for p in lobby.players.values() if p.role == ROLE_SOCIAL and not p.is_bot]
-            
-            embed.add_field(name="🕵️ Impostor", value=impostor_mention, inline=False)
+                embed = discord.Embed(
+                    title="🏁 ¡Partida Finalizada! 🏁",
+                    description=f"**¡Ganan los SOCIALES!**\n{reason}",
+                    color=discord.Color.green(),
+                )
+            else:
+                embed = discord.Embed(
+                    title="🏁 ¡Partida Finalizada! 🏁",
+                    description=f"**¡Ganan los IMPOSTORES!**\n{reason}",
+                    color=discord.Color.red(),
+                )
+
+            imp_ids = lobby.impostor_ids or ({lobby.impostor_id} if lobby.impostor_id else set())
+            impostor_mention = ", ".join(f"<@{uid}>" for uid in imp_ids) or "*Ninguno*"
+            social_mentions = [
+                f"<@{p.user_id}>"
+                for p in lobby.players.values()
+                if p.role == ROLE_SOCIAL and not p.is_bot
+            ]
+
+            embed.add_field(name="🕵️ Impostor(es)", value=impostor_mention, inline=False)
             embed.add_field(name="🧑‍🤝‍🧑 Sociales", value=", ".join(social_mentions) or "Ninguno", inline=False)
             char_name = lobby.character_name or "Secreto desconocido"
             tema = lobby.secret_theme or "personaje"
@@ -209,6 +316,18 @@ class ImpostorEndgameCog(commands.Cog, name="ImpostorEndgame"):
             if tema == "personaje" and getattr(lobby, "character_anime", None):
                 secreto_val = f"{char_name}\n*{lobby.character_anime}*"
             embed.add_field(name="🧩 Secreto", value=secreto_val, inline=False)
+            needed = rematch_votes_needed(lobby)
+            pct = get_rematch_vote_percent()
+            cleanup_seconds = get_rematch_window_seconds()
+            embed.add_field(
+                name="🔁 Revancha",
+                value=(
+                    f"Votos: **0/{needed}** ({pct}% de humanos). "
+                    f"Botón **Quiero revancha** o `?quierorevancha`.\n"
+                    f"Host: **Revancha** / `/revancha` · auto-cleanup en **{cleanup_seconds}s**."
+                ),
+                inline=False,
+            )
             log.debug(f"[Endgame C:{lobby.channel_id}] Embed preparado OK.")
         except Exception as e:
             log.exception(f"[Endgame C:{lobby.channel_id}] EXCEPCIÓN preparando el embed final: {e}")
@@ -226,9 +345,13 @@ class ImpostorEndgameCog(commands.Cog, name="ImpostorEndgame"):
             cleanup_seconds = get_rematch_window_seconds()
             try:
                 await channel.send(
-                    content=f"Gracias por jugar. Presiona 'Salir' o espera {cleanup_seconds}s para la limpieza automática.",
+                    content=(
+                        f"Gracias por jugar. **Host:** **Revancha** o **Cerrar sala** "
+                        f"(si no, auto-cleanup en **{cleanup_seconds}s**).\n"
+                        f"**Jugadores:** **Quiero revancha** (mayoría reinicia el lobby) o **Salir**."
+                    ),
                     embed=embed,
-                    view=view
+                    view=view,
                 )
                 log.debug(f"[Endgame C:{lobby.channel_id}] Mensaje final enviado OK.")
             except (discord.Forbidden, discord.HTTPException) as e:
@@ -242,8 +365,33 @@ class ImpostorEndgameCog(commands.Cog, name="ImpostorEndgame"):
         if eco:
             try:
                 eco.record_impostor_game_end(lobby, winner_role)
+                eco.record_impostor_ranked_stats(lobby, winner_role)
+                eco.record_impostor_game_log(lobby, winner_role, reason)
             except Exception as e:
                 log.warning(f"[Endgame C:{lobby.channel_id}] No se pudo registrar stats Impostor: {e}")
+
+        try:
+            imp_ids = lobby.impostor_ids or set()
+            log_embed = discord.Embed(
+                title="Impostor — partida terminada",
+                description=reason[:500] if reason else "—",
+                color=discord.Color.green() if winner_role == ROLE_SOCIAL else discord.Color.red(),
+            )
+            log_embed.add_field(
+                name="Ganador",
+                value="Sociales" if winner_role == ROLE_SOCIAL else "Impostores",
+                inline=True,
+            )
+            log_embed.add_field(name="Canal", value=f"<#{lobby.channel_id}>", inline=True)
+            log_embed.add_field(
+                name="Impostor(es)",
+                value=", ".join(f"<@{u}>" for u in imp_ids) or "—",
+                inline=False,
+            )
+            log_embed.add_field(name="Secreto", value=lobby.character_name or "—", inline=False)
+            await post_staff_log(self.bot, log_embed)
+        except Exception as e:
+            log.warning("[Endgame C:%s] staff log: %s", lobby.channel_id, e)
 
         # Iniciar la tarea de limpieza automática
         log.debug(f"[Endgame C:{lobby.channel_id}] Iniciando tarea de cleanup...")
@@ -259,6 +407,123 @@ class ImpostorEndgameCog(commands.Cog, name="ImpostorEndgame"):
              log.exception(f"[Endgame C:{lobby.channel_id}] EXCEPCIÓN al iniciar tarea de cleanup: {e}")
 
         log.debug(f"[Endgame C:{lobby.channel_id}] === trigger_end_game finalizado ===")
+
+    async def register_rematch_vote(self, lobby: GameState, user_id: int) -> tuple[bool, str]:
+        """Registra voto de revancha. Devuelve (True, mensaje) si se añadió."""
+        if lobby.phase != PHASE_END:
+            return False, "❌ La revancha solo está disponible al terminar la partida."
+        if user_id in lobby.rematch_votes:
+            return False, f"✅ Ya votaste revancha. {rematch_vote_status(lobby)}."
+        lobby.rematch_votes.add(user_id)
+        needed = rematch_votes_needed(lobby)
+        have = len(lobby.rematch_votes)
+        return True, f"👍 Voto registrado ({have}/{needed}). Si llegan a **{needed}**, arranca la revancha."
+
+    async def try_rematch_if_majority(self, lobby: GameState) -> tuple[bool, str]:
+        needed = rematch_votes_needed(lobby)
+        if len(lobby.rematch_votes) < needed:
+            return False, ""
+        return await self._do_rematch(lobby, by_host_id=lobby.host_id)
+
+    async def trigger_rematch(self, lobby: GameState, requester_id: int) -> tuple[bool, str]:
+        """Reinicia el lobby (host directo o tras mayoría de votos)."""
+        if lobby.host_id != requester_id:
+            return False, "❌ Solo el **host** puede forzar revancha con el botón verde."
+        if lobby.phase != PHASE_END:
+            return False, "❌ La revancha solo está disponible al terminar la partida."
+        return await self._do_rematch(lobby, by_host_id=requester_id)
+
+    async def _do_rematch(self, lobby: GameState, *, by_host_id: int) -> tuple[bool, str]:
+        if lobby.phase != PHASE_END:
+            return False, "❌ La revancha solo está disponible al terminar la partida."
+
+        channel = self.bot.get_channel(lobby.channel_id)
+        if not isinstance(channel, discord.TextChannel):
+            return False, "❌ Canal del lobby no encontrado."
+
+        if lobby._endgame_task and not lobby._endgame_task.done():
+            lobby._endgame_task.cancel()
+            lobby._endgame_task = None
+
+        th_id = lobby.eliminated_thread_id
+        async with lobby._lock:
+            lobby.reset_for_rematch()
+
+        await chat_guard.restore_channel_chat(self.bot, lobby)
+
+        if th_id:
+            th = channel.get_thread(th_id)
+            if th:
+                try:
+                    await th.delete()
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
+            lobby.eliminated_thread_id = None
+
+        try:
+            purge_check = (
+                (lambda m: m.id != lobby.hud_message_id) if lobby.hud_message_id else (lambda m: True)
+            )
+            await channel.purge(limit=100, check=purge_check)
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
+        touch_lobby_activity(lobby)
+        await feed.update_feed(self.bot)
+        await queue_hud_update(lobby.channel_id)
+
+        await channel.send(
+            "🔁 **Revancha:** el lobby se reinició. Todos en **Ready** → host **Comenzar**.\n"
+            + _lobby_howto_text()
+        )
+        log.info("Revancha iniciada C:%s (solicitante %s)", lobby.channel_id, by_host_id)
+        return True, ""
+
+    @app_commands.command(name="revancha", description="[Host] Reinicia el lobby para otra partida.")
+    async def revancha_slash(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        lobby = core.get_lobby_by_channel(interaction.channel_id)
+        if not lobby:
+            return await interaction.followup.send("❌ No estás en un lobby Impostor.", ephemeral=True)
+        ok, msg = await self.trigger_rematch(lobby, interaction.user.id)
+        if not ok:
+            return await interaction.followup.send(msg, ephemeral=True)
+        await interaction.followup.send("🔁 Revancha iniciada.", ephemeral=True)
+
+    @commands.command(name="revancha")
+    async def revancha_prefix(self, ctx: commands.Context):
+        lobby = core.get_lobby_by_channel(ctx.channel.id)
+        if not lobby:
+            return await ctx.send("❌ Solo en un canal de lobby Impostor.")
+        ok, msg = await self.trigger_rematch(lobby, ctx.author.id)
+        if not ok:
+            return await ctx.send(msg)
+        await ctx.send("🔁 Revancha iniciada.")
+
+    @commands.command(name="quierorevancha", aliases=["votarevancha", "revanchasi"])
+    async def quiero_revancha_prefix(self, ctx: commands.Context):
+        lobby = core.get_lobby_by_channel(ctx.channel.id)
+        if not lobby:
+            return await ctx.send("❌ Solo en un canal de lobby Impostor.")
+        added, msg = await self.register_rematch_vote(lobby, ctx.author.id)
+        if added:
+            ok, _ = await self.try_rematch_if_majority(lobby)
+            if ok:
+                msg += "\n\n🔁 **¡Mayoría alcanzada!** Lobby reiniciado."
+        await ctx.send(msg)
+
+    @app_commands.command(name="quiero-revancha", description="Votá para reiniciar el lobby (mayoría).")
+    async def quiero_revancha_slash(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        lobby = core.get_lobby_by_channel(interaction.channel_id)
+        if not lobby:
+            return await interaction.followup.send("❌ Solo en un lobby Impostor.", ephemeral=True)
+        added, msg = await self.register_rematch_vote(lobby, interaction.user.id)
+        if added:
+            ok, _ = await self.try_rematch_if_majority(lobby)
+            if ok:
+                msg += "\n\n🔁 **¡Mayoría alcanzada!** Lobby reiniciado."
+        await interaction.followup.send(msg, ephemeral=True)
 
 
 async def setup(bot: commands.Bot):

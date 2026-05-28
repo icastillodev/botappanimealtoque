@@ -70,10 +70,10 @@ async def try_fetch_anilist_trivia_question(
             studio_name = str(studios[0].get("name") or "").strip()
 
         roll = random.random()
-        min_pop = float(os.getenv("TRIVIA_ANILIST_DIFFICULTY", "0.35") or 0.35)
+        min_pop = float(os.getenv("TRIVIA_ANILIST_DIFFICULTY", "0.55") or 0.55)
 
         # Preguntas más “difíciles” mezclan año, episodios y estudio (datos reales).
-        if roll < 0.45 and year:
+        if roll < min_pop and year:
             q = f'¿En qué año salió **{title}** (AniList)?'
             answers: List[str] = [str(int(year))]
             return {"q": q, "answers": answers}

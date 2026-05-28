@@ -4,16 +4,22 @@ import random
 import re
 import time
 from collections import defaultdict, deque
-from typing import Deque, Dict
+from typing import Deque, Dict, List
 
 import discord
 from discord.ext import commands
 
+try:
+    from data.pala_respuestas import PALA_FUNNY, PALA_QUESTIONS
+except ImportError:
+    PALA_FUNNY: List[str] = []
+    PALA_QUESTIONS: List[str] = []
+
 
 _PALA_RE = re.compile(r"(?i)\bpala\b")
 
-# 30 respuestas (humor “trabajo / la pala”).
-_PALA_LINES = [
+# Fallback corto si falta data/pala_respuestas.py
+_PALA_LINES_LEGACY = [
     "¿La… *pala*? No, no, acá somos 100% **home office** de la consciencia.",
     "Shhh… no digas *pala* tan fuerte que aparece un Jira nuevo.",
     "Dijiste **pala** y mi Wi‑Fi se desconectó de forma preventiva.",
@@ -45,6 +51,16 @@ _PALA_LINES = [
     "Si vas a traer la pala, traé también un aumento.",
     "Me asusto con la pala, pero con el sueldo me calmo.",
 ]
+
+_PALA_FUNNY_POOL: List[str] = list(PALA_FUNNY) if PALA_FUNNY else list(_PALA_LINES_LEGACY)
+_PALA_QUESTION_POOL: List[str] = list(PALA_QUESTIONS)
+_QUESTION_CHANCE = 0.14  # ~20 de ~140 respuestas totales
+
+
+def _pick_pala_line() -> str:
+    if _PALA_QUESTION_POOL and random.random() < _QUESTION_CHANCE:
+        return random.choice(_PALA_QUESTION_POOL)
+    return random.choice(_PALA_FUNNY_POOL)
 
 
 class PalaCog(commands.Cog, name="Pala"):
@@ -89,7 +105,7 @@ class PalaCog(commands.Cog, name="Pala"):
             return
         self._mark(message.author.id)
         try:
-            await message.reply(random.choice(_PALA_LINES), mention_author=False)
+            await message.reply(_pick_pala_line(), mention_author=False)
         except discord.HTTPException:
             pass
 

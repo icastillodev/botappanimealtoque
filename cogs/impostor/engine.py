@@ -1,6 +1,7 @@
 # cogs/impostor/engine.py
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 
@@ -33,7 +34,9 @@ class GameState:
     max_slots: int = 5
     hud_message_id: Optional[int] = None
     feed_message_id: Optional[int] = None # ID del mensaje en el canal feed
-    
+    created_at_ts: float = field(default_factory=time.time)
+    last_activity_ts: float = field(default_factory=time.time)
+
     # --- Estado del Juego ---
     in_progress: bool = False
     phase: str = field(default=PHASE_IDLE)
@@ -46,12 +49,14 @@ class GameState:
     character_anime: Optional[str] = None
     # Temática pública de la partida: "personaje" | "anime" | "objeto" (no revela el secreto).
     secret_theme: Optional[str] = None
+    secret_detalle: Optional[str] = None
 
     # --- Jugadores ---
     @dataclass
     class Player:
         user_id: int
         is_bot: bool = False
+        joined_at_ts: float = field(default_factory=time.time)
         
         # Estado de Lobby
         ready_in_lobby: bool = False # ¿Está listo para empezar?
@@ -67,11 +72,16 @@ class GameState:
     players: Dict[int, Player] = field(default_factory=dict)
     
     # --- Estado de Partida (Impostor y Turnos) ---
-    impostor_id: Optional[int] = None
+    impostor_count: int = 1  # elegido en lobby (host +/-)
+    match_started_at_ts: float = 0.0
+    impostor_ids: Set[int] = field(default_factory=set)
+    eliminated_user_ids: Set[int] = field(default_factory=set)
+    eliminated_thread_id: Optional[int] = None
     alive_order: List[int] = field(default_factory=list) # Orden de turnos
     current_turn_idx: int = -1
     votes_open: bool = False
-    
+    rematch_votes: Set[int] = field(default_factory=set)
+
     # Tareas y Bloqueo
     # (init=False) significa que no se pasan al __init__
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
@@ -96,9 +106,10 @@ class GameState:
         # Los bots siempre están listos
         is_ready = is_bot
         player = self.Player(
-            user_id=user_id, 
-            is_bot=is_bot, 
-            ready_in_lobby=is_ready
+            user_id=user_id,
+            is_bot=is_bot,
+            ready_in_lobby=is_ready,
+            joined_at_ts=time.time(),
         )
         self.players[user_id] = player
         return player
@@ -173,7 +184,46 @@ class GameState:
         self.votes_open = False
         for player in self.players.values():
             player.voted_for = None
+
+    def reset_for_rematch(self) -> None:
+        """Vuelve al lobby post-partida sin borrar jugadores ni canal."""
+        from . import rules
+
+        self.in_progress = False
+        self.phase = PHASE_IDLE
+        self.round_num = 0
+        self.match_started_at_ts = 0.0
+        self.character_name = None
+        self.character_slug = None
+        self.character_anime = None
+        self.secret_theme = None
+        self.secret_detalle = None
+        self.impostor_ids = set()
+        self.eliminated_user_ids = set()
+        self.eliminated_thread_id = None
+        self.alive_order = []
+        self.current_turn_idx = -1
+        self.votes_open = False
+        self.rematch_votes = set()
+
+        for player in self.players.values():
+            player.alive = True
+            player.role = None
+            player.word = None
+            player.voted_for = None
+            player.ready_after_roles = False
+            player.ready_in_lobby = player.is_bot
+
+        rules.clamp_impostor_count(self)
+        self.last_activity_ts = time.time()
             
     def get_player_ids(self) -> Set[int]:
         """Devuelve un set de todos los user_id en el lobby."""
         return set(self.players.keys())
+
+    @property
+    def impostor_id(self) -> Optional[int]:
+        """Compatibilidad: primer impostor asignado."""
+        if not self.impostor_ids:
+            return None
+        return next(iter(self.impostor_ids))

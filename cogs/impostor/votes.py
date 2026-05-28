@@ -11,6 +11,8 @@ from collections import Counter
 
 # Importaciones locales
 from . import core
+from . import chat_guard
+from . import rules
 from .engine import GameState, PHASE_VOTE, PHASE_END, ROLE_SOCIAL
 
 log = logging.getLogger(__name__)
@@ -99,9 +101,12 @@ class ImpostorVotesCog(commands.Cog, name="ImpostorVotes"):
         """Crea el embed que muestra las pistas de la ronda."""
         embed = discord.Embed(
             title=f"🗳️ Votación - Ronda {lobby.round_num}",
-            description="Revisen las pistas y voten por quién creen que es el Impostor. "
-                        "¡Los bots se votan a sí mismos!",
-            color=discord.Color.dark_orange()
+            description=(
+                "Revisen las pistas y voten por quién creen que es el/los Impostor(es).\n"
+                "**Botones** abajo, o `/votar @usuario` / `/vote @usuario`.\n"
+                "*(Los bots se votan a sí mismos.)*"
+            ),
+            color=discord.Color.dark_orange(),
         )
         
         lines = []
@@ -171,22 +176,20 @@ class ImpostorVotesCog(commands.Cog, name="ImpostorVotes"):
                     player = lobby.get_player(ejected_player_id)
                     player.alive = False
                     await channel.send(f"💥 **¡<@{ejected_player_id}> ha sido expulsado!**")
+                    await chat_guard.on_player_eliminated(self.bot, lobby, ejected_player_id)
 
         await asyncio.sleep(4) # Pausa dramática
 
         # 4. Chequear condición de fin de juego (si alguien fue expulsado)
         if ejected_player_id:
-            if ejected_player_id == lobby.impostor_id:
-                log.info(f"Fin de partida (Impostor expulsado) en C:{lobby.channel_id}")
-                # Llamar a Endgame
+            victory = rules.check_round_start_victory(lobby)
+            if victory:
+                win_role, reason = victory
+                log.info(f"Fin de partida en C:{lobby.channel_id}: {reason}")
                 endgame_cog = self.bot.get_cog("ImpostorEndgame")
                 if endgame_cog:
-                    await endgame_cog.trigger_end_game(
-                        lobby, 
-                        ROLE_SOCIAL, 
-                        f"¡El Impostor <@{lobby.impostor_id}> fue descubierto!"
-                    )
-                return # Fin de la partida
+                    await endgame_cog.trigger_end_game(lobby, win_role, reason)
+                return
         
         # 5. Si el juego no terminó, pasar a la siguiente ronda
         async with lobby._lock:
@@ -301,7 +304,11 @@ class ImpostorVotesCog(commands.Cog, name="ImpostorVotes"):
     @app_commands.command(name="votar", description="Vota por un jugador durante la fase de votación.")
     @app_commands.describe(usuario="El jugador que crees que es el impostor.")
     async def votar_cmd(self, interaction: discord.Interaction, usuario: discord.Member):
-        
+        await self.handle_vote_logic(interaction, usuario.id)
+
+    @app_commands.command(name="vote", description="Vote for a player (alias de /votar).")
+    @app_commands.describe(usuario="The player you think is the impostor.")
+    async def vote_cmd(self, interaction: discord.Interaction, usuario: discord.Member):
         await self.handle_vote_logic(interaction, usuario.id)
 
 
